@@ -1,15 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-
-class AriadneViewProvider implements vscode.WebviewViewProvider {
-	public static readonly viewType = 'ariadne.panel';
-
-	resolveWebviewView(webviewView: vscode.WebviewView): void {
-		webviewView.webview.options = { enableScripts: false };
-		webviewView.webview.html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body></body></html>';
-	}
-}
+import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
