@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
 
 export class AriadneViewProvider implements vscode.WebviewViewProvider {
-	public static readonly viewType = 'ariadne.panel';
+	private readonly initialHtml: string;
+
+	constructor(initialHtml: string) {
+		this.initialHtml = initialHtml;
+	}
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {
 		webviewView.webview.options = { enableScripts: false };
-		webviewView.webview.html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body></body></html>';
+		webviewView.webview.html = this.initialHtml;
 	}
 }
