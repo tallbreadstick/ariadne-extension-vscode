@@ -1,7 +1,13 @@
-import { spawn } from 'node:child_process';
+import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
+import { AriadneMessage } from './messages';
 
-export function runSession() {
-	const proc = spawn('ariadne', ['session'], {
+export interface AriadneSession {
+	send(msg: AriadneMessage): void;
+	kill(): void;
+}
+
+export function runSession(): AriadneSession {
+	const proc: ChildProcessWithoutNullStreams = spawn('ariadne', ['session'], {
 		stdio: ['pipe', 'pipe', 'pipe'],
 	});
 
@@ -16,4 +22,14 @@ export function runSession() {
 	proc.on('close', (code) => {
 		console.log(`[Ariadne Core] process exited with code ${code}`);
 	});
+
+	return {
+		send(msg: AriadneMessage): void {
+			const line = JSON.stringify(msg) + '\n';
+			proc.stdin.write(line);
+		},
+		kill(): void {
+			proc.kill();
+		},
+	};
 }
