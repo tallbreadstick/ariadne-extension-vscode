@@ -2,6 +2,15 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
+class AriadneViewProvider implements vscode.WebviewViewProvider {
+	public static readonly viewType = 'ariadne.panel';
+
+	resolveWebviewView(webviewView: vscode.WebviewView): void {
+		webviewView.webview.options = { enableScripts: false };
+		webviewView.webview.html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body></body></html>';
+	}
+}
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -19,7 +28,10 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('Hello World from ariadne!');
 	});
 
-	context.subscriptions.push(disposable);
+	const provider = new AriadneViewProvider();
+	const viewDisposable = vscode.window.registerWebviewViewProvider(AriadneViewProvider.viewType, provider);
+
+	context.subscriptions.push(disposable, viewDisposable);
 }
 
 // This method is called when your extension is deactivated
