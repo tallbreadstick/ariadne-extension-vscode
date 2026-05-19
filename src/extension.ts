@@ -11,6 +11,9 @@ import { buildSessionMetricsHtml } from './modules/presentation/views/sessionMet
 // ── Feedback panel ────────────────────────────────────────────────────
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
 
+// ── Tracker (status bar) ──────────────────────────────────────────────
+import { createAriadneStatusBarItem } from './modules/tracker/statusBar';
+
 // ── Data layer (mock) ─────────────────────────────────────────────────
 // The view builders above are decoupled from the data source — only this
 // section needs to change when the backend is ready.
@@ -72,11 +75,15 @@ export function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
+	// ── Status bar ────────────────────────────────────────────────────
+	const statusBarDisposable = createAriadneStatusBarItem();
+
 	context.subscriptions.push(
 		disposable,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
 		openFeedbackPanel,
+		statusBarDisposable,
 	);
 
 	runSession();
