@@ -1,0 +1,312 @@
+/**
+ * View builder for the Active Vulnerabilities panel.
+ *
+ * This is a pure function: given an array of Vulnerability objects it
+ * returns a complete HTML string ready to be stamped into a webview.
+ * It contains zero data — all data flows in from the caller.
+ */
+
+import { Vulnerability, Severity } from '../mock/types';
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function capitalize(s: string): string {
+	return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function buildMeta(vuln: Vulnerability): string {
+	return vuln.owaspRef ? `${vuln.cwe} · ${vuln.owaspRef}` : vuln.cwe;
+}
+
+function severityColor(severity: Severity): string {
+	const map: Record<Severity, string> = {
+		critical: 'var(--critical)',
+		high: 'var(--high)',
+		medium: 'var(--medium)',
+		low: 'var(--low)',
+	};
+	return map[severity];
+}
+
+// ── SVGs ─────────────────────────────────────────────────────────────
+
+const WARNING_SVG = (severity: Severity) =>
+	`<svg class="warning-icon ${severity}" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path fill-rule="evenodd" clip-rule="evenodd"
+			d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.72L8
+			2.28zM7.5 5.5h1v4h-1v-4zm.5 6a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+	</svg>`;
+
+const FILE_SVG =
+	`<svg class="file-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path d="M13.71 4.29l-3-3L10 1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V5l-.29-.71z
+			M10 2.41L12.59 5H10V2.41zM4 14V2h5v4h4v8H4z"/>
+	</svg>`;
+
+const CHEVRON_SVG =
+	`<svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
+			stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
+
+// ── Card builder ──────────────────────────────────────────────────────
+
+function buildVulnCard(vuln: Vulnerability, isFirst: boolean): string {
+	const meta = buildMeta(vuln);
+	const label = capitalize(vuln.severity);
+	const location = `${vuln.filePath} : Line ${vuln.line}`;
+	const openAttr = isFirst ? ' open' : '';
+
+	return /* html */ `
+		<details${openAttr}>
+			<summary>
+				<div class="summary-row">
+					<div class="summary-left">
+						${WARNING_SVG(vuln.severity)}
+						<div class="summary-content">
+							<div class="summary-header">
+								<span class="badge ${vuln.severity}">${label}</span>
+								<span class="issue-meta">${meta}</span>
+							</div>
+							<div class="issue-title">${vuln.title}</div>
+							<div class="summary-file">
+								${FILE_SVG}
+								<span>${location}</span>
+							</div>
+						</div>
+					</div>
+					${CHEVRON_SVG}
+				</div>
+			</summary>
+			<div class="details-panel">
+				<div class="detail-grid">
+					<div class="detail-row span-2">
+						<div class="detail-label">Description</div>
+						<div class="detail-value">${vuln.description}</div>
+					</div>
+					<div class="detail-row">
+						<div class="detail-label">File Location</div>
+						<div class="detail-value">${location}</div>
+					</div>
+					<div class="detail-row">
+						<div class="detail-label">CWE · OWASP Reference</div>
+						<div class="detail-value">${meta}</div>
+					</div>
+				</div>
+				<div class="cta-row">
+					<button class="action-button" type="button" disabled>View Details</button>
+				</div>
+			</div>
+		</details>`;
+}
+
+// ── CSS ───────────────────────────────────────────────────────────────
+
+const CSS = /* css */ `
+	:root {
+		color-scheme: dark;
+		--bg: var(--vscode-editor-background);
+		--panel: var(--vscode-sideBar-background);
+		--card: var(--vscode-editorWidget-background);
+		--border: var(--vscode-panel-border);
+		--text: var(--vscode-foreground);
+		--muted: var(--vscode-descriptionForeground);
+		--critical: #E24B4A;
+		--high: #BA7517;
+		--medium: #227AD0;
+		--low: #5CA221;
+		--button-bg: var(--vscode-button-background);
+		--button-text: var(--vscode-button-foreground);
+		--radius: 10px;
+	}
+
+	* { box-sizing: border-box; }
+
+	body {
+		margin: 0;
+		padding: 14px 16px 18px;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		background: var(--bg);
+		color: var(--text);
+	}
+
+	.vuln-stack { display: grid; gap: 12px; }
+
+	details {
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--card);
+		overflow: hidden;
+	}
+
+	summary {
+		list-style: none;
+		cursor: pointer;
+		padding: 12px 14px;
+		display: grid;
+		gap: 8px;
+	}
+
+	summary::-webkit-details-marker { display: none; }
+
+	.summary-row {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.summary-left {
+		display: flex;
+		gap: 12px;
+		align-items: flex-start;
+		min-width: 0;
+	}
+
+	.summary-content {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.summary-header { display: flex; align-items: center; gap: 10px; }
+
+	.warning-icon {
+		width: 16px;
+		height: 16px;
+		flex: 0 0 auto;
+		margin-top: 3px;
+		color: var(--muted);
+	}
+
+	.warning-icon.critical { color: var(--critical); }
+	.warning-icon.high     { color: var(--high); }
+	.warning-icon.medium   { color: var(--medium); }
+	.warning-icon.low      { color: var(--low); }
+
+	.summary-file {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--muted);
+	}
+
+	.file-icon { width: 14px; height: 14px; flex: 0 0 auto; }
+
+	.badge {
+		padding: 4px 8px;
+		border-radius: 3px;
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		color: white;
+	}
+
+	.badge.critical { background-color: var(--critical); }
+	.badge.high     { background-color: var(--high); }
+	.badge.medium   { background-color: var(--medium); }
+	.badge.low      { background-color: var(--low); }
+
+	.issue-title {
+		font-weight: 600;
+		font-size: 14px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.issue-meta { font-size: 12px; color: var(--muted); }
+
+	.chevron {
+		width: 16px;
+		height: 16px;
+		flex: 0 0 auto;
+		color: var(--muted);
+		transition: transform 0.2s ease;
+	}
+
+	details[open] .chevron { transform: rotate(180deg); }
+
+	.details-panel {
+		border-top: 1px solid var(--border);
+		background: var(--panel);
+		padding: 12px 14px 14px;
+		display: grid;
+		gap: 12px;
+	}
+
+	.detail-grid {
+		display: grid;
+		gap: 12px;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.detail-row.span-2 { grid-column: 1 / -1; }
+	.detail-row { display: grid; gap: 6px; }
+
+	.detail-label {
+		font-size: 11px;
+		text-transform: uppercase;
+		color: var(--muted);
+		font-weight: 600;
+	}
+
+	.detail-value { font-size: 13px; color: var(--text); line-height: 1.4; }
+
+	.cta-row {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.action-button {
+		border: none;
+		border-radius: 3px;
+		padding: 8px 14px;
+		font-size: 12px;
+		font-weight: 600;
+		background: var(--button-bg);
+		color: var(--button-text);
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	@media (max-width: 560px) {
+		body { padding: 12px; }
+		.detail-grid { grid-template-columns: 1fr; }
+		.summary-row { flex-direction: column; align-items: flex-start; }
+		.cta-row { flex-direction: column; align-items: flex-start; }
+	}
+`;
+
+// ── Public API ────────────────────────────────────────────────────────
+
+/**
+ * Builds the complete HTML document for the Active Vulnerabilities panel.
+ *
+ * @param vulns - Vulnerability findings from the current scan session.
+ *   The first item in the array is rendered expanded by default.
+ * @returns A complete HTML string ready to be set on a VS Code webview.
+ */
+export function buildActiveVulnerabilitiesHtml(vulns: Vulnerability[]): string {
+	const cards = vulns.map((v, i) => buildVulnCard(v, i === 0)).join('\n');
+
+	return /* html */ `<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Ariadne Active Vulnerabilities</title>
+		<style>${CSS}</style>
+	</head>
+	<body>
+		<section class="vuln-stack">
+			${cards}
+		</section>
+	</body>
+</html>`;
+}
