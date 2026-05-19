@@ -12,7 +12,7 @@ import { buildSessionMetricsHtml } from './modules/presentation/views/sessionMet
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
 
 // ── Tracker (status bar) ──────────────────────────────────────────────
-import { createAriadneStatusBarItem } from './modules/tracker/statusBar';
+import { createAriadneStatusBarItem } from './modules/tracker/views/statusBar';
 
 // ── Data layer (mock) ─────────────────────────────────────────────────
 // The view builders above are decoupled from the data source — only this
