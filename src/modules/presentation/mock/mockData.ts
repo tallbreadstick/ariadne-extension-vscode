@@ -86,9 +86,31 @@ export const mockSessionMetrics: SessionMetrics = {
 		improvingTrends: 2,
 		resolvedThisSession: 4,
 	},
-	notification: {
-		message: 'Security improving',
-		detail: 'SQL Injection resolved across 3 consecutive scans. Keep it up.',
-		timestamp: 'just now',
-	},
+	notifications: [
+		{
+			message: 'Security improving',
+			detail: 'SQL Injection resolved across 3 consecutive scans. Keep it up.',
+			timestamp: 'just now',
+		},
+		{
+			message: 'New vulnerability detected',
+			detail: 'Hardcoded Secret found in LoginController.java at line 7. Review immediately.',
+			timestamp: '2 min ago',
+		},
+		{
+			message: 'Pattern resolved',
+			detail: 'Sensitive Data in Log is no longer detected in the latest scan.',
+			timestamp: '5 min ago',
+		},
+		{
+			message: 'Recurring issue',
+			detail: 'SQL Injection has persisted for 3 consecutive scans in LoginController.java.',
+			timestamp: '8 min ago',
+		},
+		{
+			message: 'Scan complete',
+			detail: 'Ariadne finished analysing 12 files. 4 issues found across 1 file.',
+			timestamp: '10 min ago',
+		},
+	],
 };
