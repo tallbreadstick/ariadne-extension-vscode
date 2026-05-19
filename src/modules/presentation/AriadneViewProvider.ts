@@ -14,10 +14,6 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 		};
 
-		// Preserve panel state (scroll position, open cards) when the user
-		// switches between tabs in the Ariadne panel container.
-		webviewView.retainContextWhenHidden = true;
-
 		webviewView.webview.html = this.initialHtml;
 	}
 }
