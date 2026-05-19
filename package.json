@@ -9,13 +9,18 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onLanguage:java"],
+  "activationEvents": ["onLanguage:java", "onCommand:ariadne-extension-vscode.analyze"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "ariadne-extension-vscode.helloWorld",
         "title": "Hello World"
+      }
+      ,
+      {
+        "command": "ariadne-extension-vscode.analyze",
+        "title": "Ariadne: Analyze"
       }
     ],
     "viewsContainers": {
