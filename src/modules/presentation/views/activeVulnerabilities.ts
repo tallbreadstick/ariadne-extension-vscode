@@ -86,15 +86,20 @@ function buildVulnCard(vuln: Vulnerability, isFirst: boolean): string {
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">File Location</div>
-						<div class="detail-value">${location}</div>
+						<div class="detail-value file">${location}</div>
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">CWE · OWASP Reference</div>
-						<div class="detail-value">${meta}</div>
+						<div class="detail-value reference">${meta}</div>
 					</div>
 				</div>
 				<div class="cta-row">
-					<button class="action-button" type="button" disabled>View Details</button>
+					<button class="action-button" type="button" disabled>
+						<span>Ask Ariadne</span>
+						<svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+							<path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8l-4.357-4.357.618-.62L11 7.69v.62L6.333 13l-.618-.619L10.072 8z"/>
+						</svg>
+					</button>
 				</div>
 			</div>
 		</details>`;
@@ -103,167 +108,209 @@ function buildVulnCard(vuln: Vulnerability, isFirst: boolean): string {
 // ── CSS ───────────────────────────────────────────────────────────────
 
 const CSS = /* css */ `
-	:root {
-		color-scheme: dark;
-		--bg: var(--vscode-editor-background);
-		--panel: var(--vscode-sideBar-background);
-		--card: var(--vscode-editorWidget-background);
-		--border: var(--vscode-panel-border);
-		--text: var(--vscode-foreground);
-		--muted: var(--vscode-descriptionForeground);
-		--critical: #E24B4A;
-		--high: #BA7517;
-		--medium: #227AD0;
-		--low: #5CA221;
-		--button-bg: var(--vscode-button-background);
-		--button-text: var(--vscode-button-foreground);
-		--radius: 10px;
+    :root {
+        color-scheme: dark;
+        --bg: var(--vscode-editor-background);
+        --panel: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
+        --card: var(--vscode-editorWidget-background);
+        --border: var(--vscode-panel-border);
+        --text: var(--vscode-foreground);
+        --muted: var(--vscode-descriptionForeground);
+        --critical: #E24B4A;
+        --high: #BA7517;
+        --medium: #227AD0;
+        --low: #5CA221;
+		--file: #569CD6;
+		--reference: #CE9178 ;
+        --button-bg: var(--vscode-button-background);
+        --button-text: var(--vscode-button-foreground);
+        --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        padding: 14px 16px 18px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+    }
+
+    .vuln-stack { display: grid; gap: 12px; }
+
+    details {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--card);
+        overflow: hidden;
+    }
+
+    summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 12px 14px;
+        display: grid;
+        gap: 8px;
+        min-width: 0; /* Ensures the grid allows its children to shrink */
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+	.detail-value.file {
+		color: var(--file);
+		
 	}
 
-	* { box-sizing: border-box; }
-
-	body {
-		margin: 0;
-		padding: 14px 16px 18px;
-		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-		background: var(--bg);
-		color: var(--text);
+	.detail-value.reference {
+		color: var(--reference);
 	}
 
-	.vuln-stack { display: grid; gap: 12px; }
+    .summary-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0; /* Allows the row to shrink */
+    }
 
-	details {
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--card);
-		overflow: hidden;
-	}
+    .summary-left {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        min-width: 0; /* Allows left section to shrink */
+    }
 
-	summary {
-		list-style: none;
-		cursor: pointer;
-		padding: 12px 14px;
-		display: grid;
-		gap: 8px;
-	}
+    .summary-content {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0; /* Allows content column to shrink */
+    }
 
-	summary::-webkit-details-marker { display: none; }
+    .summary-header { 
+        display: flex; 
+        align-items: center; 
+        gap: 10px; 
+        min-width: 0; /* Allows the header row to shrink */
+    }
 
-	.summary-row {
-		display: flex;
-		gap: 10px;
-		align-items: center;
-		justify-content: space-between;
-	}
+    .warning-icon {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        margin-top: 3px;
+        color: var(--muted);
+    }
 
-	.summary-left {
-		display: flex;
-		gap: 12px;
-		align-items: flex-start;
-		min-width: 0;
-	}
+    .warning-icon.critical { color: var(--critical); }
+    .warning-icon.high     { color: var(--high); }
+    .warning-icon.medium   { color: var(--medium); }
+    .warning-icon.low      { color: var(--low); }
 
-	.summary-content {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		min-width: 0;
-	}
+    .summary-file {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        min-width: 0; /* Allows the file container to shrink */
+    }
 
-	.summary-header { display: flex; align-items: center; gap: 10px; }
+    /* Force the file path text to truncate */
+    .summary-file span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+		color: #4EC9B0;
+    }
 
-	.warning-icon {
-		width: 16px;
-		height: 16px;
-		flex: 0 0 auto;
-		margin-top: 3px;
-		color: var(--muted);
-	}
+    .file-icon { width: 14px; height: 14px; flex: 0 0 auto; }
 
-	.warning-icon.critical { color: var(--critical); }
-	.warning-icon.high     { color: var(--high); }
-	.warning-icon.medium   { color: var(--medium); }
-	.warning-icon.low      { color: var(--low); }
+    .badge {
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: white;
+        flex: 0 0 auto; /* Prevents the badge from shrinking */
+    }
 
-	.summary-file {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		color: var(--muted);
-	}
+    .badge.critical { background-color: var(--critical); }
+    .badge.high     { background-color: var(--high); }
+    .badge.medium   { background-color: var(--medium); }
+    .badge.low      { background-color: var(--low); }
 
-	.file-icon { width: 14px; height: 14px; flex: 0 0 auto; }
+    .issue-title {
+        font-weight: 600;
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 
-	.badge {
-		padding: 4px 8px;
-		border-radius: 3px;
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		color: white;
-	}
+    /* Force the CWE/OWASP meta text to truncate */
+    .issue-meta { 
+        font-size: 12px; 
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 
-	.badge.critical { background-color: var(--critical); }
-	.badge.high     { background-color: var(--high); }
-	.badge.medium   { background-color: var(--medium); }
-	.badge.low      { background-color: var(--low); }
+    .chevron {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto; /* Prevents chevron from shrinking or squishing */
+        color: var(--muted);
+        transition: transform 0.2s ease;
+    }
 
-	.issue-title {
-		font-weight: 600;
-		font-size: 14px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
+    details[open] .chevron { transform: rotate(180deg); }
 
-	.issue-meta { font-size: 12px; color: var(--muted); }
+    .details-panel {
+        border-top: 1px solid var(--border);
+        background: var(--panel);
+        padding: 12px 14px 14px;
+        display: grid;
+        gap: 12px;
+    }
 
-	.chevron {
-		width: 16px;
-		height: 16px;
-		flex: 0 0 auto;
-		color: var(--muted);
-		transition: transform 0.2s ease;
-	}
+    .detail-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 
-	details[open] .chevron { transform: rotate(180deg); }
+    .detail-row.span-2 { grid-column: 1 / -1; }
+    .detail-row { display: grid; gap: 6px; }
 
-	.details-panel {
-		border-top: 1px solid var(--border);
-		background: var(--panel);
-		padding: 12px 14px 14px;
-		display: grid;
-		gap: 12px;
-	}
+    .detail-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+    }
 
-	.detail-grid {
-		display: grid;
-		gap: 12px;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
+    /* Note: Allowing detail values to wrap naturally so they remain readable */
+    .detail-value { font-size: 13px; color: var(--text); line-height: 1.4; word-break: break-word; }
 
-	.detail-row.span-2 { grid-column: 1 / -1; }
-	.detail-row { display: grid; gap: 6px; }
+    .cta-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+    }
 
-	.detail-label {
-		font-size: 11px;
-		text-transform: uppercase;
-		color: var(--muted);
-		font-weight: 600;
-	}
-
-	.detail-value { font-size: 13px; color: var(--text); line-height: 1.4; }
-
-	.cta-row {
-		display: flex;
-		gap: 10px;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.action-button {
+    .action-button {
+    /* New Flexbox properties to align the text and icon */
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    
+    /* Your existing properties */
 		border: none;
 		border-radius: 3px;
 		padding: 8px 14px;
@@ -275,12 +322,19 @@ const CSS = /* css */ `
 		cursor: not-allowed;
 	}
 
-	@media (max-width: 560px) {
-		body { padding: 12px; }
-		.detail-grid { grid-template-columns: 1fr; }
-		.summary-row { flex-direction: column; align-items: flex-start; }
-		.cta-row { flex-direction: column; align-items: flex-start; }
+	/* Size and prevent the icon from shrinking */
+	.button-icon {
+		width: 14px;
+		height: 14px;
+		flex: 0 0 auto;
 	}
+
+    @media (max-width: 560px) {
+        body { padding: 12px; }
+        .detail-grid { grid-template-columns: 1fr; }
+        .cta-row { flex-direction: column; align-items: flex-start; }
+        /* Removed .summary-row override so the chevron remains horizontally aligned */
+    }
 `;
 
 // ── Public API ────────────────────────────────────────────────────────
