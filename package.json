@@ -10,6 +10,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onLanguage:java",
     "onView:ariadne.panel.activeVulnerabilities",
     "onView:ariadne.panel.sessionMetrics"
   ],
