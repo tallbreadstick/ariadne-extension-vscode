@@ -51,29 +51,29 @@ export const mockFeedbackFindings: FeedbackFinding[] = [
 		suggestion: 'Load secrets from a secure vault or environment vars.',
 	},
 	{
-		type: 'Sensitive Data in Logs',
-		cwe: 'CWE-200',
-		owasp: 'OWASP A09:2021 - Security Logging and Monitoring Failures',
+		type: 'Sensitive Data in Log — user value exposed in log statement',
+		cwe: 'CWE-789',
+		owasp: 'OWASP A09:2021 - Logging & Monitoring Failures',
 		severity: 'medium',
 		path: LOGIN_CONTROLLER,
 		line: 8,
 		vulnerability:
-			'User input is logged verbatim in a login attempt message.',
+			'User-supplied values are logged verbatim, which may leak sensitive data to log aggregators or anyone with access to the application logs.',
 		impact:
-			'Sensitive values may leak to log aggregation systems.',
-		suggestion: 'Redact or hash user input before logging.',
+			'Sensitive data exposure through log files can lead to unauthorized access and privacy violations.',
+		suggestion: 'Redact sensitive information before logging, or use structured logging with field masking.',
 	},
 	{
-		type: 'Token Exposure',
-		cwe: 'CWE-201',
-		owasp: 'OWASP A02:2021 - Cryptographic Failures',
+		type: 'Token Exposed in Response — access token returned in plain response body',
+		cwe: 'CWE-200',
+		owasp: 'OWASP A01:2021',
 		severity: 'low',
 		path: LOGIN_CONTROLLER,
 		line: 9,
 		vulnerability:
-			'Access token is returned in a plain response body.',
+			'The generated access token is returned directly in the plain response body without transport-layer verification, potentially exposing it to logging middleware or interception.',
 		impact:
-			'Tokens can be intercepted or recorded by middleware.',
-		suggestion: 'Return tokens via secure headers and use TLS.',
+			'Tokens can be intercepted during transit or recorded by logging middleware, allowing attackers to impersonate authenticated users.',
+		suggestion: 'Return tokens via secure, HttpOnly cookies or use TLS with proper header-based token delivery.',
 	},
 ];
