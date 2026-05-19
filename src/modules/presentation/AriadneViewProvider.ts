@@ -12,6 +12,7 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 			// Scripts enabled so the panel can receive postMessage updates
 			// from the extension host once the backend is wired up.
 			enableScripts: true,
+			enableCommandUris: true,
 		};
 
 		webviewView.webview.html = this.initialHtml;

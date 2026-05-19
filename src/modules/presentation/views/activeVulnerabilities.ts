@@ -8,6 +8,8 @@
 
 import { Vulnerability, Severity } from '../mock/types';
 
+const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function capitalize(s: string): string {
@@ -56,6 +58,8 @@ function buildVulnCard(vuln: Vulnerability, isFirst: boolean): string {
 	const label = capitalize(vuln.severity);
 	const location = `${vuln.filePath} : Line ${vuln.line}`;
 	const openAttr = isFirst ? ' open' : '';
+    const commandArgs = encodeURIComponent(JSON.stringify([vuln.cwe, vuln.title]));
+    const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
 
 	return /* html */ `
 		<details${openAttr}>
@@ -94,12 +98,12 @@ function buildVulnCard(vuln: Vulnerability, isFirst: boolean): string {
 					</div>
 				</div>
 				<div class="cta-row">
-					<button class="action-button" type="button" disabled>
+                    <a class="action-button" role="button" href="${feedbackHref}">
 						<span>Ask Ariadne</span>
 						<svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 							<path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8l-4.357-4.357.618-.62L11 7.69v.62L6.333 13l-.618-.619L10.072 8z"/>
 						</svg>
-					</button>
+                    </a>
 				</div>
 			</div>
 		</details>`;
@@ -309,6 +313,8 @@ const CSS = /* css */ `
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    text-decoration: none;
+    user-select: none;
     
     /* Your existing properties */
 		border: none;
@@ -318,9 +324,14 @@ const CSS = /* css */ `
 		font-weight: 600;
 		background: var(--button-bg);
 		color: var(--button-text);
-		opacity: 0.6;
-		cursor: not-allowed;
+        opacity: 1;
+        cursor: pointer;
+        transition: filter 0.15s ease, opacity 0.15s ease;
 	}
+
+    .action-button:hover {
+        filter: brightness(1.08);
+    }
 
 	/* Size and prevent the icon from shrinking */
 	.button-icon {

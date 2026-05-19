@@ -8,24 +8,23 @@ import { runSession } from './modules/detection/bridge/iostream';
 import { buildActiveVulnerabilitiesHtml } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/presentation/views/sessionMetrics';
 
+// ── Feedback panel ────────────────────────────────────────────────────
+import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
+
 // ── Data layer (mock) ─────────────────────────────────────────────────
-// TODO: Replace these imports with real API calls when the backend is ready.
 // The view builders above are decoupled from the data source — only this
-// section needs to change.
+// section needs to change when the backend is ready.
 import {
 	mockVulnerabilities,
 	mockSessionMetrics,
 } from './modules/presentation/mock/mockData';
+import { mockFeedbackFindings } from './modules/feedback/mock/mockData.js';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	console.log(
-		'Congratulations, your extension "ariadne-extension-vscode" is now active!',
-	);
-
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
@@ -54,14 +53,36 @@ export function activate(context: vscode.ExtensionContext) {
 		sessionMetricsProvider,
 	);
 
+	const openFeedbackPanel = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openFeedbackPanel',
+		(cwe?: string, title?: string) => {
+			const finding =
+				mockFeedbackFindings.find(
+					(item) => item.cwe === cwe || item.type === title,
+				) ?? mockFeedbackFindings[0];
+
+			const panel = vscode.window.createWebviewPanel(
+				'ariadne.feedback',
+				'Ariadne: Explanation',
+				vscode.ViewColumn.Beside,
+				{ enableScripts: false },
+			);
+
+			panel.webview.html = buildFeedbackPanelHtml(finding);
+		},
+	);
+
 	context.subscriptions.push(
 		disposable,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
+		openFeedbackPanel,
 	);
 
 	runSession();
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate(): void {
+	return undefined;
+}
