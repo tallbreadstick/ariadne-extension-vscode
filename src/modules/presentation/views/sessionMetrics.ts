@@ -6,7 +6,7 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { SessionMetrics } from '../mock/types';
+import { SessionMetrics, SessionNotification } from '../mock/types';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
@@ -67,13 +67,9 @@ function buildMetricCard(title: string, value: number): string {
 		</div>`;
 }
 
-function buildNotification(metrics: SessionMetrics): string {
-	if (!metrics.notification) {
-		return '';
-	}
-	const { message, detail, timestamp } = metrics.notification;
+function buildNotificationItem(notif: SessionNotification): string {
+	const { message, detail, timestamp } = notif;
 	return /* html */ `
-		<div class="divider"></div>
 		<div class="notif-card">
 			<div class="notif-body">
 				${NOTIFICATION_ICON_SVG}
@@ -84,6 +80,18 @@ function buildNotification(metrics: SessionMetrics): string {
 				</div>
 			</div>
 			<button class="notif-dismiss" type="button" aria-label="Dismiss">&#x2715;</button>
+		</div>`;
+}
+
+function buildNotificationFeed(metrics: SessionMetrics): string {
+	if (!metrics.notifications || metrics.notifications.length === 0) {
+		return '';
+	}
+	const items = metrics.notifications.map(buildNotificationItem).join('\n');
+	return /* html */ `
+		<div class="divider"></div>
+		<div class="notif-feed">
+			${items}
 		</div>`;
 }
 
@@ -206,7 +214,37 @@ const CSS = /* css */ `
 
 	.divider { height: 1px; background: rgba(58, 58, 58, 0.7); }
 
-	/* ── Notification banner ── */
+	/* ── Notification feed (scrollable) ── */
+	.notif-feed {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-height: 260px;
+		overflow-y: auto;
+		padding-right: 2px;
+
+		/* Custom scrollbar */
+		scrollbar-width: thin;
+		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
+	}
+
+	.notif-feed::-webkit-scrollbar {
+		width: 4px;
+	}
+
+	.notif-feed::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.notif-feed::-webkit-scrollbar-thumb {
+		background-color: rgba(70, 213, 196, 0.3);
+		border-radius: 4px;
+	}
+
+	.notif-feed::-webkit-scrollbar-thumb:hover {
+		background-color: rgba(70, 213, 196, 0.6);
+	}
+
 	.notif-card {
 		display: flex;
 		align-items: flex-start;
@@ -216,6 +254,7 @@ const CSS = /* css */ `
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		padding: 12px 14px;
+		flex-shrink: 0;
 	}
 
 	.notif-body {
@@ -237,7 +276,6 @@ const CSS = /* css */ `
 
 	.notif-message { font-size: 13px; font-weight: 600; color: var(--text); }
 	.notif-detail  { font-size: 12px; color: var(--text); line-height: 1.4; }
-
 	.notif-timestamp { font-size: 11px; color: var(--muted); }
 
 	.notif-dismiss {
@@ -311,7 +349,7 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 				</div>
 			</div>
 
-			${buildNotification(metrics)}
+			${buildNotificationFeed(metrics)}
 		</section>
 	</body>
 </html>`;
