@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import { AriadneSession } from './iostream';
 
-/** Debounce interval per SRS: 300–500 ms. */
+/** Debounce interval for incremental AST updates */
 const DEBOUNCE_MS = 400;
 
-/** Per-file debounce timers for UpdateFile messages. */
+/** Per-file debounce timers */
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function isJava(doc: vscode.TextDocument): boolean {
@@ -12,37 +12,48 @@ function isJava(doc: vscode.TextDocument): boolean {
 }
 
 /**
- * Registers VS Code document lifecycle events and translates them
- * into IPC messages sent to the Ariadne SAST engine via the session bridge.
+ * Registers VS Code filesystem + editor events and converts them
+ * into structured IPC messages for the Rust SAST engine.
  *
- * Call once from `activate()` after the session is started.
+ * This layer acts as:
+ * VS Code API → normalized semantic events → Ariadne protocol
  */
 export function registerDocumentEvents(
 	context: vscode.ExtensionContext,
 	session: AriadneSession,
 ): void {
-	// INIT — send workspace root as the very first message.
+
+	// ============================================================
+	// INIT
+	// ============================================================
 	const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '/';
 	console.log(`[Ariadne TS] Init root=${root}`);
 	session.send({ type: 'Init', root });
 
-	// OPEN already-visible Java documents (open before the extension activated).
-	vscode.workspace.textDocuments.filter(isJava).forEach((doc) => {
-		console.log(`[Ariadne TS] OpenFile (pre-existing) path=${doc.uri.fsPath}`);
-		session.send({
-			type: 'OpenFile',
-			path: doc.uri.fsPath,
-			content: doc.getText(),
-		});
-	});
+	// ============================================================
+	// INITIAL OPEN FILES
+	// ============================================================
+	vscode.workspace.textDocuments
+		.filter(isJava)
+		.forEach((doc) => {
+			console.log(`[Ariadne TS] OpenFile (preloaded) ${doc.uri.fsPath}`);
 
-	// OPEN FILE — fires when a document is first loaded into VS Code.
+			session.send({
+				type: 'OpenFile',
+				path: doc.uri.fsPath,
+				content: doc.getText(),
+			});
+		});
+
+	// ============================================================
+	// FILE OPEN
+	// ============================================================
 	context.subscriptions.push(
 		vscode.workspace.onDidOpenTextDocument((doc) => {
-			if (!isJava(doc)) {
-				return;
-			}
-			console.log(`[Ariadne TS] OpenFile path=${doc.uri.fsPath}`);
+			if (!isJava(doc)) return;
+
+			console.log(`[Ariadne TS] OpenFile ${doc.uri.fsPath}`);
+
 			session.send({
 				type: 'OpenFile',
 				path: doc.uri.fsPath,
@@ -51,24 +62,72 @@ export function registerDocumentEvents(
 		}),
 	);
 
-	// UPDATE FILE — debounced at 400 ms.
-	// VS Code provides rangeOffset (start byte) and rangeLength (replaced byte count),
-	// which map directly to the TextEdit fields the Rust engine expects.
+	// ============================================================
+	// FILE CREATE (NEW FILE)
+	// ============================================================
+	context.subscriptions.push(
+		vscode.workspace.onDidCreateFiles((event) => {
+			event.files.forEach((file) => {
+				if (file.fsPath.endsWith('.java')) {
+					console.log(`[Ariadne TS] CreateFile ${file.fsPath}`);
+
+					session.send({
+						type: 'CreateFile',
+						path: file.fsPath,
+						content: '',
+					});
+				}
+			});
+		}),
+	);
+
+	// ============================================================
+	// FILE DELETE
+	// ============================================================
+	context.subscriptions.push(
+		vscode.workspace.onDidDeleteFiles((event) => {
+			event.files.forEach((file) => {
+				console.log(`[Ariadne TS] DeleteFile ${file.fsPath}`);
+
+				session.send({
+					type: 'DeleteFile',
+					path: file.fsPath,
+				});
+			});
+		}),
+	);
+
+	// ============================================================
+	// FILE RENAME
+	// ============================================================
+	context.subscriptions.push(
+		vscode.workspace.onDidRenameFiles((event) => {
+			event.files.forEach((file) => {
+				console.log(
+					`[Ariadne TS] RenameFile ${file.oldUri.fsPath} → ${file.newUri.fsPath}`,
+				);
+
+				session.send({
+					type: 'RenameFile',
+					old_path: file.oldUri.fsPath,
+					new_path: file.newUri.fsPath,
+				});
+			});
+		}),
+	);
+
+	// ============================================================
+	// UPDATE FILE (DEBOUNCED)
+	// ============================================================
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeTextDocument((event) => {
-			if (!isJava(event.document)) {
-				return;
-			}
-			if (event.contentChanges.length === 0) {
-				return;
-			}
+			if (!isJava(event.document)) return;
+			if (event.contentChanges.length === 0) return;
 
 			const path = event.document.uri.fsPath;
 
 			const existing = debounceTimers.get(path);
-			if (existing) {
-				clearTimeout(existing);
-			}
+			if (existing) clearTimeout(existing);
 
 			const edits = event.contentChanges.map((change) => ({
 				start: change.rangeOffset,
@@ -78,30 +137,43 @@ export function registerDocumentEvents(
 
 			const timer = setTimeout(() => {
 				debounceTimers.delete(path);
-				console.log(`[Ariadne TS] UpdateFile path=${path} edits=${edits.length}`);
-				session.send({ type: 'UpdateFile', path, edits });
+
+				console.log(
+					`[Ariadne TS] UpdateFile ${path} edits=${edits.length}`,
+				);
+
+				session.send({
+					type: 'UpdateFile',
+					path,
+					edits,
+				});
 			}, DEBOUNCE_MS);
 
 			debounceTimers.set(path, timer);
 		}),
 	);
 
-	// CLOSE FILE — cancel any pending debounce for this file before notifying.
+	// ============================================================
+	// CLOSE FILE
+	// ============================================================
 	context.subscriptions.push(
 		vscode.workspace.onDidCloseTextDocument((doc) => {
-			if (!isJava(doc)) {
-				return;
-			}
+			if (!isJava(doc)) return;
 
 			const path = doc.uri.fsPath;
+
 			const existing = debounceTimers.get(path);
 			if (existing) {
 				clearTimeout(existing);
 				debounceTimers.delete(path);
 			}
 
-			console.log(`[Ariadne TS] CloseFile path=${path}`);
-			session.send({ type: 'CloseFile', path });
+			console.log(`[Ariadne TS] CloseFile ${path}`);
+
+			session.send({
+				type: 'CloseFile',
+				path,
+			});
 		}),
 	);
 }
