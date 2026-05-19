@@ -17,7 +17,7 @@ import type { FeedbackFinding } from './types.js';
 
 // Shared file path used across all mock vulnerability findings.
 const LOGIN_CONTROLLER =
-	'src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java';
+	'LoginController.java';
 
 /**
  * Mock vulnerability findings — mirrors what the Feedback module shows
