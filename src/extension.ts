@@ -27,310 +27,385 @@ export function activate(context: vscode.ExtensionContext) {
 	const baseHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body></body></html>';
 	const activeVulnsHtml = `<!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Ariadne Active Vulnerabilities</title>
-		<style>
-			:root {
-				color-scheme: dark;
-				--bg: var(--vscode-editor-background);
-				--panel: var(--vscode-sideBar-background);
-				--card: var(--vscode-editorWidget-background);
-				--border: var(--vscode-panel-border);
-				--text: var(--vscode-foreground);
-				--muted: var(--vscode-descriptionForeground);
-				--critical: var(--vscode-errorForeground);
-				--high: var(--vscode-charts-orange);
-				--medium: var(--vscode-charts-yellow);
-				--low: var(--vscode-charts-blue);
-				--button-bg: var(--vscode-button-background);
-				--button-text: var(--vscode-button-foreground);
-				--radius: 10px;
-			}
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Ariadne Active Vulnerabilities</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: var(--vscode-editor-background);
+                --panel: var(--vscode-sideBar-background);
+                --card: var(--vscode-editorWidget-background);
+                --border: var(--vscode-panel-border);
+                --text: var(--vscode-foreground);
+                --muted: var(--vscode-descriptionForeground);
+                --critical: #E24B4A;
+                --high: #BA7517;
+                --medium: #227AD0;
+                --low: #5CA221;
+                --button-bg: var(--vscode-button-background);
+                --button-text: var(--vscode-button-foreground);
+                --radius: 10px;
+            }
 
-			* {
-				box-sizing: border-box;
-			}
+            * {
+                box-sizing: border-box;
+            }
 
-			body {
-				margin: 0;
-				padding: 14px 16px 18px;
-				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-				background: var(--bg);
-				color: var(--text);
-			}
+            body {
+                margin: 0;
+                padding: 14px 16px 18px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                background: var(--bg);
+                color: var(--text);
+            }
 
-			.vuln-stack {
-				display: grid;
-				gap: 12px;
-			}
+            .vuln-stack {
+                display: grid;
+                gap: 12px;
+            }
 
-			details {
-				border: 1px solid var(--border);
-				border-radius: var(--radius);
-				background: var(--card);
-				overflow: hidden;
-			}
+            details {
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                background: var(--card);
+                overflow: hidden;
+            }
 
-			summary {
-				list-style: none;
-				cursor: pointer;
-				padding: 12px 14px;
-				display: grid;
-				gap: 8px;
-			}
+            summary {
+                list-style: none;
+                cursor: pointer;
+                padding: 12px 14px;
+                display: grid;
+                gap: 8px;
+            }
 
-			summary::-webkit-details-marker {
-				display: none;
-			}
+            summary::-webkit-details-marker {
+                display: none;
+            }
 
-			.summary-row {
-				display: flex;
-				gap: 10px;
-				align-items: center;
-				justify-content: space-between;
-			}
+            .summary-row {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                justify-content: space-between;
+            }
 
-			.summary-left {
-				display: flex;
-				gap: 10px;
-				align-items: center;
-				min-width: 0;
-			}
+            /* --- UPDATED SUMMARY LAYOUT --- */
+            .summary-left {
+                display: flex;
+                gap: 12px;
+                align-items: flex-start; 
+                min-width: 0;
+            }
 
-			.badge {
-				padding: 2px 8px;
-				border-radius: 999px;
-				font-size: 11px;
-				font-weight: 600;
-				text-transform: uppercase;
-				letter-spacing: 0.04em;
-				color: var(--text);
-				border: 1px solid currentColor;
-			}
+            .summary-content {
+                display: flex;
+                flex-direction: column;
+                gap: 8px; 
+                min-width: 0; 
+            }
 
-			.badge.critical { color: var(--critical); }
-			.badge.high { color: var(--high); }
-			.badge.medium { color: var(--medium); }
-			.badge.low { color: var(--low); }
+            .summary-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
 
-			.issue-title {
-				font-weight: 600;
-				font-size: 14px;
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
-			}
+            .warning-icon {
+                width: 16px;
+                height: 16px;
+                flex: 0 0 auto;
+                margin-top: 3px; 
+                color: var(--muted); /* Fallback color */
+            }
 
-			.issue-meta {
-				font-size: 12px;
-				color: var(--muted);
-			}
+            /* Added severity colors for the warning icons */
+            .warning-icon.critical { color: var(--critical); }
+            .warning-icon.high { color: var(--high); }
+            .warning-icon.medium { color: var(--medium); }
+            .warning-icon.low { color: var(--low); }
 
-			.chevron {
-				width: 16px;
-				height: 16px;
-				flex: 0 0 auto;
-				color: var(--muted);
-				transition: transform 0.2s ease;
-			}
+            .summary-file {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                color: var(--muted);
+            }
 
-			details[open] .chevron {
-				transform: rotate(180deg);
-			}
+            .file-icon {
+                width: 14px;
+                height: 14px;
+                flex: 0 0 auto;
+            }
+            /* ------------------------------ */
 
-			.details-panel {
-				border-top: 1px solid var(--border);
-				background: var(--panel);
-				padding: 12px 14px 14px;
-				display: grid;
-				gap: 12px;
-			}
+            .badge {
+                padding: 4px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                color: var(--text);
+            }
 
-			.detail-grid {
-				display: grid;
-				gap: 12px;
-				grid-template-columns: repeat(2, minmax(0, 1fr));
-			}
+            .badge.critical { color: white; background-color: var(--critical); }
+            .badge.high { color: white; background-color: var(--high); }
+            .badge.medium { color: white; background-color: var(--medium); }
+            .badge.low { color: white; background-color: var(--low); }
 
-			.detail-row.span-2 {
-				grid-column: 1 / -1;
-			}
+            .issue-title {
+                font-weight: 600;
+                font-size: 14px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
 
-			.detail-row {
-				display: grid;
-				gap: 6px;
-			}
+            .issue-meta {
+                font-size: 12px;
+                color: var(--muted);
+            }
 
-			.detail-label {
-				font-size: 11px;
-				text-transform: uppercase;
-				color: var(--muted);
-				font-weight: 600;
-			}
+            .chevron {
+                width: 16px;
+                height: 16px;
+                flex: 0 0 auto;
+                color: var(--muted);
+                transition: transform 0.2s ease;
+            }
 
-			.detail-value {
-				font-size: 13px;
-				color: var(--text);
-				line-height: 1.4;
-			}
+            details[open] .chevron {
+                transform: rotate(180deg);
+            }
 
-			.cta-row {
-				display: flex;
-				gap: 10px;
-				flex-wrap: wrap;
-				align-items: center;
-				justify-content: space-between;
-			}
+            /* --- DETAILS PANEL --- */
+            .details-panel {
+                border-top: 1px solid var(--border);
+                background: var(--panel);
+                padding: 12px 14px 14px;
+                display: grid;
+                gap: 12px;
+            }
 
-			.action-button {
-				border: none;
-				border-radius: 3px;
-				padding: 8px 14px;
-				font-size: 12px;
-				font-weight: 600;
-				background: var(--button-bg);
-				color: var(--button-text);
-				opacity: 0.6;
-				cursor: not-allowed;
-			}
+            .detail-grid {
+                display: grid;
+                gap: 12px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
 
-			@media (max-width: 560px) {
-				body {
-					padding: 12px;
-				}
+            .detail-row.span-2 {
+                grid-column: 1 / -1;
+            }
 
-				.detail-grid {
-					grid-template-columns: 1fr;
-				}
+            .detail-row {
+                display: grid;
+                gap: 6px;
+            }
 
-				.summary-row {
-					flex-direction: column;
-					align-items: flex-start;
-				}
+            .detail-label {
+                font-size: 11px;
+                text-transform: uppercase;
+                color: var(--muted);
+                font-weight: 600;
+            }
 
-				.cta-row {
-					flex-direction: column;
-					align-items: flex-start;
-				}
-			}
-		</style>
-	</head>
-	<body>
-		<section class="vuln-stack">
-			<details open>
-				<summary>
-					<div class="summary-row">
-						<div class="summary-left">
-							<span class="badge critical">Critical</span>
-							<div>
-								<div class="issue-title">SQL Injection — unsanitized input in query string</div>
-								<div class="issue-meta">CWE-89 · OWASP A03</div>
-							</div>
-						</div>
-						<svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-						</svg>
-					</div>
-				</summary>
-				<div class="details-panel">
-					<div class="detail-grid">
-						<div class="detail-row span-2">
-							<div class="detail-label">Description</div>
-							<div class="detail-value">
-								Unsanitized user input is concatenated directly into a SQL query string. An attacker can manipulate the
-								query to bypass authentication or exfiltrate the database.
-							</div>
-						</div>
-						<div class="detail-row">
-							<div class="detail-label">File Location</div>
-							<div class="detail-value">src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 3</div>
-						</div>
-						<div class="detail-row">
-							<div class="detail-label">CWE · OWASP Reference</div>
-							<div class="detail-value">CWE-89 · OWASP A03</div>
-						</div>
-					</div>
-					<div class="cta-row">
-						<button class="action-button" type="button" disabled>View Details</button>
-					</div>
-				</div>
-			</details>
+            .detail-value {
+                font-size: 13px;
+                color: var(--text);
+                line-height: 1.4;
+            }
 
-			<details>
-				<summary>
-					<div class="summary-row">
-						<div class="summary-left">
-							<span class="badge high">High</span>
-							<div>
-								<div class="issue-title">Hardcoded Secret — API key in variable assignment</div>
-								<div class="issue-meta">CWE-798</div>
-							</div>
-						</div>
-						<svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-						</svg>
-					</div>
-				</summary>
-				<div class="details-panel">
-					<div class="detail-grid">
-						<div class="detail-row span-2">
-							<div class="detail-label">Description</div>
-							<div class="detail-value">An API key is hardcoded in a variable assignment, which exposes a secret in source control.</div>
-						</div>
-						<div class="detail-row">
-							<div class="detail-label">File Location</div>
-							<div class="detail-value">src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 7</div>
-						</div>
-						<div class="detail-row">
-							<div class="detail-label">CWE · OWASP Reference</div>
-							<div class="detail-value">CWE-798</div>
-						</div>
-					</div>
-					<div class="cta-row">
-						<button class="action-button" type="button" disabled>View Details</button>
-					</div>
-				</div>
-			</details>
+            .cta-row {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: space-between;
+            }
 
-			<details>
-				<summary>
-					<div class="summary-row">
-						<div class="summary-left">
-							<span class="badge medium">Medium</span>
-							<div>
-								<div class="issue-title">Sensitive Data in Log — user value exposed in log statement</div>
-								<div class="issue-meta">CWE-789</div>
-							</div>
-						</div>
-						<svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-						</svg>
-					</div>
-				</summary>
-				<div class="details-panel">
-					<div class="detail-grid">
-						<div class="detail-row span-2">
-							<div class="detail-label">Description</div>
-							<div class="detail-value">User-supplied values are logged verbatim, which may leak sensitive data to logs.</div>
-						</div>
-						<div class="detail-row">
-							<div class="detail-label">File Location</div>
-							<div class="detail-value">src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 8</div>
-						</div>
-						<div class="detail-row">
-							<div class="detail-label">CWE · OWASP Reference</div>
-							<div class="detail-value">CWE-789</div>
-						</div>
-					</div>
-					<div class="cta-row">
-						<button class="action-button" type="button" disabled>View Details</button>
-					</div>
-				</div>
-			</details>
-		</section>
-	</body>
+            .action-button {
+                border: none;
+                border-radius: 3px;
+                padding: 8px 14px;
+                font-size: 12px;
+                font-weight: 600;
+                background: var(--button-bg);
+                color: var(--button-text);
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            @media (max-width: 560px) {
+                body {
+                    padding: 12px;
+                }
+
+                .detail-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .summary-row {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+
+                .cta-row {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <section class="vuln-stack">
+            <details open>
+                <summary>
+                    <div class="summary-row">
+                        <div class="summary-left">
+                            <svg class="warning-icon critical" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.72L8 2.28zM7.5 5.5h1v4h-1v-4zm.5 6a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+                            </svg>
+                            <div class="summary-content">
+                                <div class="summary-header">
+                                    <span class="badge critical">Critical</span>
+                                    <span class="issue-meta">CWE-89 · OWASP A03</span>
+                                </div>
+                                <div class="issue-title">SQL Injection — unsanitized input in query string</div>
+                                <div class="summary-file">
+                                    <svg class="file-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                        <path d="M13.71 4.29l-3-3L10 1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V5l-.29-.71zM10 2.41L12.59 5H10V2.41zM4 14V2h5v4h4v8H4z"/>
+                                    </svg>
+                                    <span>src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 3</span>
+                                </div>
+                            </div>
+                        </div>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                </summary>
+                <div class="details-panel">
+                    <div class="detail-grid">
+                        <div class="detail-row span-2">
+                            <div class="detail-label">Description</div>
+                            <div class="detail-value">
+                                Unsanitized user input is concatenated directly into a SQL query string. An attacker can manipulate the
+                                query to bypass authentication or exfiltrate the database.
+                            </div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">File Location</div>
+                            <div class="detail-value">src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 3</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">CWE · OWASP Reference</div>
+                            <div class="detail-value">CWE-89 · OWASP A03</div>
+                        </div>
+                    </div>
+                    <div class="cta-row">
+                        <button class="action-button" type="button" disabled>View Details</button>
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>
+                    <div class="summary-row">
+                        <div class="summary-left">
+                            <svg class="warning-icon high" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.72L8 2.28zM7.5 5.5h1v4h-1v-4zm.5 6a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+                            </svg>
+                            <div class="summary-content">
+                                <div class="summary-header">
+                                    <span class="badge high">High</span>
+                                    <span class="issue-meta">CWE-798</span>
+                                </div>
+                                <div class="issue-title">Hardcoded Secret — API key in variable assignment</div>
+                                <div class="summary-file">
+                                    <svg class="file-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                        <path d="M13.71 4.29l-3-3L10 1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V5l-.29-.71zM10 2.41L12.59 5H10V2.41zM4 14V2h5v4h4v8H4z"/>
+                                    </svg>
+                                    <span>src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 7</span>
+                                </div>
+                            </div>
+                        </div>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                </summary>
+                <div class="details-panel">
+                    <div class="detail-grid">
+                        <div class="detail-row span-2">
+                            <div class="detail-label">Description</div>
+                            <div class="detail-value">An API key is hardcoded in a variable assignment, which exposes a secret in source control.</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">File Location</div>
+                            <div class="detail-value">src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 7</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">CWE · OWASP Reference</div>
+                            <div class="detail-value">CWE-798</div>
+                        </div>
+                    </div>
+                    <div class="cta-row">
+                        <button class="action-button" type="button" disabled>View Details</button>
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>
+                    <div class="summary-row">
+                        <div class="summary-left">
+                            <svg class="warning-icon medium" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.72L8 2.28zM7.5 5.5h1v4h-1v-4zm.5 6a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+                            </svg>
+                            <div class="summary-content">
+                                <div class="summary-header">
+                                    <span class="badge medium">Medium</span>
+                                    <span class="issue-meta">CWE-789</span>
+                                </div>
+                                <div class="issue-title">Sensitive Data in Log — user value exposed in log statement</div>
+                                <div class="summary-file">
+                                    <svg class="file-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                        <path d="M13.71 4.29l-3-3L10 1H4a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V5l-.29-.71zM10 2.41L12.59 5H10V2.41zM4 14V2h5v4h4v8H4z"/>
+                                    </svg>
+                                    <span>src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 8</span>
+                                </div>
+                            </div>
+                        </div>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                </summary>
+                <div class="details-panel">
+                    <div class="detail-grid">
+                        <div class="detail-row span-2">
+                            <div class="detail-label">Description</div>
+                            <div class="detail-value">User-supplied values are logged verbatim, which may leak sensitive data to logs.</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">File Location</div>
+                            <div class="detail-value">src/java/com/edu/cit/capstone/ariadne/features/user/LoginController.java : Line 8</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">CWE · OWASP Reference</div>
+                            <div class="detail-value">CWE-789</div>
+                        </div>
+                    </div>
+                    <div class="cta-row">
+                        <button class="action-button" type="button" disabled>View Details</button>
+                    </div>
+                </div>
+            </details>
+        </section>
+    </body>
 </html>`;
 	const sessionMetricsHtml = `<!DOCTYPE html>
 <html lang="en">
