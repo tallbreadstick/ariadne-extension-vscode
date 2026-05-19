@@ -73,6 +73,6 @@ export interface SessionMetrics {
 	low: number;
 	/** Trend breakdown for this session. */
 	trends: TrendData;
-	/** Optional banner notification to display at the bottom of the panel. */
-	notification?: SessionNotification;
+	/** Optional list of notifications to display in a scrollable feed at the bottom of the panel. */
+	notifications?: SessionNotification[];
 }
