@@ -68,6 +68,11 @@ export function activate(context: vscode.ExtensionContext) {
 				{ enableScripts: false },
 			);
 
+			panel.iconPath = {
+				light: vscode.Uri.joinPath(context.extensionUri, 'media', 'shield-light.svg'),
+				dark: vscode.Uri.joinPath(context.extensionUri, 'media', 'shield.svg'),
+			};
+
 			panel.webview.html = buildFeedbackPanelHtml(finding);
 		},
 	);
