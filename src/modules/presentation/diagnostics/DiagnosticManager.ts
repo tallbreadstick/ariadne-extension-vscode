@@ -17,6 +17,15 @@ const SEVERITY_BG: Record<AriadneFinding["severity"], string> = {
   Low:      "#608B4E33",
 };
 
+// ── UC-2.3: Severity → DiagnosticSeverity mapping ─────────────────────
+// Used when publishing zero-width diagnostics to the Problems Panel.
+const SEVERITY_TO_DIAGNOSTIC: Record<AriadneFinding["severity"], vscode.DiagnosticSeverity> = {
+  Critical: vscode.DiagnosticSeverity.Error,
+  High:     vscode.DiagnosticSeverity.Warning,
+  Medium:   vscode.DiagnosticSeverity.Warning,
+  Low:      vscode.DiagnosticSeverity.Information,
+};
+
 export class DiagnosticManager {
   private readonly decorationTypes: Record<
     AriadneFinding["severity"],
@@ -24,6 +33,15 @@ export class DiagnosticManager {
   >;
 
   private readonly findingsByFile = new Map<string, AriadneFinding[]>();
+
+  /**
+   * UC-2.3: A DiagnosticCollection named "ariadne" that populates the
+   * Problems Panel.  Each entry uses a zero-width range at column 0 so
+   * VS Code's built-in diagnostic hover toolbar does NOT appear over the
+   * actual code squiggles (which are drawn by TextEditorDecorationType
+   * on the real code range).
+   */
+  private readonly diagnosticCollection: vscode.DiagnosticCollection;
 
   constructor(context: vscode.ExtensionContext) {
     this.decorationTypes = {
@@ -33,7 +51,13 @@ export class DiagnosticManager {
       Low:      this._makeDecorationType("Low"),
     };
 
-    context.subscriptions.push(...Object.values(this.decorationTypes));
+    // UC-2.3: Create the "ariadne" DiagnosticCollection for Problems Panel.
+    this.diagnosticCollection = vscode.languages.createDiagnosticCollection("ariadne");
+
+    context.subscriptions.push(
+      ...Object.values(this.decorationTypes),
+      this.diagnosticCollection,
+    );
 
     // Re-paint decorations when the user switches tabs
     context.subscriptions.push(
@@ -46,9 +70,13 @@ export class DiagnosticManager {
   refresh(document: vscode.TextDocument, findings: AriadneFinding[]): void {
     this.findingsByFile.set(document.uri.toString(), findings);
 
+    // UC-2.2: Paint squiggles + line highlights via TextEditorDecorationType.
     vscode.window.visibleTextEditors
       .filter((e) => e.document.uri.toString() === document.uri.toString())
       .forEach((e) => this._applyDecorations(e));
+
+    // UC-2.3: Publish to Problems Panel via DiagnosticCollection.
+    this._publishDiagnostics(document, findings);
   }
 
   getFindingAtPosition(
@@ -73,9 +101,14 @@ export class DiagnosticManager {
 
   clear(document: vscode.TextDocument): void {
     this.findingsByFile.delete(document.uri.toString());
+
+    // UC-2.2: Remove squiggles.
     vscode.window.visibleTextEditors
       .filter((e) => e.document.uri.toString() === document.uri.toString())
       .forEach((e) => this._clearDecorations(e));
+
+    // UC-2.3: Clear Problems Panel entries for this document.
+    this.diagnosticCollection.delete(document.uri);
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────
@@ -148,5 +181,59 @@ export class DiagnosticManager {
       overviewRulerColor: color,
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
+  }
+
+  // ── UC-2.3: Problems Panel ────────────────────────────────────────────
+
+  /**
+   * Publishes findings to the Problems Panel via DiagnosticCollection.
+   *
+   * Each diagnostic uses a ZERO-WIDTH range at (startLine, 0) so that
+   * VS Code's built-in diagnostic hover toolbar ("Explain and Fix",
+   * "View Problem") only triggers at column 0, not over the actual code
+   * squiggles drawn by TextEditorDecorationType.
+   *
+   * Problems Panel entry format (matches wireframe):
+   *   ⚠ SQL Injection — unsanitized input…   ariadne (java:CWE-89) [Ln 3]
+   *
+   * Click-to-navigate is handled automatically by VS Code — clicking an
+   * entry navigates the editor to the diagnostic's range position.
+   */
+  private _publishDiagnostics(
+    document: vscode.TextDocument,
+    findings: AriadneFinding[]
+  ): void {
+    const diagnostics: vscode.Diagnostic[] = [];
+
+    for (const f of findings) {
+      // Guard: skip findings whose lines exceed the document length.
+      if (f.startLine >= document.lineCount) {
+        continue;
+      }
+
+      // Zero-width range at column 0 of the finding's start line.
+      // This populates the Problems Panel but keeps the diagnostic hover
+      // toolbar away from the real code squiggles.
+      const zeroRange = new vscode.Range(
+        f.startLine, 0,
+        f.startLine, 0
+      );
+
+      const diag = new vscode.Diagnostic(
+        zeroRange,
+        `${f.vulnerabilityName} — ${f.shortExplanation}`,
+        SEVERITY_TO_DIAGNOSTIC[f.severity]
+      );
+
+      // Source label shown in the Problems Panel (e.g. "ariadne").
+      diag.source = "ariadne";
+
+      // Code shown after the source (e.g. "java:CWE-89").
+      diag.code = `java:${f.cweId}`;
+
+      diagnostics.push(diag);
+    }
+
+    this.diagnosticCollection.set(document.uri, diagnostics);
   }
 }
