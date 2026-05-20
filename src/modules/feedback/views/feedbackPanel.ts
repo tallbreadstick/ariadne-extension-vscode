@@ -73,9 +73,7 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
             }
 
             .panel {
-                max-width: 980px;
-                margin: 0 auto;
-                padding: 24px 2px 28px;
+                padding: 24px 0px 28px 0px;
             }
 
             /* --- HEADER LAYOUT --- */
@@ -138,9 +136,8 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                 letter-spacing: -0.01em;
                 line-height: 1;
                 /* Handle long titles */
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
+                white-space: normal;
+                word-break: break-word;
             }
 
             .header-sub {
@@ -148,23 +145,14 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                 align-items: center;
                 gap: 10px;
                 font-size: 13px;
-                
-                /* --- FIX: Force items side-by-side --- */
-                flex-wrap: nowrap; /* Do not wrap to next line */
-                overflow-x: auto;  /* Allow horizontal scroll if squeezed */
-                
-                /* Hide scrollbar but keep functionality (optional, standard VS Code look) */
-                -ms-overflow-style: none;  /* IE and Edge */
-                scrollbar-width: none;  /* Firefox */
-            }
-            .header-sub::-webkit-scrollbar {
-                display: none; /* Chrome, Safari and Opera */
+                flex-wrap: wrap;
             }
 
             /* Ensure children don't shrink inside nowrap container */
             .header-sub > span {
                 flex: 0 0 auto;
-                white-space: nowrap;
+                white-space: normal;
+                word-break: break-word;
             }
 
             .severity-pill {
@@ -183,7 +171,7 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
             .severity-pill.medium { background: var(--medium); }
             .severity-pill.low { background: var(--low); }
 
-            .meta-cwe { color: var(--section-orange); }
+            .meta-cwe { font-weight: 600px; color: var(--section-orange); }
             .meta-dot { color: var(--muted); }
             .meta-file { color: var(--file-green); }
 
@@ -206,6 +194,9 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                 justify-content: center;
                 width: 20px;
                 height: 20px;
+                
+                flex-shrink: 0; 
+                
                 border-radius: 50%;
                 border: 1px solid var(--section-orange);
                 font-size: 12px;
@@ -260,10 +251,11 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                 color: var(--muted);
             }
 
-            @media (max-width: 700px) {
-                .panel { padding: 18px 14px 22px; }
+            @media (max-width: 350px) {
+                .panel { padding: 18px 0px 22px 0px; }
+                .header-icon-box { display: none; }
                 /* We keep header flex-direction: row to maintain the side-by-side look of icon and content */
-                .header-content h1 { font-size: 22px; }
+                
             }
         </style>
     </head>
@@ -274,7 +266,7 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                     ${WARNING_SVG}
                 </div>
                 <div class="header-content">
-                    <h1>${title}</h1>
+                    <h1 style="margin: 0; font-size: 20px; font-weight: 600;">${title}</h1>
                     <div class="header-sub">
                         <span class="severity-pill ${severityClass}">${severity}</span>
                         <span class="meta-cwe">${escapeHtml(finding.cwe)} &middot; ${escapeHtml(finding.owasp)}</span>
