@@ -1,11 +1,6 @@
-export interface FeedbackFinding {
-	type: string;
-	cwe: string;
-	owasp: string;
-	severity: 'critical' | 'high' | 'medium' | 'low';
-	path: string;
-	line: number;
-	vulnerability: string;
-	impact: string;
-	suggestion: string;
-}
+/**
+ * Re-export FeedbackFinding from the canonical types module.
+ * The interface now lives in feedback/types.ts since it's the real
+ * output format, not a mock-only type.
+ */
+export type { FeedbackFinding } from '../types.js';
