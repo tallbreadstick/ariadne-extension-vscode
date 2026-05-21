@@ -221,7 +221,7 @@ export class DiagnosticManager {
 
       const diag = new vscode.Diagnostic(
         zeroRange,
-        `${f.vulnerabilityName} — ${f.shortExplanation}`,
+        `[Ariadne - ${f.severity.toUpperCase()}] ${f.vulnerabilityName} — ${f.shortExplanation}`,
         SEVERITY_TO_DIAGNOSTIC[f.severity]
       );
 
