@@ -1,4 +1,4 @@
-import type { FeedbackFinding } from '../mock/types.js';
+import type { VulnerabilityMetadata } from '../types.js';
 
 function escapeHtml(value: string): string {
     return value
@@ -9,26 +9,26 @@ function escapeHtml(value: string): string {
         .replaceAll("'", '&#39;');
 }
 
-function severityLabel(severity: FeedbackFinding['severity']): string {
+function severityLabel(severity: VulnerabilityMetadata['severity']): string {
     return severity.charAt(0).toUpperCase() + severity.slice(1);
 }
 
-function section(number: number, title: string, body: string): string {
-	const numberClass = number === 1 ? 'critical' : number === 2 ? 'high' : number === 3 ? 'medium' : '';
-    return /* html */ `
-        <section class="info-section">
-            <div class="section-heading">
-                <span class="section-number ${numberClass}">${number}</span>
-                <span class="section-title">${escapeHtml(title)}</span>
-            </div>
-            <div class="section-box">${body}</div>
-        </section>`;
-}
-
-export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
-    const title = escapeHtml(finding.type);
-    const severity = escapeHtml(severityLabel(finding.severity));
-    const severityClass = finding.severity;
+/**
+ * Builds the feedback panel HTML with a loading state.
+ *
+ * The panel opens immediately with the vulnerability header and animated
+ * skeleton placeholders for the 3 sections. The extension host then sends
+ * a postMessage with { type: 'llm-result', sections } or { type: 'llm-error', message }
+ * to populate or show the fallback.
+ */
+export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
+    const title = escapeHtml(meta.type);
+    const severity = escapeHtml(severityLabel(meta.severity));
+    const severityClass = meta.severity;
+    const cweDisplay = escapeHtml(meta.cwe_id);
+    const owaspDisplay = escapeHtml(meta.owasp_category);
+    const filePath = escapeHtml(meta.file_path);
+    const line = meta.line_number;
 
     // The warning SVG for the header box
     const WARNING_SVG = `
@@ -252,6 +252,43 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                 font-size: 0.95em;
             }
 
+            /* --- SKELETON LOADING ANIMATION --- */
+            .skeleton-line {
+                height: 14px;
+                background: linear-gradient(
+                    90deg,
+                    color-mix(in srgb, var(--text) 8%, transparent) 25%,
+                    color-mix(in srgb, var(--text) 16%, transparent) 50%,
+                    color-mix(in srgb, var(--text) 8%, transparent) 75%
+                );
+                background-size: 200% 100%;
+                animation: skeleton-shimmer 1.5s ease-in-out infinite;
+                border-radius: 4px;
+                margin-bottom: 8px;
+            }
+            .skeleton-line:last-child { margin-bottom: 0; }
+            .skeleton-line.short { width: 60%; }
+            .skeleton-line.medium { width: 80%; }
+
+            @keyframes skeleton-shimmer {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+            }
+
+            /* --- ERROR STATE --- */
+            .error-box {
+                background: color-mix(in srgb, var(--critical) 8%, transparent);
+                border: 1px solid color-mix(in srgb, var(--critical) 30%, transparent);
+                border-radius: 6px;
+                padding: 16px 20px;
+                color: var(--text);
+                font-size: 14px;
+                line-height: 1.6;
+                display: none;
+            }
+
+            .error-box.visible { display: block; }
+
             .footer {
                 padding-top: 14px;
                 margin-top: 32px;
@@ -277,23 +314,93 @@ export function buildFeedbackPanelHtml(finding: FeedbackFinding): string {
                     <h1>${title}</h1>
                     <div class="header-sub">
                         <span class="severity-pill ${severityClass}">${severity}</span>
-                        <span class="meta-cwe">${escapeHtml(finding.cwe)} &middot; ${escapeHtml(finding.owasp)}</span>
+                        <span class="meta-cwe">${cweDisplay} &middot; ${owaspDisplay}</span>
                         <span class="meta-dot">&middot;</span>
-                        <span class="meta-file">${escapeHtml(finding.path)}:${finding.line}</span>
+                        <span class="meta-file">${filePath}:${line}</span>
                     </div>
                 </div>
             </header>
 
-            <main class="content">
-                ${section(1, 'What is this vulnerability?', `<p>Type: <strong>${title}</strong></p><p>${escapeHtml(finding.vulnerability)}</p>`) }
-                ${section(2, 'Why is it dangerous?', `<p>${escapeHtml(finding.impact)}</p>`) }
-                ${section(3, 'Where should you look?', `<p>${escapeHtml(finding.suggestion)}</p><p>Review <code>${escapeHtml(finding.path)}</code> at line <code>${finding.line}</code> and replace unsafe concatenation with a secure, parameterized approach.</p>`) }
+            <!-- Error state (hidden by default) -->
+            <div id="error-box" class="error-box">
+                <p id="error-message"></p>
+            </div>
+
+            <main id="sections-container" class="content">
+                <!-- Section 1: What is this vulnerability? -->
+                <section class="info-section" id="section-1">
+                    <div class="section-heading">
+                        <span class="section-number critical">1</span>
+                        <span class="section-title">What is this vulnerability?</span>
+                    </div>
+                    <div class="section-box" id="section-1-body">
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line medium"></div>
+                        <div class="skeleton-line short"></div>
+                    </div>
+                </section>
+
+                <!-- Section 2: Why is it dangerous? -->
+                <section class="info-section" id="section-2">
+                    <div class="section-heading">
+                        <span class="section-number high">2</span>
+                        <span class="section-title">Why is it dangerous?</span>
+                    </div>
+                    <div class="section-box" id="section-2-body">
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line medium"></div>
+                        <div class="skeleton-line short"></div>
+                    </div>
+                </section>
+
+                <!-- Section 3: Where should you look? -->
+                <section class="info-section" id="section-3">
+                    <div class="section-heading">
+                        <span class="section-number medium">3</span>
+                        <span class="section-title">Where should you look?</span>
+                    </div>
+                    <div class="section-box" id="section-3-body">
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line medium"></div>
+                        <div class="skeleton-line short"></div>
+                    </div>
+                </section>
             </main>
 
             <div class="footer">
-                Ariadne provides conceptual guidance on security vulnerabilities. Always conduct thorough code review and testing to validate findings in your specific context.
+                Ariadne provides conceptual guidance only. Always conduct thorough code review and testing to validate findings in your specific context.
             </div>
         </div>
+
+        <script>
+            const vscode = acquireVsCodeApi();
+
+            function escapeHtml(str) {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            window.addEventListener('message', (event) => {
+                const msg = event.data;
+
+                if (msg.type === 'llm-result') {
+                    // Populate the 3 sections from the FeedbackFinding
+                    const f = msg.finding;
+                    document.getElementById('section-1-body').innerHTML = '<p>' + escapeHtml(f.vulnerability) + '</p>';
+                    document.getElementById('section-2-body').innerHTML = '<p>' + escapeHtml(f.impact) + '</p>';
+                    document.getElementById('section-3-body').innerHTML = '<p>' + escapeHtml(f.suggestion) + '</p>';
+                }
+
+                if (msg.type === 'llm-error') {
+                    // Hide sections and show error
+                    document.getElementById('sections-container').style.display = 'none';
+                    const errorBox = document.getElementById('error-box');
+                    errorBox.classList.add('visible');
+                    document.getElementById('error-message').textContent = msg.message;
+                }
+            });
+        </script>
     </body>
 </html>`;
 }
