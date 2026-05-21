@@ -50,7 +50,10 @@
       ]
     },
     "configurationDefaults": {
-      "github.copilot.editor.enableCodeActions": false
+      "github.copilot.editor.enableCodeActions": false,
+      "errorLens.excludeBySource": [
+        "ariadne"
+      ]
     }
   },
   "scripts": {
