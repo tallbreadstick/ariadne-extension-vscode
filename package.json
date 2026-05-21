@@ -48,6 +48,9 @@
           "icon": "$(graph)"
         }
       ]
+    },
+    "configurationDefaults": {
+      "github.copilot.editor.enableCodeActions": false
     }
   },
   "scripts": {
