@@ -45,6 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const activeVulnsProvider = new AriadneViewProvider(
 		buildActiveVulnerabilitiesHtml(mockVulnerabilities),
 	);
+	activeVulnsProvider.setBadgeCount(mockVulnerabilities.length);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		buildSessionMetricsHtml(mockSessionMetrics),
 	);
