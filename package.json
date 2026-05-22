@@ -10,6 +10,8 @@
     "Other"
   ],
   "activationEvents": [
+    "onLanguage:java",
+    "onCommand:ariadne-extension-vscode.analyze",
     "onView:ariadne.panel.activeVulnerabilities",
     "onView:ariadne.panel.sessionMetrics"
   ],
