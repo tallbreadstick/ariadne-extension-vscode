@@ -1,22 +1,22 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
 import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
-
-// ── UC-2.2: Hover Popup Vulnerability Summary Display ─────────────────
-import { DiagnosticManager } from './modules/presentation/diagnostics/DiagnosticManager';
-import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
-import { getMockFindings } from './modules/presentation/mock/mockFindings';
+import {
+	metadataToVulnerability,
+	metadataToScanSnapshot,
+	groupFindingsByFile,
+} from './modules/detection/bridge/convert';
 
 // ── Presentation layer ────────────────────────────────────────────────
+import { DiagnosticManager } from './modules/presentation/diagnostics/DiagnosticManager';
+import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
 import { buildActiveVulnerabilitiesHtml } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 
-// ── Feedback panel (LLM-powered) ─────────────────────────────────────
+// ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
@@ -27,21 +27,14 @@ import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTy
 // ── Tracker (status bar + analysis engine) ────────────────────────────
 import { createAriadneStatusBarItem } from './modules/tracker/views/statusBar';
 import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
-import { mockScanTimeline } from './modules/tracker/mock/scanSnapshots.js';
-
-// ── Data layer (mock) ─────────────────────────────────────────────────
-// The view builders above are decoupled from the data source — only this
-// section needs to change when the backend is ready.
-import {
-	mockVulnerabilities,
-} from './modules/presentation/mock/mockData';
+import type { ScanSnapshot } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { Vulnerability } from './modules/presentation/mock/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /**
- * Maps a presentation-layer Vulnerability (mock data) to the
- * VulnerabilityMetadata shape expected by the LLM pipeline.
+ * Maps a presentation-layer Vulnerability to the VulnerabilityMetadata
+ * shape expected by the LLM pipeline.
  */
 function toVulnerabilityMetadata(vuln: Vulnerability): VulnerabilityMetadata {
 	return {
@@ -55,8 +48,7 @@ function toVulnerabilityMetadata(vuln: Vulnerability): VulnerabilityMetadata {
 }
 
 /**
- * Reads OPENAI_API_KEY from a .env file at the project root.
- * Returns the key string or '' if not found.
+ * Reads OPENAI_API_KEY from a .env file at the extension root.
  */
 function readApiKeyFromDotEnv(extensionPath: string): string {
 	try {
@@ -69,37 +61,17 @@ function readApiKeyFromDotEnv(extensionPath: string): string {
 	}
 }
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+// ─────────────────────────────────────────────────────────────────────
+// ACTIVATE
+// ─────────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext) {
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.helloWorld',
-		() => {
-			// The code you place here will be executed every time your command is executed
-			// Display a message box to the user
-			vscode.window.showInformationMessage('Hello World from ariadne!');
-		},
-	);
 
+	// ── Panel providers — start empty; filled on first engine response ──
 	const activeVulnsProvider = new AriadneViewProvider(
-		buildActiveVulnerabilitiesHtml(mockVulnerabilities),
+		buildActiveVulnerabilitiesHtml([]),
 	);
-	activeVulnsProvider.setBadgeCount(mockVulnerabilities.length);
-
-	// ── Tracker analysis engine ──────────────────────────────────────
-	// Analyze the mock scan timeline to produce computed metrics.
-	// When the SAST engine is wired, replace mockScanTimeline with
-	// real ScanSnapshot[] accumulated during the VS Code session.
-	const sessionAnalysis = analyzeSession(mockScanTimeline);
-	const sessionMetrics = toSessionMetrics(sessionAnalysis);
-
 	const sessionMetricsProvider = new AriadneViewProvider(
-		buildSessionMetricsHtml(sessionMetrics),
+		buildSessionMetricsHtml({ critical: 0, high: 0, medium: 0, low: 0, trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 } }),
 	);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
@@ -111,26 +83,106 @@ export function activate(context: vscode.ExtensionContext) {
 		sessionMetricsProvider,
 	);
 
-	// ── Feedback panel command (LLM-powered) ─────────────────────────
-	// Uses mock Vulnerability data from presentation/mock/mockData.ts as
-	// the source, maps it to VulnerabilityMetadata, then calls the OpenAI
-	// LLM pipeline for the 3-section educational explanation.
+	// ── Diagnostic / inline highlight manager ───────────────────────────
+	const diagnosticManager = new DiagnosticManager(context);
+	registerHoverProvider(context, diagnosticManager);
+
+	// ── Latest known findings (needed for feedback panel lookup) ────────
+	let latestVulnerabilities: Vulnerability[] = [];
+
+	// ── Scan-snapshot accumulator for the session tracker ───────────────
+	const scanHistory: ScanSnapshot[] = [];
+	let scanCounter = 0;
+
+	// ── Ariadne engine session ───────────────────────────────────────────
+	const session = runSession();
+	registerDocumentEvents(context, session);
+
+	// ── Wire findings from the engine to every UI surface ───────────────
+	session.onFindings((findings: VulnerabilityMetadata[]) => {
+		// ── 1. Active Vulnerabilities panel ─────────────────────────────
+		const vulns = findings.map(metadataToVulnerability);
+		latestVulnerabilities = vulns;
+		activeVulnsProvider.updateHtml(buildActiveVulnerabilitiesHtml(vulns));
+		activeVulnsProvider.setBadgeCount(vulns.length);
+
+		// ── 2. Session Metrics panel ─────────────────────────────────────
+		scanCounter += 1;
+		const snapshot = metadataToScanSnapshot(findings, `scan-${scanCounter}`);
+		scanHistory.push(snapshot);
+		// Keep a rolling window of 20 scans so the tracker doesn't grow unbounded
+		if (scanHistory.length > 20) { scanHistory.shift(); }
+
+		try {
+			const sessionAnalysis = analyzeSession(scanHistory);
+			const sessionMetrics = toSessionMetrics(sessionAnalysis);
+			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
+		} catch {
+			// analyzeSession throws on empty array (guarded above, but be safe)
+		}
+
+		// ── 3. Inline squiggles + diagnostics ────────────────────────────
+		const byFile = groupFindingsByFile(findings);
+
+		// Refresh every currently visible editor
+		for (const editor of vscode.window.visibleTextEditors) {
+			const filePath = editor.document.uri.fsPath;
+			const fileFindings = byFile.get(filePath) ?? [];
+			diagnosticManager.refresh(editor.document, fileFindings);
+		}
+
+		// Clear decorations from files that no longer have any findings
+		// (handles the case where a fix removes all issues from a file)
+		for (const editor of vscode.window.visibleTextEditors) {
+			const filePath = editor.document.uri.fsPath;
+			if (!byFile.has(filePath)) {
+				diagnosticManager.clear(editor.document);
+			}
+		}
+	});
+
+	context.subscriptions.push({ dispose: () => session.kill() });
+
+	// Re-apply decorations whenever the user switches to a different tab
+	// (decorations are editor-bound, not document-bound, in VS Code).
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor((editor) => {
+			if (!editor) { return; }
+			// DiagnosticManager already handles this via its own onDidChangeActiveTextEditor
+			// subscription set up in its constructor — nothing extra needed here.
+		}),
+	);
+
+	// ── Hello World command (kept for development) ───────────────────────
+	const helloWorld = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.helloWorld',
+		() => { vscode.window.showInformationMessage('Hello World from ariadne!'); },
+	);
+
+	// ── Feedback panel command (LLM-powered) ─────────────────────────────
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
 		async (cwe?: string, title?: string) => {
-			// 1. Look up the mock vulnerability by CWE or title
+			// Look up the vulnerability in the latest engine results first;
+			// fall back to the first item if no match.
 			const vuln =
-				mockVulnerabilities.find(
+				latestVulnerabilities.find(
 					(item) => item.cwe === cwe || item.title === title,
-				) ?? mockVulnerabilities[0];
+				) ?? latestVulnerabilities[0];
 
-			// 2. Map to VulnerabilityMetadata for the LLM pipeline
+			if (!vuln) {
+				vscode.window.showWarningMessage(
+					'Ariadne: No vulnerability data available yet. Wait for the engine to finish its first analysis.',
+				);
+				return;
+			}
+
 			const vulnMetadata = toVulnerabilityMetadata(vuln);
 
-			// 3. Read API key from settings
 			const config = vscode.workspace.getConfiguration('ariadne');
-			const apiKey = config.get<string>('openai.apiKey', '')
-				|| readApiKeyFromDotEnv(context.extensionPath);
+			const apiKey =
+				config.get<string>('openai.apiKey', '') ||
+				readApiKeyFromDotEnv(context.extensionPath);
 			const model = config.get<string>('openai.model', 'gpt-4.1-mini');
 
 			if (!apiKey) {
@@ -140,7 +192,6 @@ export function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 
-			// 4. Open the panel immediately with loading state
 			const panel = vscode.window.createWebviewPanel(
 				'ariadne.feedback',
 				'Ariadne: Explanation',
@@ -149,18 +200,20 @@ export function activate(context: vscode.ExtensionContext) {
 			);
 			panel.webview.html = buildFeedbackPanelHtml(vulnMetadata);
 
-			// 5. Read the active Java file content
 			const activeEditor = vscode.window.activeTextEditor;
 			const activeFileContent = activeEditor?.document.getText() ?? '';
 			const activeFilePath = activeEditor?.document.uri.fsPath ?? '';
 
 			try {
-				// 6. Serialize → Call LLM → Parse response
-				const requestBody = serializePayload(vulnMetadata, activeFileContent, activeFilePath, model);
+				const requestBody = serializePayload(
+					vulnMetadata,
+					activeFileContent,
+					activeFilePath,
+					model,
+				);
 				const rawResponse = await callLLM(requestBody, apiKey);
 				const sections = parseThreeSectionResponse(rawResponse);
 
-				// 7. Build FeedbackFinding — combines input metadata with LLM text
 				const finding: FeedbackFinding = {
 					type: vuln.title,
 					cwe: vuln.cwe,
@@ -171,11 +224,10 @@ export function activate(context: vscode.ExtensionContext) {
 					...sections,
 				};
 
-				// 8. Send result to WebView
 				panel.webview.postMessage({ type: 'llm-result', finding });
 			} catch (error: unknown) {
-				// 9. Send fallback message on error (UC-3.4)
-				const message = error instanceof Error ? error.message : 'Unknown error';
+				const message =
+					error instanceof Error ? error.message : 'Unknown error';
 				console.error('[Ariadne] LLM pipeline error:', message);
 				panel.webview.postMessage({
 					type: 'llm-error',
@@ -185,50 +237,30 @@ export function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
-	// ── Status bar (driven by analysis engine) ───────────────────────
-	const statusBarDisposable = createAriadneStatusBarItem(sessionAnalysis);
+	// ── Status bar (updated alongside session metrics) ───────────────────
+	// Start with an empty analysis; real data flows in via onFindings above.
+	// `createAriadneStatusBarItem` accepts a SessionAnalysis, so we lazily
+	// create one the first time real findings arrive.  For now wire the
+	// initial empty state so the bar appears immediately.
+	let statusBarDisposable: vscode.Disposable | undefined;
+	session.onFindings((findings: VulnerabilityMetadata[]) => {
+		if (scanHistory.length === 0) { return; }
+		try {
+			const analysis = analyzeSession(scanHistory);
+			statusBarDisposable?.dispose();
+			statusBarDisposable = createAriadneStatusBarItem(analysis);
+			context.subscriptions.push(statusBarDisposable);
+		} catch { /* guard */ }
+	});
 
 	context.subscriptions.push(
-		disposable,
+		helloWorld,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
 		openFeedbackPanel,
-		statusBarDisposable,
-	);
-
-	const session = runSession();
-	registerDocumentEvents(context, session);
-	context.subscriptions.push({ dispose: () => session.kill() });
-
-	// ── UC-2.2: Hover Popup wiring ──────────────────────────────────────
-	const diagnosticManager = new DiagnosticManager(context);
-	registerHoverProvider(context, diagnosticManager);
-
-	/** Analyses a document if it is a Java file. */
-	function analyseIfJava(document: vscode.TextDocument): void {
-		if (document.languageId === 'java') {
-			const findings = getMockFindings(document);
-			diagnosticManager.refresh(document, findings);
-		}
-	}
-
-	// Run immediately for any Java file already open on startup.
-	if (vscode.window.activeTextEditor) {
-		analyseIfJava(vscode.window.activeTextEditor.document);
-	}
-
-	// Re-run whenever a new document is opened or the active tab changes.
-	context.subscriptions.push(
-		vscode.workspace.onDidOpenTextDocument(analyseIfJava),
-		vscode.window.onDidChangeActiveTextEditor((editor) => {
-			if (editor) {
-				analyseIfJava(editor.document);
-			}
-		}),
 	);
 }
 
-// This method is called when your extension is deactivated
 export function deactivate(): void {
 	return undefined;
 }
