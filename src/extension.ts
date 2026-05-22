@@ -6,7 +6,7 @@ import { runSession } from './modules/detection/bridge/iostream';
 
 // ── Presentation layer ────────────────────────────────────────────────
 import { buildActiveVulnerabilitiesHtml } from './modules/presentation/views/activeVulnerabilities';
-import { buildSessionMetricsHtml } from './modules/presentation/views/sessionMetrics';
+import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 
 // ── Feedback panel ────────────────────────────────────────────────────
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
