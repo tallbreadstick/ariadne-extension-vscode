@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import type { AriadneLLMRequestBody } from '../types.js';
+import type { AriadneLLMRequestBody } from './requestTypes.js';
 
 /** Timeout duration in milliseconds — per SRS Section 3.1.3 */
 const LLM_TIMEOUT_MS = 15_000;

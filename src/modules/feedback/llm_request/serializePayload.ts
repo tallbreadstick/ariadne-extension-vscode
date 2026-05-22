@@ -10,11 +10,11 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
+import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
 import type {
-	VulnerabilityMetadata,
 	LLMPromptPayload,
 	AriadneLLMRequestBody,
-} from '../types.js';
+} from './requestTypes.js';
 import { ARIADNE_SYSTEM_PROMPT } from './systemPrompt.js';
 
 /**

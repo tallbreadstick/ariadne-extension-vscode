@@ -7,7 +7,7 @@
  * wraps its response (common with some models).
  */
 
-import type { LLMThreeSectionResponse } from '../types.js';
+import type { LLMThreeSectionResponse } from './requestTypes.js';
 
 /** Required field names in the LLM JSON response. */
 const REQUIRED_FIELDS = ['vulnerability', 'impact', 'suggestion'] as const;

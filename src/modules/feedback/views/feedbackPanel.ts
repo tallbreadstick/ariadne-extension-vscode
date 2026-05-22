@@ -1,4 +1,15 @@
-import type { VulnerabilityMetadata } from '../types.js';
+import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
+import type { FeedbackFinding } from '../llm_feedback/feedbackTypes.js';
+
+/**
+ * Union type representing the three possible states of the feedback panel.
+ * Used for postMessage communication between extension host and WebView.
+ */
+export type FeedbackPanelState =
+	| { type: 'loading' }
+	| { type: 'llm-result'; finding: FeedbackFinding }
+	| { type: 'llm-error'; message: string };
+
 
 function escapeHtml(value: string): string {
     return value

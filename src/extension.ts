@@ -12,10 +12,11 @@ import { buildSessionMetricsHtml } from './modules/presentation/views/sessionMet
 
 // ── Feedback panel (LLM-powered) ─────────────────────────────────────
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
-import { serializePayload } from './modules/feedback/llm/serializePayload.js';
-import { callLLM } from './modules/feedback/llm/llmClient.js';
-import { parseThreeSectionResponse } from './modules/feedback/llm/parseResponse.js';
-import type { VulnerabilityMetadata, FeedbackFinding } from './modules/feedback/types.js';
+import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
+import { callLLM } from './modules/feedback/llm_request/llmClient.js';
+import { parseThreeSectionResponse } from './modules/feedback/llm_request/parseResponse.js';
+import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
+import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
 
 // ── Data layer (mock) ─────────────────────────────────────────────────
 // The view builders above are decoupled from the data source — only this
