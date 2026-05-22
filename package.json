@@ -74,6 +74,12 @@
           "markdownDescription": "OpenAI model to use for generating explanations."
         }
       }
+    },
+    "configurationDefaults": {
+      "github.copilot.editor.enableCodeActions": false,
+      "errorLens.excludeBySource": [
+        "ariadne"
+      ]
     }
   },
   "scripts": {
