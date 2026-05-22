@@ -3,16 +3,31 @@
 import * as vscode from 'vscode';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
-import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
-// This method is called when your extension is activated
+
+// ── Presentation layer ────────────────────────────────────────────────
+import { buildActiveVulnerabilitiesHtml } from './modules/presentation/views/activeVulnerabilities';
+import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
+
+// ── Feedback panel ────────────────────────────────────────────────────
+import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
+
+// ── Tracker (status bar) ──────────────────────────────────────────────
+import { createAriadneStatusBarItem } from './modules/tracker/views/statusBar';
+
+// ── Data layer (mock) ─────────────────────────────────────────────────
+// The view builders above are decoupled from the data source — only this
+// section needs to change when the backend is ready.
+import {
+	mockVulnerabilities,
+	mockSessionMetrics,
+} from './modules/presentation/mock/mockData';
+import { mockFeedbackFindings } from './modules/feedback/mock/mockData.js';
+
+// This method is called when your extension is activatedt
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	console.log(
-		'Congratulations, your extension "ariadne-extension-vscode" is now active!',
-	);
-
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
@@ -25,105 +40,56 @@ export function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
-	const provider = new AriadneViewProvider();
-	const viewDisposable = vscode.window.registerWebviewViewProvider(
-		AriadneViewProvider.viewType,
-		provider,
+	const activeVulnsProvider = new AriadneViewProvider(
+		buildActiveVulnerabilitiesHtml(mockVulnerabilities),
+	);
+	const sessionMetricsProvider = new AriadneViewProvider(
+		buildSessionMetricsHtml(mockSessionMetrics),
 	);
 
-	const session = runSession();
-	registerDocumentEvents(context, session);
+	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
+		'ariadne.panel.activeVulnerabilities',
+		activeVulnsProvider,
+	);
+	const sessionMetricsDisposable = vscode.window.registerWebviewViewProvider(
+		'ariadne.panel.sessionMetrics',
+		sessionMetricsProvider,
+	);
 
-	// Quick command to trigger analysis from the Command Palette
-	const analyzeDisposable = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.analyze',
-		(path?: string | null) => {
-			let target: string | null = null;
+	const openFeedbackPanel = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openFeedbackPanel',
+		(cwe?: string, title?: string) => {
+			const finding =
+				mockFeedbackFindings.find(
+					(item) => item.cwe === cwe || item.type === title,
+				) ?? mockFeedbackFindings[0];
 
-			if (typeof path === 'string' && path.length > 0) {
-				target = path;
-			} else {
-				const editor = vscode.window.activeTextEditor;
-				if (editor) {
-					const doc = editor.document;
-					console.log(
-						`[Ariadne] analyze invoked. activeEditor.scheme=${doc.uri.scheme} isUntitled=${doc.isUntitled}`,
-					);
+			const panel = vscode.window.createWebviewPanel(
+				'ariadne.feedback',
+				'Ariadne: Explanation',
+				vscode.ViewColumn.Beside,
+				{ enableScripts: false },
+			);
 
-					if (doc.uri.scheme === 'file') {
-						target = doc.uri.fsPath;
-					} else if (doc.isUntitled) {
-						const saveNow = 'Save';
-						vscode.window
-							.showInformationMessage(
-								'Please save the file before analyzing.',
-								saveNow,
-							)
-							.then((sel) => {
-								if (sel === saveNow) {
-									doc
-										.save()
-										.then((saved) => {
-											if (saved) {
-												const newPath = doc.uri.fsPath;
-												console.log(
-													`[Ariadne] file saved, analyzing ${newPath}`,
-												);
-												session.send({
-													type: 'Analyze',
-													path: newPath,
-												});
-												vscode.window.showInformationMessage(
-													`Ariadne: Analyze triggered for ${newPath}`,
-												);
-											} else {
-												console.log(
-													'[Ariadne] file not saved; sending Analyze with null path',
-												);
-												session.send({
-													type: 'Analyze',
-													path: null,
-												});
-												vscode.window.showInformationMessage(
-													'Ariadne: Analyze triggered (workspace)',
-												);
-											}
-										});
-								} else {
-									// User declined to save — fallback to null path
-									console.log(
-										'[Ariadne] user declined to save; sending Analyze with null path',
-									);
-									session.send({ type: 'Analyze', path: null });
-									vscode.window.showInformationMessage(
-										'Ariadne: Analyze triggered (workspace)',
-									);
-								}
-							});
-
-						return; // async path handled above
-					} else {
-						// non-file URI (e.g., git, remote) — fall back to null
-						target = null;
-					}
-				}
-			}
-
-			console.log(`[Ariadne] sending Analyze path=${target}`);
-			session.send({ type: 'Analyze', path: target });
-			const msg = target
-				? `Ariadne: Analyze triggered for ${target}`
-				: 'Ariadne: Analyze triggered (workspace)';
-			vscode.window.showInformationMessage(msg);
+			panel.webview.html = buildFeedbackPanelHtml(finding);
 		},
 	);
 
-	context.subscriptions.push(analyzeDisposable);
+	// ── Status bar ────────────────────────────────────────────────────
+	const statusBarDisposable = createAriadneStatusBarItem();
 
-	context.subscriptions.push(disposable, viewDisposable, {
-		dispose: () => session.kill(),
-	});
+	context.subscriptions.push(
+		disposable,
+		activeVulnsDisposable,
+		sessionMetricsDisposable,
+		openFeedbackPanel,
+		statusBarDisposable,
+	);
+
+	runSession();
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate(): void {
+	return undefined;
+}

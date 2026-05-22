@@ -9,7 +9,10 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onLanguage:java", "onCommand:ariadne-extension-vscode.analyze"],
+  "activationEvents": [
+    "onView:ariadne.panel.activeVulnerabilities",
+    "onView:ariadne.panel.sessionMetrics"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -36,9 +39,17 @@
       "ariadne-panel": [
         {
           "type": "webview",
-          "id": "ariadne.panel",
-          "name": "Ariadne",
+          "id": "ariadne.panel.activeVulnerabilities",
+          "name": "ARIADNE (ACTIVE VULNERABILITIES)",
+          "group": "left",
           "icon": "$(shield)"
+        },
+        {
+          "type": "webview",
+          "id": "ariadne.panel.sessionMetrics",
+          "name": "SESSION METRICS",
+          "group": "right",
+          "icon": "$(graph)"
         }
       ]
     }
