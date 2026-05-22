@@ -24,15 +24,16 @@ import { parseThreeSectionResponse } from './modules/feedback/llm_request/parseR
 import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
 
-// ── Tracker (status bar) ──────────────────────────────────────────────
+// ── Tracker (status bar + analysis engine) ────────────────────────────
 import { createAriadneStatusBarItem } from './modules/tracker/views/statusBar';
+import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
+import { mockScanTimeline } from './modules/tracker/mock/scanSnapshots.js';
 
 // ── Data layer (mock) ─────────────────────────────────────────────────
 // The view builders above are decoupled from the data source — only this
 // section needs to change when the backend is ready.
 import {
 	mockVulnerabilities,
-	mockSessionMetrics,
 } from './modules/presentation/mock/mockData';
 import type { Vulnerability } from './modules/presentation/mock/types';
 
@@ -89,8 +90,16 @@ export function activate(context: vscode.ExtensionContext) {
 		buildActiveVulnerabilitiesHtml(mockVulnerabilities),
 	);
 	activeVulnsProvider.setBadgeCount(mockVulnerabilities.length);
+
+	// ── Tracker analysis engine ──────────────────────────────────────
+	// Analyze the mock scan timeline to produce computed metrics.
+	// When the SAST engine is wired, replace mockScanTimeline with
+	// real ScanSnapshot[] accumulated during the VS Code session.
+	const sessionAnalysis = analyzeSession(mockScanTimeline);
+	const sessionMetrics = toSessionMetrics(sessionAnalysis);
+
 	const sessionMetricsProvider = new AriadneViewProvider(
-		buildSessionMetricsHtml(mockSessionMetrics),
+		buildSessionMetricsHtml(sessionMetrics),
 	);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
@@ -176,8 +185,8 @@ export function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
-	// ── Status bar ────────────────────────────────────────────────────
-	const statusBarDisposable = createAriadneStatusBarItem();
+	// ── Status bar (driven by analysis engine) ───────────────────────
+	const statusBarDisposable = createAriadneStatusBarItem(sessionAnalysis);
 
 	context.subscriptions.push(
 		disposable,
