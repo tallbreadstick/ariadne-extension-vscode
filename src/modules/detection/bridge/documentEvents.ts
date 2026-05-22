@@ -125,25 +125,27 @@ export function registerDocumentEvents(
 			if (event.contentChanges.length === 0) return;
 
 			const path = event.document.uri.fsPath;
+
 			const existing = debounceTimers.get(path);
 			if (existing) clearTimeout(existing);
+
+			const edits = event.contentChanges.map((change) => ({
+				start: change.rangeOffset,
+				end: change.rangeOffset + change.rangeLength,
+				new_text: change.text,
+			}));
 
 			const timer = setTimeout(() => {
 				debounceTimers.delete(path);
 
-				const full = event.document.getText();
-				console.log(`[Ariadne TS] UpdateFile (full-replace) ${path}`);
+				console.log(
+					`[Ariadne TS] UpdateFile ${path} edits=${edits.length}`,
+				);
 
 				session.send({
 					type: 'UpdateFile',
 					path,
-					edits: [
-						{
-							start: 0,
-							end: full.length,
-							new_text: full,
-						},
-					],
+					edits,
 				});
 			}, DEBOUNCE_MS);
 

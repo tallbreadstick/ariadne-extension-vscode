@@ -143,6 +143,32 @@ const CSS = /* css */ `
 
     .vuln-stack { display: grid; gap: 12px; }
 
+    .empty-state {
+        display: grid;
+        gap: 8px;
+        align-content: center;
+        justify-items: center;
+        min-height: 180px;
+        padding: 24px 16px;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+        color: var(--muted);
+        text-align: center;
+    }
+
+    .empty-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    .empty-subtitle {
+        font-size: 12px;
+        max-width: 360px;
+        line-height: 1.5;
+    }
+
     details {
         border: 1px solid var(--border);
         border-radius: var(--radius);
@@ -358,7 +384,14 @@ const CSS = /* css */ `
  * @returns A complete HTML string ready to be set on a VS Code webview.
  */
 export function buildActiveVulnerabilitiesHtml(vulns: Vulnerability[]): string {
-	const cards = vulns.map((v, i) => buildVulnCard(v, i === 0)).join('\n');
+    const cards = vulns.map((v, i) => buildVulnCard(v, i === 0)).join('\n');
+    const emptyState = /* html */ `
+        <div class="empty-state" role="status" aria-live="polite">
+            <div class="empty-title">No active vulnerabilities</div>
+            <div class="empty-subtitle">
+                You are all clear for this scan cycle.
+            </div>
+        </div>`;
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -370,7 +403,7 @@ export function buildActiveVulnerabilitiesHtml(vulns: Vulnerability[]): string {
 	</head>
 	<body>
 		<section class="vuln-stack">
-			${cards}
+            ${vulns.length === 0 ? emptyState : cards}
 		</section>
 	</body>
 </html>`;

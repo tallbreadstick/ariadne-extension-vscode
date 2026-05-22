@@ -3,6 +3,12 @@
 import * as vscode from 'vscode';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
+import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
+
+// ── UC-2.2: Hover Popup Vulnerability Summary Display ─────────────────
+import { DiagnosticManager } from './modules/presentation/diagnostics/DiagnosticManager';
+import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
+import { getMockFindings } from './modules/presentation/mock/mockFindings';
 
 // ── Presentation layer ────────────────────────────────────────────────
 import { buildActiveVulnerabilitiesHtml } from './modules/presentation/views/activeVulnerabilities';
@@ -43,6 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const activeVulnsProvider = new AriadneViewProvider(
 		buildActiveVulnerabilitiesHtml(mockVulnerabilities),
 	);
+	activeVulnsProvider.setBadgeCount(mockVulnerabilities.length);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		buildSessionMetricsHtml(mockSessionMetrics),
 	);
@@ -86,7 +93,36 @@ export function activate(context: vscode.ExtensionContext) {
 		statusBarDisposable,
 	);
 
-	runSession();
+	const session = runSession();
+	registerDocumentEvents(context, session);
+	context.subscriptions.push({ dispose: () => session.kill() });
+
+	// ── UC-2.2: Hover Popup wiring ──────────────────────────────────────
+	const diagnosticManager = new DiagnosticManager(context);
+	registerHoverProvider(context, diagnosticManager);
+
+	/** Analyses a document if it is a Java file. */
+	function analyseIfJava(document: vscode.TextDocument): void {
+		if (document.languageId === 'java') {
+			const findings = getMockFindings(document);
+			diagnosticManager.refresh(document, findings);
+		}
+	}
+
+	// Run immediately for any Java file already open on startup.
+	if (vscode.window.activeTextEditor) {
+		analyseIfJava(vscode.window.activeTextEditor.document);
+	}
+
+	// Re-run whenever a new document is opened or the active tab changes.
+	context.subscriptions.push(
+		vscode.workspace.onDidOpenTextDocument(analyseIfJava),
+		vscode.window.onDidChangeActiveTextEditor((editor) => {
+			if (editor) {
+				analyseIfJava(editor.document);
+			}
+		}),
+	);
 }
 
 // This method is called when your extension is deactivated
