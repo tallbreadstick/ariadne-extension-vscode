@@ -13,7 +13,7 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import type { FeedbackFinding } from './types.js';
+import type { FeedbackFinding } from './mockTypes.js';
 
 // Shared file path used across all mock vulnerability findings.
 const LOGIN_CONTROLLER =
