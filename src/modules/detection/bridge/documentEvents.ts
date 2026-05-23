@@ -7,8 +7,23 @@ const DEBOUNCE_MS = 400;
 /** Per-file debounce timers. */
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function isJava(doc: vscode.TextDocument): boolean {
-	return doc.languageId === 'java';
+function basename(fsPath: string): string {
+	const normalized = fsPath.replace(/\\/g, '/');
+	return normalized.slice(normalized.lastIndexOf('/') + 1);
+}
+
+/** Files the Rust engine tracks for live config / hygiene checks. */
+function isTrackedFilePath(fsPath: string): boolean {
+	if (fsPath.endsWith('.java')) {
+		return true;
+	}
+
+	const base = basename(fsPath);
+	return base === 'application.properties' || base === '.gitignore' || base === '.env';
+}
+
+function isTrackedDocument(doc: vscode.TextDocument): boolean {
+	return isTrackedFilePath(doc.uri.fsPath);
 }
 
 /**
@@ -47,7 +62,7 @@ export function registerDocumentEvents(
 	// INITIAL OPEN FILES
 	// ============================================================
 	vscode.workspace.textDocuments
-		.filter(isJava)
+		.filter(isTrackedDocument)
 		.forEach((doc) => {
 			console.log(`[Ariadne TS] OpenFile (preloaded) ${doc.uri.fsPath}`);
 			session.send({
@@ -62,7 +77,7 @@ export function registerDocumentEvents(
 	// ============================================================
 	context.subscriptions.push(
 		vscode.workspace.onDidOpenTextDocument((doc) => {
-			if (!isJava(doc)) { return; }
+			if (!isTrackedDocument(doc)) { return; }
 			console.log(`[Ariadne TS] OpenFile ${doc.uri.fsPath}`);
 			session.send({
 				type: 'OpenFile',
@@ -78,7 +93,7 @@ export function registerDocumentEvents(
 	context.subscriptions.push(
 		vscode.workspace.onDidCreateFiles((event) => {
 			event.files.forEach((file) => {
-				if (!file.fsPath.endsWith('.java')) { return; }
+				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] CreateFile ${file.fsPath}`);
 				session.send({ type: 'CreateFile', path: file.fsPath, content: '' });
 			});
@@ -92,6 +107,7 @@ export function registerDocumentEvents(
 	context.subscriptions.push(
 		vscode.workspace.onDidDeleteFiles((event) => {
 			event.files.forEach((file) => {
+				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] DeleteFile ${file.fsPath}`);
 				session.send({ type: 'DeleteFile', path: file.fsPath });
 			});
@@ -105,6 +121,9 @@ export function registerDocumentEvents(
 	context.subscriptions.push(
 		vscode.workspace.onDidRenameFiles((event) => {
 			event.files.forEach((file) => {
+				if (!isTrackedFilePath(file.oldUri.fsPath) && !isTrackedFilePath(file.newUri.fsPath)) {
+					return;
+				}
 				console.log(
 					`[Ariadne TS] RenameFile ${file.oldUri.fsPath} → ${file.newUri.fsPath}`,
 				);
@@ -123,7 +142,7 @@ export function registerDocumentEvents(
 	// ============================================================
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeTextDocument((event) => {
-			if (!isJava(event.document)) { return; }
+			if (!isTrackedDocument(event.document)) { return; }
 			if (event.contentChanges.length === 0) { return; }
 
 			const filePath = event.document.uri.fsPath;
@@ -136,13 +155,25 @@ export function registerDocumentEvents(
 				new_text: change.text,
 			}));
 
-			const timer = setTimeout(() => {
-				debounceTimers.delete(filePath);
+		const timer = setTimeout(() => {
+			debounceTimers.delete(filePath);
+			const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === filePath);
+			if (!doc) { return; }
+
+			if (filePath.endsWith('.java')) {
 				console.log(`[Ariadne TS] UpdateFile ${filePath} edits=${edits.length}`);
 				session.send({ type: 'UpdateFile', path: filePath, edits });
-				// Trigger analysis immediately after the AST is patched
-				triggerAnalyze(session);
-			}, DEBOUNCE_MS);
+			} else {
+				const fullText = doc.getText();
+				console.log(`[Ariadne TS] UpdateFile ${filePath} full-replace len=${fullText.length}`);
+				session.send({
+					type: 'UpdateFile',
+					path: filePath,
+					edits: [{ start: 0, end: fullText.length, new_text: fullText }],
+				});
+			}
+			triggerAnalyze(session);
+		}, DEBOUNCE_MS);
 
 			debounceTimers.set(filePath, timer);
 		}),
@@ -153,7 +184,7 @@ export function registerDocumentEvents(
 	// ============================================================
 	context.subscriptions.push(
 		vscode.workspace.onDidCloseTextDocument((doc) => {
-			if (!isJava(doc)) { return; }
+			if (!isTrackedDocument(doc)) { return; }
 			const filePath = doc.uri.fsPath;
 
 			const existing = debounceTimers.get(filePath);
