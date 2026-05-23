@@ -26,6 +26,7 @@ import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTy
 
 // ── Tracker (status bar + analysis engine) ────────────────────────────
 import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
+import { showSessionToasts } from './modules/tracker/views/notificationToast.js';
 import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { Vulnerability } from './modules/presentation/types.js';
@@ -154,6 +155,11 @@ export function activate(context: vscode.ExtensionContext) {
 			const sessionMetrics = toSessionMetrics(sessionAnalysis);
 			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
 			updateStatusBar(sessionAnalysis);
+
+			// ── 3b. VS Code toast notifications (UC-4.3) ────────────────
+			// Fire-and-forget: each category is independently throttled
+			// with a 60 s cooldown to prevent notification flooding.
+			showSessionToasts(sessionAnalysis);
 
 			// Debug: log analysis results
 			const sc = sessionAnalysis.severityCounts;
