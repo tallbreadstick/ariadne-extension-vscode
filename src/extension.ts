@@ -176,23 +176,12 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		// ── 3. Inline squiggles + diagnostics ────────────────────────────
+		// Eagerly publish diagnostics for ALL files with findings so that
+		// the native Problems Panel stays in sync with the Active
+		// Vulnerabilities webview — even for files not currently open.
+		// Decorations (squiggles) are applied lazily when the tab is opened.
 		const byFile = groupFindingsByFile(findings);
-
-		// Refresh every currently visible editor
-		for (const editor of vscode.window.visibleTextEditors) {
-			const filePath = editor.document.uri.fsPath;
-			const fileFindings = byFile.get(filePath) ?? [];
-			diagnosticManager.refresh(editor.document, fileFindings);
-		}
-
-		// Clear decorations from files that no longer have any findings
-		// (handles the case where a fix removes all issues from a file)
-		for (const editor of vscode.window.visibleTextEditors) {
-			const filePath = editor.document.uri.fsPath;
-			if (!byFile.has(filePath)) {
-				diagnosticManager.clear(editor.document);
-			}
-		}
+		diagnosticManager.publishAllDiagnostics(byFile);
 	});
 
 	context.subscriptions.push({ dispose: () => session.kill() });
