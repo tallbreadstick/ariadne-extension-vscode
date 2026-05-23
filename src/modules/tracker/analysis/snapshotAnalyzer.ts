@@ -164,6 +164,9 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 	// ── Detect resolved vulnerabilities ───────────────────────────
 	// A vulnerability is resolved if it appeared in ANY prior scan
 	// but is absent from the current scan.
+	//
+	// If it was also present in the IMMEDIATELY PREVIOUS scan, it
+	// counts as improving too (N instances → 0 is the final improvement).
 	for (const priorKey of allPriorKeys) {
 		if (!currentMap.has(priorKey)) {
 			// Find the last known state of this vulnerability
@@ -184,6 +187,12 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 					currentInstanceCount: 0,
 				});
 				resolvedThisSession++;
+
+				// If the vulnerability was in the immediately previous scan,
+				// going from N → 0 is also an improvement.
+				if (previousMap.has(priorKey)) {
+					improvingTrends++;
+				}
 			}
 		}
 	}
