@@ -31,7 +31,7 @@ import type {
 import type {
 	SessionMetrics,
 	SessionNotification,
-} from '../../presentation/mock/types.js';
+} from '../../presentation/types.js';
 
 // ══════════════════════════════════════════════════════════════════════
 // IDENTITY KEY
@@ -62,15 +62,18 @@ function buildVulnMap(vulnerabilities: Vulnerability[]): Map<string, Vulnerabili
 // ══════════════════════════════════════════════════════════════════════
 
 /**
- * Counts the number of active vulnerabilities at each severity level.
+ * Counts the total number of occurrences at each severity level.
  *
- * NOTE: This counts distinct vulnerability patterns, not instances.
- * A SQL Injection with 3 instances is counted as 1 critical vulnerability.
+ * Walks the full hierarchy: Vulnerability → Instance → Occurrence.
+ * Each individual occurrence is counted once, matching the
+ * per-occurrence card display in the Active Vulnerabilities panel.
  */
 function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
 	const counts: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
 	for (const v of vulnerabilities) {
-		counts[v.severity]++;
+		for (const inst of v.instances) {
+			counts[v.severity] += inst.occurrences.length;
+		}
 	}
 	return counts;
 }
@@ -204,7 +207,7 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 
 /**
  * Maps the rich SessionAnalysis output to the existing
- * `SessionMetrics` shape from `presentation/mock/types.ts`.
+ * `SessionMetrics` shape from `presentation/types.ts`.
  *
  * This adapter bridges the analysis engine's internal data model
  * to the view layer without requiring any changes to the Session
