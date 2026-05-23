@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
-import { AriadneFinding } from "./types";
+import { AriadneFinding } from "./diagnosticTypes";
 
 // Design tokens — mirrored from activeVulnerabilities.ts CSS variables
 const SEVERITY_COLOR: Record<AriadneFinding["severity"], string> = {

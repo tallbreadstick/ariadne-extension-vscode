@@ -31,7 +31,7 @@ import type {
 import type {
 	SessionMetrics,
 	SessionNotification,
-} from '../../presentation/types.js';
+} from '../../presentation/panelTypes.js';
 
 // ══════════════════════════════════════════════════════════════════════
 // IDENTITY KEY

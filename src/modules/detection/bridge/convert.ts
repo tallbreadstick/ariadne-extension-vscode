@@ -2,14 +2,14 @@
  * Converters from the flat VulnerabilityMetadata emitted by the Rust
  * SAST engine to the two UI-facing type shapes used by the extension:
  *
- * 1. `Vulnerability`   — presentation/types.ts  (active-vulns panel)
- * 2. `AriadneFinding`  — presentation/diagnostics/types.ts (inline highlights)
+ * 1. `Vulnerability`   — presentation/panelTypes.ts  (active-vulns panel)
+ * 2. `AriadneFinding`  — presentation/diagnostics/diagnosticTypes.ts (inline highlights)
  * 3. `ScanSnapshot`    — feedback/vulnerability_results/vulnerabilityTypes.ts
  *                        (session-metrics tracker)
  */
 
-import type { Vulnerability as PanelVulnerability } from '../../presentation/types.js';
-import type { AriadneFinding } from '../../presentation/diagnostics/types.js';
+import type { Vulnerability as PanelVulnerability } from '../../presentation/panelTypes.js';
+import type { AriadneFinding } from '../../presentation/diagnostics/diagnosticTypes.js';
 import type {
 	VulnerabilityMetadata,
 	ScanSnapshot,

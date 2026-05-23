@@ -6,7 +6,7 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { SessionMetrics, SessionNotification } from '../../presentation/types.js';
+import { SessionMetrics, SessionNotification } from '../../presentation/panelTypes.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 

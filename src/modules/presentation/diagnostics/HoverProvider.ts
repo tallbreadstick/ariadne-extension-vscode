@@ -22,7 +22,7 @@
 
 import * as vscode from "vscode";
 import { DiagnosticManager } from "./DiagnosticManager";
-import { AriadneFinding } from "./types";
+import { AriadneFinding } from "./diagnosticTypes";
 
 /**
  * Registers the hover provider and pushes it into context.subscriptions.

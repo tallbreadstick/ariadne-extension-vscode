@@ -29,7 +29,7 @@ import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/v
 import { showSessionToasts } from './modules/tracker/views/notificationToast.js';
 import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
-import type { Vulnerability } from './modules/presentation/types.js';
+import type { Vulnerability } from './modules/presentation/panelTypes.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
