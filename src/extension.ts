@@ -226,7 +226,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const apiKey =
 				config.get<string>('openai.apiKey', '') ||
 				readApiKeyFromDotEnv(context.extensionPath);
-			const model = config.get<string>('openai.model', 'gpt-4.1-mini');
+			const model = config.get<string>('openai.model', 'gpt-5.5');
 
 			if (!apiKey) {
 				vscode.window.showErrorMessage(
