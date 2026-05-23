@@ -212,7 +212,6 @@ const CSS = /* css */ `
 	}
 
 	a.goto-location:hover {
-		background: color-mix(in srgb, var(--file) 15%, transparent);
 		text-decoration: underline;
 	}
 
