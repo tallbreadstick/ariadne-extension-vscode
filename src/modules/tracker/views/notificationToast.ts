@@ -1,55 +1,36 @@
 /**
- * VS Code Toast Notification Service for the Session-Based Reinforcement Tracker.
+ * - Persisting patterns - warning toast alerting the student
+ * - Improving trends - informational toast encouraging the student
+ * - Resolved vulnerabilities - informational toast confirming resolution
+ * - New vulnerabilities - warning toast for newly detected issues
  *
- * Surfaces lightweight, non-intrusive toast notifications via the VS Code
- * notification API (`vscode.window.showInformationMessage` / `showWarningMessage`)
- * whenever the pattern analyzer (UC-4.2) detects actionable changes:
- *
- * - **Persisting patterns** → warning toast alerting the student
- * - **Improving trends** → informational toast encouraging the student
- * - **Resolved vulnerabilities** → informational toast confirming resolution
- * - **New vulnerabilities** → warning toast for newly detected issues
- *
- * ─────────────────────────────────────────────────────────────────────
+ * -------------------------------
  * ANTI-SPAM DESIGN
  *
- * To avoid notification flooding (e.g., 20 persisting patterns each
- * generating their own toast), this module applies two throttle layers:
+ * 1. Aggregation - multiple findings of the same status category are collapsed into a single summary toast (e.g., "3 persisting patterns detected").
+ * 2. Cooldown - a per-category cooldown (default 60 s) prevents the same category from firing again within the window, even if a new scan cycle completes.
  *
- * 1. **Aggregation** — multiple findings of the same status category
- *    are collapsed into a single summary toast (e.g., "3 persisting
- *    patterns detected").
- *
- * 2. **Cooldown** — a per-category cooldown (default 60 s) prevents
- *    the same category from firing again within the window, even if
- *    a new scan cycle completes.
- *
- * The service is stateless across VS Code restarts — the cooldown
- * timers are in-memory only.
- * ─────────────────────────────────────────────────────────────────────
+ * The service is stateless across VS Code restarts — the cooldown... timers are in-memory only.
+ * -------------------------------
  *
  * EXPORTS:
  *   showSessionToasts(analysis)  — fire-and-forget from the scan pipeline
- * ─────────────────────────────────────────────────────────────────────
+ * -------------------------------
  */
 
 import * as vscode from 'vscode';
 import type { SessionAnalysis } from '../analysis/analysisTypes.js';
 
-// ══════════════════════════════════════════════════════════════════════
 // CONFIGURATION
-// ══════════════════════════════════════════════════════════════════════
 
-/** Minimum interval (in ms) between toasts of the same category. */
+// Minimum interval (in ms) between toasts of the same category. 
 const COOLDOWN_MS = 60_000; // 60 seconds
 
-// ══════════════════════════════════════════════════════════════════════
 // COOLDOWN STATE
-// ══════════════════════════════════════════════════════════════════════
 
 /**
  * Tracks the last time a toast was fired for each notification category.
- * In-memory only — resets when the extension host restarts.
+ * In-memory only - resets when the extension host restarts.
  */
 type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'new';
 
@@ -73,16 +54,12 @@ function tryAcquire(category: ToastCategory): boolean {
 	return true;
 }
 
-// ══════════════════════════════════════════════════════════════════════
 // TOAST BUILDERS
-// ══════════════════════════════════════════════════════════════════════
 
 /**
  * Shows a warning toast for persisting patterns.
  *
- * Per UC-4.3: "If a persisting pattern is detected, a soft toast
- * notification is triggered to alert the student of the unresolved
- * vulnerability class."
+ * Per UC-4.3: "If a persisting pattern is detected, a soft toast; notification is triggered to alert the student of the unresolved vulnerability class."
  */
 function showPersistingToast(analysis: SessionAnalysis): void {
 	const count = analysis.persistingPatterns;
@@ -104,9 +81,9 @@ function showPersistingToast(analysis: SessionAnalysis): void {
 	);
 }
 
-/**
- * Shows an informational toast for improving trends.
- */
+
+// Shows an informational toast for improving trends
+
 function showImprovingToast(analysis: SessionAnalysis): void {
 	const count = analysis.improvingTrends;
 	if (count === 0) { return; }
@@ -125,9 +102,8 @@ function showImprovingToast(analysis: SessionAnalysis): void {
 	);
 }
 
-/**
- * Shows an informational toast for resolved vulnerabilities.
- */
+// Shows an informational toast for resolved vulnerabilities
+
 function showResolvedToast(analysis: SessionAnalysis): void {
 	const count = analysis.resolvedThisSession;
 	if (count === 0) { return; }
@@ -142,13 +118,12 @@ function showResolvedToast(analysis: SessionAnalysis): void {
 		: `${resolvedTypes.slice(0, 3).join(', ')} and ${resolvedTypes.length - 3} more`;
 
 	vscode.window.showInformationMessage(
-		`$(check) Ariadne: ${count} ${count === 1 ? 'pattern' : 'patterns'} resolved — ${detail}`,
+		`Ariadne: ${count} ${count === 1 ? 'pattern' : 'patterns'} resolved — ${detail}`,
 	);
 }
 
-/**
- * Shows a warning toast for newly detected vulnerabilities.
- */
+// Shows a warning toast for newly detected vulnerabilities
+
 function showNewToast(analysis: SessionAnalysis): void {
 	const count = analysis.newVulnerabilities;
 	if (count === 0) { return; }
@@ -163,23 +138,21 @@ function showNewToast(analysis: SessionAnalysis): void {
 		: `${newTypes.slice(0, 3).join(', ')} and ${newTypes.length - 3} more`;
 
 	vscode.window.showWarningMessage(
-		`$(alert) Ariadne: ${count} new ${count === 1 ? 'vulnerability' : 'vulnerabilities'} detected — ${detail}`,
+		`Ariadne: ${count} new ${count === 1 ? 'vulnerability' : 'vulnerabilities'} detected — ${detail}`,
 	);
 }
 
-// ══════════════════════════════════════════════════════════════════════
+
 // PUBLIC API
-// ══════════════════════════════════════════════════════════════════════
 
 /**
- * Evaluates the session analysis and fires at most one VS Code toast
- * notification per applicable category, respecting cooldown windows.
+ * Evaluates the session analysis and fires at most one VS Code toast.. notification per applicable category, respecting cooldown windows.
  *
  * This is a fire-and-forget function — call it from the scan pipeline
  * after `analyzeSession()` and `toSessionMetrics()` have updated the
  * Session Metrics panel.
  *
- * **Priority order** (most urgent first):
+ * Priority order (most urgent first):
  *   1. New vulnerabilities (warning)
  *   2. Persisting patterns (warning)
  *   3. Improving trends (info)
