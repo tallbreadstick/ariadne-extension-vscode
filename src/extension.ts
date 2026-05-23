@@ -83,6 +83,14 @@ export function activate(context: vscode.ExtensionContext) {
 		try {
 			const restoredAnalysis = analyzeSession(storedSnapshots);
 			const restoredMetrics = toSessionMetrics(restoredAnalysis);
+
+			// Filter out previously dismissed notifications
+			const dismissed = new Set(store.loadDismissedNotifications());
+			if (restoredMetrics.notifications) {
+				restoredMetrics.notifications = restoredMetrics.notifications
+					.filter(n => !dismissed.has(n.id));
+			}
+
 			initialMetricsHtml = buildSessionMetricsHtml(restoredMetrics);
 
 			// Restore active vulnerabilities from the latest scan's findings
@@ -113,7 +121,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Panel providers ────────────────────────────────────────────────
 	const activeVulnsProvider = new AriadneViewProvider(initialVulnsHtml);
-	const sessionMetricsProvider = new AriadneViewProvider(initialMetricsHtml);
+	const sessionMetricsProvider = new AriadneViewProvider(
+		initialMetricsHtml,
+		// Handle dismiss-notification messages from the Session Metrics webview.
+		(msg) => {
+			if (msg.type === 'dismiss-notification' && typeof msg.notifId === 'string') {
+				store.dismissNotification(msg.notifId);
+			}
+		},
+	);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
@@ -153,6 +169,14 @@ export function activate(context: vscode.ExtensionContext) {
 			const scanHistory = store.loadSnapshots();
 			const sessionAnalysis = analyzeSession(scanHistory);
 			const sessionMetrics = toSessionMetrics(sessionAnalysis);
+
+			// Filter out previously dismissed notifications
+			const dismissed = new Set(store.loadDismissedNotifications());
+			if (sessionMetrics.notifications) {
+				sessionMetrics.notifications = sessionMetrics.notifications
+					.filter(n => !dismissed.has(n.id));
+			}
+
 			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
 			updateStatusBar(sessionAnalysis);
 

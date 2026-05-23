@@ -4,9 +4,11 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	private currentHtml: string;
 	private webviewView?: vscode.WebviewView;
 	private pendingBadgeCount?: number;
+	private readonly messageHandler?: (msg: Record<string, unknown>) => void;
 
-	constructor(initialHtml: string) {
+	constructor(initialHtml: string, onMessage?: (msg: Record<string, unknown>) => void) {
 		this.currentHtml = initialHtml;
+		this.messageHandler = onMessage;
 	}
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -33,6 +35,9 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 				});
 				editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 			}
+
+			// Delegate to the external message handler (if provided).
+			this.messageHandler?.(msg);
 		});
 
 		if (this.pendingBadgeCount !== undefined) {

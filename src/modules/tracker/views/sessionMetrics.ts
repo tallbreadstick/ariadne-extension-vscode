@@ -68,9 +68,9 @@ function buildMetricCard(title: string, value: number): string {
 }
 
 function buildNotificationItem(notif: SessionNotification): string {
-	const { message, detail, timestamp } = notif;
+	const { id, message, detail, timestamp } = notif;
 	return /* html */ `
-		<div class="notif-card">
+		<div class="notif-card" data-notif-id="${id}">
 			<div class="notif-body">
 				${NOTIFICATION_ICON_SVG}
 				<div class="notif-text">
@@ -79,7 +79,8 @@ function buildNotificationItem(notif: SessionNotification): string {
 					<div class="notif-timestamp">${timestamp} · Ariadne</div>
 				</div>
 			</div>
-			<button class="notif-dismiss" type="button" aria-label="Dismiss">&#x2715;</button>
+			<button class="notif-dismiss" type="button" aria-label="Dismiss"
+			        data-notif-id="${id}">&#x2715;</button>
 		</div>`;
 }
 
@@ -291,6 +292,19 @@ const CSS = /* css */ `
 
 	.notif-dismiss:hover { color: var(--text); }
 
+	/* Slide-out animation for dismissed notifications */
+	@keyframes notif-slide-out {
+		0%   { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 0; }
+		60%  { opacity: 0; transform: translateX(40px); max-height: 200px; margin-bottom: 0; }
+		100% { opacity: 0; transform: translateX(40px); max-height: 0; margin-bottom: -8px; padding: 0 14px; border-width: 0; }
+	}
+
+	.notif-card.dismissing {
+		animation: notif-slide-out 0.35s ease forwards;
+		pointer-events: none;
+		overflow: hidden;
+	}
+
 	@media (max-width: 520px) {
 		body { padding: 12px; }
 		.metrics-grid { grid-template-columns: 1fr; }
@@ -351,6 +365,38 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 
 			${buildNotificationFeed(metrics)}
 		</section>
+		<script>
+			(function () {
+				const vscode = acquireVsCodeApi();
+				document.addEventListener('click', (e) => {
+					const btn = e.target.closest('.notif-dismiss');
+					if (!btn) return;
+					const id = btn.dataset.notifId;
+					if (!id) return;
+
+					// Animate the card out, then remove from DOM
+					const card = btn.closest('.notif-card');
+					if (card) {
+						card.classList.add('dismissing');
+						card.addEventListener('animationend', () => {
+							card.remove();
+							// If no notifications remain, remove the divider + feed wrapper
+							const feed = document.querySelector('.notif-feed');
+							if (feed && feed.children.length === 0) {
+								const divider = feed.previousElementSibling;
+								if (divider && divider.classList.contains('divider')) {
+									divider.remove();
+								}
+								feed.remove();
+							}
+						});
+					}
+
+					// Persist the dismissal in the extension host
+					vscode.postMessage({ type: 'dismiss-notification', notifId: id });
+				});
+			})();
+		</script>
 	</body>
 </html>`;
 }

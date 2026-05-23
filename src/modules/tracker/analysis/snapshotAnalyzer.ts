@@ -271,9 +271,13 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 			? extractFileName(firstOccurrence.file_path)
 			: 'unknown file';
 
+		// Stable ID: same vulnerability + same status → same ID across restarts.
+		const notifId = `${delta.status}::${v.cwe_id}::${v.type}`;
+
 		switch (delta.status) {
 			case 'new':
 				notifications.push({
+					id: notifId,
 					message: 'New vulnerability detected',
 					detail:
 						`${v.type} (${v.cwe_id}) found in ${fileHint}` +
@@ -285,6 +289,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 
 			case 'persisting':
 				notifications.push({
+					id: notifId,
 					message: 'Recurring issue',
 					detail:
 						`${v.type} has persisted across consecutive scans` +
@@ -295,6 +300,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 
 			case 'improving':
 				notifications.push({
+					id: notifId,
 					message: 'Security improving',
 					detail:
 						`${v.type} instances decreased from ` +
@@ -305,6 +311,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 
 			case 'resolved':
 				notifications.push({
+					id: notifId,
 					message: 'Pattern resolved',
 					detail:
 						`${v.type} (${v.cwe_id}) is no longer detected in the latest scan.`,
