@@ -16,6 +16,9 @@ export const WS_SCAN_SNAPSHOTS = 'ariadne.scanSnapshots';
 /** Key for the persisted SessionMeta object. */
 export const WS_SESSION_META = 'ariadne.sessionMeta';
 
+/** Key for the persisted set of dismissed notification IDs. */
+export const WS_DISMISSED_NOTIFICATIONS = 'ariadne.dismissedNotifications';
+
 // ── globalState keys (cross-project) ──────────────────────────────────
 
 /** Key for the persisted UserConfig object. */
