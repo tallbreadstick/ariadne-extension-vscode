@@ -6,7 +6,7 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { Vulnerability, Severity } from '../mock/types';
+import { Vulnerability, Severity } from '../types.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 

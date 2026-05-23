@@ -1,10 +1,10 @@
 /**
  * Shared TypeScript interfaces that define the data contract between
- * the Ariadne backend and the VS Code extension frontend.
+ * the Ariadne SAST engine and the VS Code extension presentation layer.
  *
- * When the real backend is ready, only mockData.ts needs to be swapped —
- * everything else (view builders, AriadneViewProvider) stays untouched,
- * as long as the API responses conform to the shapes defined here.
+ * These types are consumed by the view builders (activeVulnerabilities,
+ * sessionMetrics), the bridge converter (convert.ts), the snapshot
+ * analyzer, and extension.ts.
  */
 
 /** Severity levels for a detected vulnerability. */
@@ -12,6 +12,10 @@ export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
 /**
  * A single vulnerability finding produced by an Ariadne scan session.
+ *
+ * This is the card-level shape used by the Active Vulnerabilities panel.
+ * It is produced by `metadataToVulnerability()` in convert.ts from
+ * the flat VulnerabilityMetadata emitted by the SAST engine.
  */
 export interface Vulnerability {
 	/** Unique identifier for this finding (e.g. "vuln-001"). */

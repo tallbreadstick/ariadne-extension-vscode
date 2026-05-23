@@ -25,10 +25,10 @@ import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_res
 import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
 
 // ── Tracker (status bar + analysis engine) ────────────────────────────
-import { createAriadneStatusBarItem } from './modules/tracker/views/statusBar';
+import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
 import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
-import type { ScanSnapshot } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
-import type { Vulnerability } from './modules/presentation/mock/types';
+import { SessionStore } from './modules/tracker/storage/sessionStore.js';
+import type { Vulnerability } from './modules/presentation/types.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -66,13 +66,53 @@ function readApiKeyFromDotEnv(extensionPath: string): string {
 // ─────────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext) {
 
-	// ── Panel providers — start empty; filled on first engine response ──
-	const activeVulnsProvider = new AriadneViewProvider(
-		buildActiveVulnerabilitiesHtml([]),
-	);
-	const sessionMetricsProvider = new AriadneViewProvider(
-		buildSessionMetricsHtml({ critical: 0, high: 0, medium: 0, low: 0, trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 } }),
-	);
+	// ── Session persistence layer ──────────────────────────────────────
+	const store = new SessionStore(context);
+
+	// ── Restore UI from stored snapshots (survives VS Code restarts) ────
+	const storedSnapshots = store.loadSnapshots();
+
+	let initialVulnsHtml = buildActiveVulnerabilitiesHtml([]);
+	let initialMetricsHtml = buildSessionMetricsHtml({
+		critical: 0, high: 0, medium: 0, low: 0,
+		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 },
+	});
+
+	if (storedSnapshots.length > 0) {
+		try {
+			const restoredAnalysis = analyzeSession(storedSnapshots);
+			const restoredMetrics = toSessionMetrics(restoredAnalysis);
+			initialMetricsHtml = buildSessionMetricsHtml(restoredMetrics);
+
+			// Restore active vulnerabilities from the latest scan's findings
+			const latestScan = storedSnapshots[storedSnapshots.length - 1];
+			const restoredVulns = latestScan.vulnerabilities.flatMap((v, vi) =>
+				v.instances.flatMap((inst, ii) =>
+					inst.occurrences.map((occ, oi) => metadataToVulnerability({
+						type: v.type,
+						cwe_id: v.cwe_id,
+						owasp_category: v.owasp_category,
+						severity: v.severity,
+						file_path: occ.file_path,
+						line_number: occ.line_number,
+						rule_id: v.rule_id,
+						column_number: occ.column_number,
+						taint_trace: occ.taint_trace,
+						instance_name: inst.name,
+						instance_kind: inst.kind,
+					}, vi * 100 + ii * 10 + oi)),
+			),
+			);
+			initialVulnsHtml = buildActiveVulnerabilitiesHtml(restoredVulns);
+		} catch {
+			// If stored data is corrupted, start fresh
+			console.warn('[Ariadne] Could not restore session from stored snapshots.');
+		}
+	}
+
+	// ── Panel providers ────────────────────────────────────────────────
+	const activeVulnsProvider = new AriadneViewProvider(initialVulnsHtml);
+	const sessionMetricsProvider = new AriadneViewProvider(initialMetricsHtml);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
@@ -90,33 +130,41 @@ export function activate(context: vscode.ExtensionContext) {
 	// ── Latest known findings (needed for feedback panel lookup) ────────
 	let latestVulnerabilities: Vulnerability[] = [];
 
-	// ── Scan-snapshot accumulator for the session tracker ───────────────
-	const scanHistory: ScanSnapshot[] = [];
-	let scanCounter = 0;
-
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();
 	registerDocumentEvents(context, session);
 
 	// ── Wire findings from the engine to every UI surface ───────────────
-	session.onFindings((findings: VulnerabilityMetadata[]) => {
+	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
 		// ── 1. Active Vulnerabilities panel ─────────────────────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
 		activeVulnsProvider.updateHtml(buildActiveVulnerabilitiesHtml(vulns));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
-		// ── 2. Session Metrics panel ─────────────────────────────────────
-		scanCounter += 1;
-		const snapshot = metadataToScanSnapshot(findings, `scan-${scanCounter}`);
-		scanHistory.push(snapshot);
-		// Keep a rolling window of 20 scans so the tracker doesn't grow unbounded
-		if (scanHistory.length > 20) { scanHistory.shift(); }
+		// ── 2. Persist scan snapshot ──────────────────────────────────────
+		const scanId = await store.nextScanId();
+		const snapshot = metadataToScanSnapshot(findings, scanId);
+		await store.appendSnapshot(snapshot);
 
+		// ── 3. Session Metrics panel ─────────────────────────────────────
 		try {
+			const scanHistory = store.loadSnapshots();
 			const sessionAnalysis = analyzeSession(scanHistory);
 			const sessionMetrics = toSessionMetrics(sessionAnalysis);
 			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
+			updateStatusBar(sessionAnalysis);
+
+			// Debug: log analysis results
+			const sc = sessionAnalysis.severityCounts;
+			console.log(
+				`[Ariadne Analysis] Severities: ` +
+				`${sc.critical}C ${sc.high}H ${sc.medium}M ${sc.low}L | ` +
+				`Persisting: ${sessionAnalysis.persistingPatterns}, ` +
+				`Improving: ${sessionAnalysis.improvingTrends}, ` +
+				`Resolved: ${sessionAnalysis.resolvedThisSession}, ` +
+				`New: ${sessionAnalysis.newVulnerabilities}`,
+			);
 		} catch {
 			// analyzeSession throws on empty array (guarded above, but be safe)
 		}
@@ -237,21 +285,19 @@ export function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
-	// ── Status bar (updated alongside session metrics) ───────────────────
-	// Start with an empty analysis; real data flows in via onFindings above.
-	// `createAriadneStatusBarItem` accepts a SessionAnalysis, so we lazily
-	// create one the first time real findings arrive.  For now wire the
-	// initial empty state so the bar appears immediately.
-	let statusBarDisposable: vscode.Disposable | undefined;
-	session.onFindings((findings: VulnerabilityMetadata[]) => {
-		if (scanHistory.length === 0) { return; }
+	// ── Status bar — create once, updated via updateStatusBar() ─────────
+	// If we have stored snapshots, initialise with the restored analysis;
+	// otherwise show a neutral "Ariadne" label until the first scan.
+	if (storedSnapshots.length > 0) {
 		try {
-			const analysis = analyzeSession(scanHistory);
-			statusBarDisposable?.dispose();
-			statusBarDisposable = createAriadneStatusBarItem(analysis);
-			context.subscriptions.push(statusBarDisposable);
-		} catch { /* guard */ }
-	});
+			const restoredAnalysis = analyzeSession(storedSnapshots);
+			context.subscriptions.push(createAriadneStatusBarItem(restoredAnalysis));
+		} catch {
+			context.subscriptions.push(createAriadneStatusBarItem());
+		}
+	} else {
+		context.subscriptions.push(createAriadneStatusBarItem());
+	}
 
 	context.subscriptions.push(
 		helloWorld,
