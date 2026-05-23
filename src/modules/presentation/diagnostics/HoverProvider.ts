@@ -17,7 +17,7 @@
  *
  *   ---
  *
- *   [Ask Ariadne →](command:ariadne.askAriadne)
+ *   [Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel)
  */
 
 import * as vscode from "vscode";
@@ -104,10 +104,10 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
   md.appendMarkdown("---\n\n");
 
   // ── Ask Ariadne CTA — italic link ────────────────────────────────────
-  // The ariadne.askAriadne command is not yet implemented; the link wires
-  // the command name so the AI Feedback module can register it later
-  // without touching HoverProvider.
-  md.appendMarkdown("*[Ask Ariadne →](command:ariadne.askAriadne)*");
+  // Encodes [cweId, vulnerabilityName] as JSON query args, matching the
+  // same (cwe, title) signature used by the Active Vulnerabilities panel.
+  const commandArgs = encodeURIComponent(JSON.stringify([finding.cweId, finding.vulnerabilityName]));
+  md.appendMarkdown(`*[Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs})*`);
 
   return md;
 }
