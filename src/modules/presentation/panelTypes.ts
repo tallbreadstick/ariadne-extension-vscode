@@ -54,6 +54,8 @@ export interface TrendData {
  * Session Metrics panel.
  */
 export interface SessionNotification {
+	/** Stable identifier used for persistent dismiss tracking. */
+	id: string;
 	/** Short headline for the notification. */
 	message: string;
 	/** Supporting detail text. */

@@ -98,7 +98,7 @@ function showImprovingToast(analysis: SessionAnalysis): void {
 		: `${improvingTypes.slice(0, 3).join(', ')} and ${improvingTypes.length - 3} more`;
 
 	vscode.window.showInformationMessage(
-		`$(arrow-down) Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — ${detail}`,
+		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — ${detail}`,
 	);
 }
 

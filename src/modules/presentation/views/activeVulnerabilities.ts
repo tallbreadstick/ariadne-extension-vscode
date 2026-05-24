@@ -6,7 +6,7 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { Vulnerability, Severity } from '../types.js';
+import { Vulnerability, Severity } from '../panelTypes.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 
@@ -90,7 +90,14 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">File Location</div>
-						<div class="detail-value file">${location}</div>
+						<a class="detail-value file goto-location"
+						   href="#" role="link"
+						   data-file="${vuln.filePath}"
+						   data-line="${vuln.line}"
+						   title="Open ${vuln.filePath} at line ${vuln.line}">
+							${FILE_SVG}
+							<span>${location}</span>
+						</a>
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">CWE · OWASP Reference</div>
@@ -189,7 +196,29 @@ const CSS = /* css */ `
 
 	.detail-value.file {
 		color: var(--file);
-		
+	}
+
+	a.goto-location {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		text-decoration: none;
+		color: var(--file);
+		cursor: pointer;
+		border-radius: 3px;
+		padding: 2px 4px;
+		margin: -2px -4px;
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+
+	a.goto-location:hover {
+		text-decoration: underline;
+	}
+
+	a.goto-location .file-icon {
+		width: 14px;
+		height: 14px;
+		flex: 0 0 auto;
 	}
 
 	.detail-value.reference {
@@ -409,6 +438,21 @@ export function buildActiveVulnerabilitiesHtml(
 		<section class="vuln-stack">
             ${vulns.length === 0 ? emptyState : cards}
 		</section>
+		<script>
+			(function () {
+				const vscode = acquireVsCodeApi();
+				document.addEventListener('click', (e) => {
+					const link = e.target.closest('.goto-location');
+					if (!link) return;
+					e.preventDefault();
+					vscode.postMessage({
+						type: 'goto-line',
+						filePath: link.dataset.file,
+						line: Number(link.dataset.line),
+					});
+				});
+			})();
+		</script>
 	</body>
 </html>`;
 }
