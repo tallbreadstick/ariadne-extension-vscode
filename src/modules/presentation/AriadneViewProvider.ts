@@ -4,9 +4,19 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	private currentHtml: string;
 	private webviewView?: vscode.WebviewView;
 	private pendingBadgeCount?: number;
+	/** Optional hook to rebuild HTML when the panel becomes visible. */
+	private resolveHtml?: () => string;
 
 	constructor(initialHtml: string) {
 		this.currentHtml = initialHtml;
+	}
+
+	/**
+	 * When set, `resolveWebviewView` calls this to build fresh HTML each
+	 * time the panel is opened (e.g. to expand the first vulnerability).
+	 */
+	setResolveHtml(getHtml: () => string): void {
+		this.resolveHtml = getHtml;
 	}
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -16,6 +26,10 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 			enableCommandUris: true,
 		};
+
+		if (this.resolveHtml) {
+			this.currentHtml = this.resolveHtml();
+		}
 
 		webviewView.webview.html = this.currentHtml;
 

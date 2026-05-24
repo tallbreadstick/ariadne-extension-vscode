@@ -53,11 +53,11 @@ const CHEVRON_SVG =
 
 // ── Card builder ──────────────────────────────────────────────────────
 
-function buildVulnCard(vuln: Vulnerability, isFirst: boolean): string {
+function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const meta = buildMeta(vuln);
 	const label = capitalize(vuln.severity);
 	const location = `${vuln.filePath} : Line ${vuln.line}`;
-	const openAttr = isFirst ? ' open' : '';
+	const openAttr = expanded ? ' open' : '';
     const commandArgs = encodeURIComponent(JSON.stringify([vuln.cwe, vuln.title]));
     const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
 
@@ -380,11 +380,15 @@ const CSS = /* css */ `
  * Builds the complete HTML document for the Active Vulnerabilities panel.
  *
  * @param vulns - Vulnerability findings from the current scan session.
- *   The first item in the array is rendered expanded by default.
- * @returns A complete HTML string ready to be set on a VS Code webview.
+ * @param expandFirst - When true, the first item is rendered expanded.
+ *   Pass true only when the panel is opened; scan refreshes should leave
+ *   all cards collapsed so user-expanded state is not reset.
  */
-export function buildActiveVulnerabilitiesHtml(vulns: Vulnerability[]): string {
-    const cards = vulns.map((v, i) => buildVulnCard(v, i === 0)).join('\n');
+export function buildActiveVulnerabilitiesHtml(
+	vulns: Vulnerability[],
+	expandFirst = false,
+): string {
+    const cards = vulns.map((v, i) => buildVulnCard(v, expandFirst && i === 0)).join('\n');
     const emptyState = /* html */ `
         <div class="empty-state" role="status" aria-live="polite">
             <div class="empty-title">No active vulnerabilities</div>

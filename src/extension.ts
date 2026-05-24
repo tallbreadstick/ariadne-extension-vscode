@@ -73,6 +73,8 @@ export function activate(context: vscode.ExtensionContext) {
 	// ── Restore UI from stored snapshots (survives VS Code restarts) ────
 	const storedSnapshots = store.loadSnapshots();
 
+	let latestVulnerabilities: Vulnerability[] = [];
+
 	let initialVulnsHtml = buildActiveVulnerabilitiesHtml([]);
 	let initialMetricsHtml = buildSessionMetricsHtml({
 		critical: 0, high: 0, medium: 0, low: 0,
@@ -104,6 +106,7 @@ export function activate(context: vscode.ExtensionContext) {
 					}, vi * 100 + ii * 10 + oi)),
 			),
 			);
+			latestVulnerabilities = restoredVulns;
 			initialVulnsHtml = buildActiveVulnerabilitiesHtml(restoredVulns);
 		} catch {
 			// If stored data is corrupted, start fresh
@@ -113,6 +116,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Panel providers ────────────────────────────────────────────────
 	const activeVulnsProvider = new AriadneViewProvider(initialVulnsHtml);
+	activeVulnsProvider.setResolveHtml(() =>
+		buildActiveVulnerabilitiesHtml(latestVulnerabilities, true),
+	);
 	const sessionMetricsProvider = new AriadneViewProvider(initialMetricsHtml);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
@@ -129,7 +135,6 @@ export function activate(context: vscode.ExtensionContext) {
 	registerHoverProvider(context, diagnosticManager);
 
 	// ── Latest known findings (needed for feedback panel lookup) ────────
-	let latestVulnerabilities: Vulnerability[] = [];
 
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();

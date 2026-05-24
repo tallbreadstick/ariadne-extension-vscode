@@ -17,7 +17,7 @@ export function runSession(): AriadneSession {
 	});
 
 	// ── stdout: line-delimited JSON ─────────────────────────────────────
-	// The engine emits exactly one JSON line per Analyze response.
+	// The engine emits exactly one JSON line per analysis response.
 	// Buffer partial chunks across `data` events before parsing.
 	let stdoutBuffer = '';
 	const findingsCallbacks: FindingsCallback[] = [];
