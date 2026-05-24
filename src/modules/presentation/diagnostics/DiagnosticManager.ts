@@ -131,15 +131,8 @@ export class DiagnosticManager {
     if (!findings) { return undefined; }
 
     return findings.find((f) => {
-      if (f.startLine >= document.lineCount || f.endLine >= document.lineCount) {
-        return false;
-      }
-      const range = new vscode.Range(
-        f.startLine, f.startColumn,
-        f.endLine,
-        Math.min(f.endColumn, document.lineAt(f.endLine).text.length)
-      );
-      return range.contains(position);
+      const range = this._codeHighlightRange(document, f);
+      return range?.contains(position) ?? false;
     });
   }
 
@@ -167,19 +160,12 @@ export class DiagnosticManager {
     };
 
     for (const f of findings) {
-      if (
-        f.startLine >= editor.document.lineCount ||
-        f.endLine   >= editor.document.lineCount
-      ) {
-        console.warn(`[Ariadne] Skipping "${f.id}" — line out of bounds.`);
+      const range = this._codeHighlightRange(editor.document, f);
+      if (!range) {
+        console.warn(`[Ariadne] Skipping "${f.id}" — line out of bounds or empty.`);
         continue;
       }
 
-      const endCol = Math.min(
-        f.endColumn,
-        editor.document.lineAt(f.endLine).text.length
-      );
-      const range = new vscode.Range(f.startLine, f.startColumn, f.endLine, endCol);
       const color = SEVERITY_COLOR[f.severity];
 
       buckets[f.severity].push({
@@ -208,10 +194,39 @@ export class DiagnosticManager {
   }
 
   /**
+   * Build a highlight range that skips leading indentation so squiggles
+   * and background tints align with code, not whitespace.
+   */
+  private _codeHighlightRange(
+    document: vscode.TextDocument,
+    f: AriadneFinding,
+  ): vscode.Range | undefined {
+    if (f.startLine >= document.lineCount || f.endLine >= document.lineCount) {
+      return undefined;
+    }
+
+    const startLineText = document.lineAt(f.startLine).text;
+    const endLineText = document.lineAt(f.endLine).text;
+    const leading = startLineText.match(/^\s*/)?.[0]?.length ?? 0;
+
+    const startCol = Math.max(f.startColumn, leading);
+    const endCol =
+      f.endColumn >= 999
+        ? endLineText.length
+        : Math.min(f.endColumn, endLineText.length);
+
+    if (startCol >= endCol) {
+      return undefined;
+    }
+
+    return new vscode.Range(f.startLine, startCol, f.endLine, endCol);
+  }
+
+  /**
    * One decoration type per severity combining:
-   *   - isWholeLine background tint  → visible even on empty lines
-   *   - wavy underline on text       → squiggle on lines with content
-   *   - overview ruler dot           → gutter marker in scroll bar
+   *   - background tint on the code range
+   *   - wavy underline on the same range
+   *   - overview ruler dot in the scroll bar
    */
   private _makeDecorationType(
     severity: AriadneFinding["severity"]
@@ -219,7 +234,7 @@ export class DiagnosticManager {
     const color = SEVERITY_COLOR[severity];
     const bg    = SEVERITY_BG[severity];
     return vscode.window.createTextEditorDecorationType({
-      isWholeLine: true,
+      isWholeLine: false,
       backgroundColor: bg,
       textDecoration: `underline wavy ${color}`,
       overviewRulerColor: color,

@@ -56,6 +56,8 @@ export function metadataToAriadneFinding(
 ): AriadneFinding {
 	const line0 = Math.max(0, m.line_number - 1);
 	const sev = capitalize(m.severity) as AriadneFinding['severity'];
+	const startCol =
+		m.column_number !== undefined ? Math.max(0, m.column_number - 1) : 0;
 
 	return {
 		id: `engine-finding-${idx}`,
@@ -66,7 +68,7 @@ export function metadataToAriadneFinding(
 		shortExplanation: m.description ?? m.type,
 		filePath: m.file_path,
 		startLine: line0,
-		startColumn: 0,
+		startColumn: startCol,
 		endLine: line0,
 		endColumn: 999,
 		taintPath: m.taint_trace
