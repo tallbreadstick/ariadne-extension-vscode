@@ -29,7 +29,7 @@ import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/v
 import { showSessionToasts } from './modules/tracker/views/notificationToast.js';
 import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
-import type { Vulnerability } from './modules/presentation/types.js';
+import type { Vulnerability } from './modules/presentation/panelTypes.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -83,6 +83,14 @@ export function activate(context: vscode.ExtensionContext) {
 		try {
 			const restoredAnalysis = analyzeSession(storedSnapshots);
 			const restoredMetrics = toSessionMetrics(restoredAnalysis);
+
+			// Filter out previously dismissed notifications
+			const dismissed = new Set(store.loadDismissedNotifications());
+			if (restoredMetrics.notifications) {
+				restoredMetrics.notifications = restoredMetrics.notifications
+					.filter(n => !dismissed.has(n.id));
+			}
+
 			initialMetricsHtml = buildSessionMetricsHtml(restoredMetrics);
 
 			// Restore active vulnerabilities from the latest scan's findings
@@ -113,7 +121,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Panel providers ────────────────────────────────────────────────
 	const activeVulnsProvider = new AriadneViewProvider(initialVulnsHtml);
-	const sessionMetricsProvider = new AriadneViewProvider(initialMetricsHtml);
+	const sessionMetricsProvider = new AriadneViewProvider(
+		initialMetricsHtml,
+		// Handle dismiss-notification messages from the Session Metrics webview.
+		(msg) => {
+			if (msg.type === 'dismiss-notification' && typeof msg.notifId === 'string') {
+				store.dismissNotification(msg.notifId);
+			}
+		},
+	);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
@@ -153,6 +169,14 @@ export function activate(context: vscode.ExtensionContext) {
 			const scanHistory = store.loadSnapshots();
 			const sessionAnalysis = analyzeSession(scanHistory);
 			const sessionMetrics = toSessionMetrics(sessionAnalysis);
+
+			// Filter out previously dismissed notifications
+			const dismissed = new Set(store.loadDismissedNotifications());
+			if (sessionMetrics.notifications) {
+				sessionMetrics.notifications = sessionMetrics.notifications
+					.filter(n => !dismissed.has(n.id));
+			}
+
 			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
 			updateStatusBar(sessionAnalysis);
 
@@ -176,23 +200,12 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		// ── 3. Inline squiggles + diagnostics ────────────────────────────
+		// Eagerly publish diagnostics for ALL files with findings so that
+		// the native Problems Panel stays in sync with the Active
+		// Vulnerabilities webview — even for files not currently open.
+		// Decorations (squiggles) are applied lazily when the tab is opened.
 		const byFile = groupFindingsByFile(findings);
-
-		// Refresh every currently visible editor
-		for (const editor of vscode.window.visibleTextEditors) {
-			const filePath = editor.document.uri.fsPath;
-			const fileFindings = byFile.get(filePath) ?? [];
-			diagnosticManager.refresh(editor.document, fileFindings);
-		}
-
-		// Clear decorations from files that no longer have any findings
-		// (handles the case where a fix removes all issues from a file)
-		for (const editor of vscode.window.visibleTextEditors) {
-			const filePath = editor.document.uri.fsPath;
-			if (!byFile.has(filePath)) {
-				diagnosticManager.clear(editor.document);
-			}
-		}
+		diagnosticManager.publishAllDiagnostics(byFile);
 	});
 
 	context.subscriptions.push({ dispose: () => session.kill() });
@@ -237,7 +250,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const apiKey =
 				config.get<string>('openai.apiKey', '') ||
 				readApiKeyFromDotEnv(context.extensionPath);
-			const model = config.get<string>('openai.model', 'gpt-4.1-mini');
+			const model = config.get<string>('openai.model', 'gpt-5.5');
 
 			if (!apiKey) {
 				vscode.window.showErrorMessage(

@@ -31,7 +31,7 @@ import type {
 import type {
 	SessionMetrics,
 	SessionNotification,
-} from '../../presentation/types.js';
+} from '../../presentation/panelTypes.js';
 
 // ══════════════════════════════════════════════════════════════════════
 // IDENTITY KEY
@@ -164,6 +164,9 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 	// ── Detect resolved vulnerabilities ───────────────────────────
 	// A vulnerability is resolved if it appeared in ANY prior scan
 	// but is absent from the current scan.
+	//
+	// If it was also present in the IMMEDIATELY PREVIOUS scan, it
+	// counts as improving too (N instances → 0 is the final improvement).
 	for (const priorKey of allPriorKeys) {
 		if (!currentMap.has(priorKey)) {
 			// Find the last known state of this vulnerability
@@ -184,6 +187,12 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 					currentInstanceCount: 0,
 				});
 				resolvedThisSession++;
+
+				// If the vulnerability was in the immediately previous scan,
+				// going from N → 0 is also an improvement.
+				if (previousMap.has(priorKey)) {
+					improvingTrends++;
+				}
 			}
 		}
 	}
@@ -262,9 +271,13 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 			? extractFileName(firstOccurrence.file_path)
 			: 'unknown file';
 
+		// Stable ID: same vulnerability + same status → same ID across restarts.
+		const notifId = `${delta.status}::${v.cwe_id}::${v.type}`;
+
 		switch (delta.status) {
 			case 'new':
 				notifications.push({
+					id: notifId,
 					message: 'New vulnerability detected',
 					detail:
 						`${v.type} (${v.cwe_id}) found in ${fileHint}` +
@@ -276,6 +289,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 
 			case 'persisting':
 				notifications.push({
+					id: notifId,
 					message: 'Recurring issue',
 					detail:
 						`${v.type} has persisted across consecutive scans` +
@@ -286,6 +300,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 
 			case 'improving':
 				notifications.push({
+					id: notifId,
 					message: 'Security improving',
 					detail:
 						`${v.type} instances decreased from ` +
@@ -296,6 +311,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 
 			case 'resolved':
 				notifications.push({
+					id: notifId,
 					message: 'Pattern resolved',
 					detail:
 						`${v.type} (${v.cwe_id}) is no longer detected in the latest scan.`,

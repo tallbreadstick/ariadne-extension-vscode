@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { AriadneFinding } from "./types";
+import * as path from "node:path";
+import { AriadneFinding } from "./diagnosticTypes";
 
 // Design tokens — mirrored from activeVulnerabilities.ts CSS variables
 const SEVERITY_COLOR: Record<AriadneFinding["severity"], string> = {
@@ -77,6 +78,49 @@ export class DiagnosticManager {
 
     // UC-2.3: Publish to Problems Panel via DiagnosticCollection.
     this._publishDiagnostics(document, findings);
+  }
+
+  /**
+   * Eagerly publishes diagnostics to the Problems Panel for EVERY file
+   * that has findings, regardless of whether the file is currently open.
+   *
+   * This keeps the native Problems Panel in sync with the Active
+   * Vulnerabilities webview.  Decorations (squiggles / line highlights)
+   * are still applied lazily when the user opens the file, via the
+   * `onDidChangeActiveTextEditor` listener.
+   *
+   * Files that previously had diagnostics but are no longer in the new
+   * `byFile` map are automatically cleared.
+   */
+  publishAllDiagnostics(byFile: Map<string, AriadneFinding[]>): void {
+    // Track which file URIs still have findings so we can clear stale ones.
+    const activeUris = new Set<string>();
+
+    for (const [filePath, findings] of byFile) {
+      const uri = vscode.Uri.file(filePath);
+      const uriKey = uri.toString();
+      activeUris.add(uriKey);
+
+      // Store findings so _applyDecorations works when the tab opens later.
+      this.findingsByFile.set(uriKey, findings);
+
+      // Publish to the Problems Panel (does NOT require an open document).
+      this._publishDiagnosticsForUri(uri, findings);
+    }
+
+    // Clear diagnostics and stored findings for files no longer reported.
+    for (const uriKey of this.findingsByFile.keys()) {
+      if (!activeUris.has(uriKey)) {
+        this.findingsByFile.delete(uriKey);
+        // Parse the URI string back to a vscode.Uri to clear its diagnostics.
+        this.diagnosticCollection.delete(vscode.Uri.parse(uriKey));
+      }
+    }
+
+    // Also repaint decorations on any editors that happen to be visible.
+    for (const editor of vscode.window.visibleTextEditors) {
+      this._applyDecorations(editor);
+    }
   }
 
   getFindingAtPosition(
@@ -235,5 +279,42 @@ export class DiagnosticManager {
     }
 
     this.diagnosticCollection.set(document.uri, diagnostics);
+  }
+
+  /**
+   * Publishes findings to the Problems Panel for a file URI that may
+   * or may not be open.  Unlike `_publishDiagnostics`, this does NOT
+   * need a TextDocument — it builds Diagnostics using only the data
+   * already present in each AriadneFinding.
+   */
+  private _publishDiagnosticsForUri(
+    uri: vscode.Uri,
+    findings: AriadneFinding[]
+  ): void {
+    const diagnostics: vscode.Diagnostic[] = [];
+
+    for (const f of findings) {
+      // Zero-width range at column 0 — same strategy as _publishDiagnostics.
+      const zeroRange = new vscode.Range(
+        f.startLine, 0,
+        f.startLine, 0
+      );
+
+      const diag = new vscode.Diagnostic(
+        zeroRange,
+        `[Ariadne - ${f.severity.toUpperCase()}] ${f.vulnerabilityName} — ${f.shortExplanation}`,
+        SEVERITY_TO_DIAGNOSTIC[f.severity]
+      );
+
+      diag.source = "ariadne";
+
+      // Derive language hint from file extension for the code label.
+      const ext = path.extname(uri.fsPath).replace(".", "") || "file";
+      diag.code = `${ext}:${f.cweId}`;
+
+      diagnostics.push(diag);
+    }
+
+    this.diagnosticCollection.set(uri, diagnostics);
   }
 }

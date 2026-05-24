@@ -26,6 +26,7 @@ import type { SessionMeta, UserConfig } from './storageTypes.js';
 import {
 	WS_SCAN_SNAPSHOTS,
 	WS_SESSION_META,
+	WS_DISMISSED_NOTIFICATIONS,
 	GL_USER_CONFIG,
 } from './storageKeys.js';
 
@@ -150,5 +151,31 @@ export class SessionStore {
 	/** Persists global user preferences. */
 	async saveUserConfig(config: UserConfig): Promise<void> {
 		await this.context.globalState.update(GL_USER_CONFIG, config);
+	}
+
+	// ── Dismissed Notifications (workspaceState — per project) ──
+
+	/**
+	 * Loads the set of notification IDs the user has dismissed.
+	 * Returns an empty array if none have been dismissed yet.
+	 */
+	loadDismissedNotifications(): string[] {
+		return this.context.workspaceState.get<string[]>(
+			WS_DISMISSED_NOTIFICATIONS,
+			[],
+		);
+	}
+
+	/**
+	 * Marks a notification as dismissed by persisting its ID.
+	 * Subsequent calls to `loadDismissedNotifications()` will include it.
+	 */
+	async dismissNotification(notificationId: string): Promise<void> {
+		const dismissed = this.loadDismissedNotifications();
+		if (!dismissed.includes(notificationId)) {
+			dismissed.push(notificationId);
+			await this.context.workspaceState.update(WS_DISMISSED_NOTIFICATIONS, dismissed);
+			console.log(`[Ariadne Store] Dismissed notification: ${notificationId}`);
+		}
 	}
 }
