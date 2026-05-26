@@ -1,71 +1,168 @@
-# ariadne-extension-vscode README
+# ariadne-extension-vscode
 
-This is the README for your extension "ariadne-extension-vscode". After writing up a brief description, we recommend including the following sections.
+VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by OpenAI.
 
-## Features
+This extension does **not** embed the analysis engine. It spawns the **`ariadne`** CLI from [`ariadne-core`](../ariadne-core/) in session mode. Install the core first:
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+```powershell
+cd ..\ariadne-core
+cargo install --path .
+```
 
-For example if there is an image subfolder under your extension project workspace:
+See [`../ariadne-core/README.md`](../ariadne-core/README.md) for Rust/Cargo setup.
 
-\!\[feature X\]\(images/feature-x.png\)
+## Prerequisites
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+| Requirement | Version / notes |
+|---|---|
+| [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
+| npm | Bundled with Node.js |
+| [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
+| `ariadne` on PATH | From `cargo install --path .` in `ariadne-core` |
 
-## Requirements
+## Install dependencies
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+Open a terminal in **`ariadne-extension-vscode`** (this folder):
 
-## Extension Settings
+```powershell
+cd path\to\ariadne\ariadne-extension-vscode
+npm install
+```
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+This installs TypeScript, esbuild, ESLint, and other dev dependencies listed in `package.json`.
 
-For example:
+## Compile the extension
 
-This extension contributes the following settings:
+```powershell
+npm run compile
+```
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+This runs, in order:
 
-## Known Issues
+1. `npm run check-types` — TypeScript type-check (`tsc --noEmit`)
+2. `npm run lint` — ESLint on `src/`
+3. `node esbuild.js` — bundles `src/extension.ts` to `dist/extension.js`
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+You must compile (or run watch mode) before launching the extension. VS Code loads `./dist/extension.js` as the extension entry point.
 
-## Release Notes
+### Watch mode (optional, while developing)
 
-Users appreciate release notes as you update your extension.
+Recompiles automatically when you save files:
 
-### 1.0.0
+```powershell
+npm run watch
+```
 
-Initial release of ...
+This runs esbuild and TypeScript in parallel. The default **Run Extension** launch config uses the watch task as its pre-launch build.
 
-### 1.0.1
+## Run and debug in VS Code
 
-Fixed issue #.
+1. Open the **`ariadne-extension-vscode`** folder in VS Code (File → Open Folder).
+2. Ensure dependencies are installed and the project has been compiled at least once (`npm install`, `npm run compile`).
+3. Confirm `ariadne` is available:
 
-### 1.1.0
+   ```powershell
+   ariadne --help
+   ```
 
-Added features X, Y, and Z.
+4. Press **F5** or go to **Run and Debug** → select **Run Extension** → click the green play button.
 
----
+VS Code opens a second window titled **Extension Development Host**. That window loads this extension from your workspace.
 
-## Following extension guidelines
+5. In the Extension Development Host, open a folder containing **Java** source files (File → Open Folder). The extension activates on Java files and starts `ariadne session` in the background.
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+### Launch configuration
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+The repo includes `.vscode/launch.json`:
 
-## Working with Markdown
+- **Configuration:** `Run Extension`
+- **Type:** `extensionHost`
+- **Pre-launch task:** default build task (`watch` — runs esbuild + TypeScript watchers)
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+If F5 fails with a missing build, run `npm run compile` once manually, then try again.
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+### Recommended VS Code extensions
 
-## For more information
+See `.vscode/extensions.json` for suggested extensions (ESLint, esbuild problem matchers, etc.). VS Code may prompt you to install them when you open the folder.
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+## Using the extension
 
-**Enjoy!**
+### Commands (Command Palette: `Ctrl+Shift+P`)
+
+| Command | Title | Description |
+|---|---|---|
+| `ariadne-extension-vscode.analyze` | **Ariadne: Analyze** | Run analysis on the workspace |
+| `ariadne-extension-vscode.openFeedbackPanel` | **Ariadne: Ask Ariadne** | Open AI explanation panel for a finding |
+| `ariadne-extension-vscode.helloWorld` | Hello World | Development stub |
+
+### Panels
+
+Open the **Ariadne** panel area in the bottom panel bar:
+
+- **ARIADNE (ACTIVE VULNERABILITIES)** — current findings
+- **SESSION METRICS** — counts and session stats
+
+Inline squiggles and hovers appear on vulnerable lines after analysis.
+
+## Settings
+
+Open **File → Preferences → Settings** and search for **Ariadne**, or edit `settings.json`:
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `ariadne.openai.apiKey` | `""` | OpenAI API key for the feedback panel |
+| `ariadne.openai.model` | `gpt-5.5` | Model for explanations (`gpt-4o`, `gpt-4o-mini`, etc.) |
+
+Analysis and diagnostics work without an API key. The key is only needed for **Ask Ariadne**.
+
+Example `settings.json` snippet:
+
+```json
+{
+  "ariadne.openai.apiKey": "sk-...",
+  "ariadne.openai.model": "gpt-4o-mini"
+}
+```
+
+## npm scripts (reference)
+
+| Script | Command | Purpose |
+|---|---|---|
+| `compile` | `npm run compile` | One-shot typecheck + lint + bundle |
+| `watch` | `npm run watch` | Watch mode for development |
+| `package` | `npm run package` | Production bundle (minified) |
+| `lint` | `npm run lint` | ESLint only |
+| `check-types` | `npm run check-types` | TypeScript check only |
+| `test` | `npm test` | Extension tests (`vscode-test`) |
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
+| No findings / core errors in Debug Console | `ariadne` not on PATH | `cd ../ariadne-core && cargo install --path .` |
+| Stale results after core changes | Old binary still installed | `cargo install --path . --force`, reload window |
+| Ask Ariadne errors | Missing or invalid API key | Set `ariadne.openai.apiKey` |
+
+Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.
+
+## Project structure
+
+```
+ariadne-extension-vscode/
+├── src/
+│   ├── extension.ts              ← activation entry point
+│   └── modules/
+│       ├── detection/            ← bridge to Rust core (IPC)
+│       ├── presentation/         ← diagnostics, webviews
+│       ├── feedback/             ← LLM “Ask Ariadne”
+│       └── tracker/              ← status bar, metrics
+├── dist/extension.js             ← built output (after compile)
+├── package.json
+└── .vscode/launch.json           ← F5 “Run Extension”
+```
+
+## See also
+
+- [`../README.md`](../README.md) — full-stack quick start
+- [`../ariadne-core/README.md`](../ariadne-core/README.md) — install and use the `ariadne` CLI
