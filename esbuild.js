@@ -35,7 +35,7 @@ async function main() {
 		sourcesContent: false,
 		platform: 'node',
 		outfile: 'dist/extension.js',
-		external: ['vscode'],
+		external: ['vscode', '@github/copilot-sdk', '@github/copilot', 'koffi'],
 		logLevel: 'silent',
 		plugins: [
 			/* add to the end of plugins array */

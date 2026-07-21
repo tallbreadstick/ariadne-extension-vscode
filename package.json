@@ -13,7 +13,8 @@
     "onLanguage:java",
     "onCommand:ariadne-extension-vscode.analyze",
     "onView:ariadne.panel.activeVulnerabilities",
-    "onView:ariadne.panel.sessionMetrics"
+    "onView:ariadne.panel.sessionMetrics",
+    "onView:ariadne.panel.signIn"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -25,11 +26,14 @@
       {
         "command": "ariadne-extension-vscode.openFeedbackPanel",
         "title": "Ariadne: Ask Ariadne"
-      }
-      ,
+      },
       {
         "command": "ariadne-extension-vscode.analyze",
         "title": "Ariadne: Analyze"
+      },
+      {
+        "command": "ariadne-extension-vscode.openSignInPanel",
+        "title": "Ariadne: Sign In to GitHub"
       }
     ],
     "viewsContainers": {
@@ -56,22 +60,30 @@
           "name": "SESSION METRICS",
           "group": "right",
           "icon": "$(graph)"
+        },
+        {
+          "type": "webview",
+          "id": "ariadne.panel.signIn",
+          "name": "GITHUB SIGN-IN",
+          "group": "right",
+          "icon": "$(account)"
         }
       ]
     },
     "configuration": {
       "title": "Ariadne",
       "properties": {
-        "ariadne.openai.apiKey": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "OpenAI API key for AI-powered explanations. Get one at [platform.openai.com](https://platform.openai.com/api-keys)."
-        },
-        "ariadne.openai.model": {
+        "ariadne.copilot.model": {
           "type": "string",
           "default": "gpt-5.5",
-          "enum": ["gpt-5.5", "gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1-nano"],
-          "markdownDescription": "OpenAI model to use for generating explanations."
+          "enum": [
+            "gpt-5.5",
+            "gpt-4o-mini",
+            "gpt-4o",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano"
+          ],
+          "markdownDescription": "GitHub Copilot model to use for generating vulnerability explanations."
         }
       }
     },
@@ -97,15 +109,18 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.107.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.56.1",
-    "eslint": "^9.39.3",
+    "@types/vscode": "^1.107.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.3",
+    "eslint": "^9.39.3",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.56.1"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "^1.0.7"
   }
 }

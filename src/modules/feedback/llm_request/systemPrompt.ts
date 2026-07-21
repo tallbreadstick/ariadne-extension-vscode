@@ -1,5 +1,5 @@
 /**
- * Ariadne system prompt for the OpenAI Chat Completions API (UC-3.2).
+ * Ariadne system prompt for the Copilot SDK (UC-3.2).
  *
  * This prompt constrains the LLM to produce a JSON object with exactly
  * three fields (vulnerability, impact, suggestion) matching the

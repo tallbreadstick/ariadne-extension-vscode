@@ -1,13 +1,6 @@
 /**
- * UC-3.1 — LLM Prompt Payload Serialization.
- *
  * Assembles the vulnerability metadata and active file content into
- * a complete OpenAI Chat Completions request body, ready to POST.
- *
- * ─────────────────────────────────────────────────────────────────────
- * STATUS: DORMANT — Exported but not called in the active code path.
- * Will be called from extension.ts when the SAST core is ready.
- * ─────────────────────────────────────────────────────────────────────
+ * a complete LLM request body for the Copilot SDK pipeline.
  */
 
 import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
@@ -24,8 +17,8 @@ import { ARIADNE_SYSTEM_PROMPT } from './systemPrompt.js';
  * @param vulnerability - Metadata from the SAST engine finding.
  * @param activeFileContent - Full text of the Java file (or "" on read failure).
  * @param activeFilePath - Path to the active Java file.
- * @param model - OpenAI model identifier (e.g. "gpt-4o-mini").
- * @returns A fully assembled request body for POST /v1/chat/completions.
+ * @param model - Copilot model identifier (e.g. "gpt-5.5").
+ * @returns A fully assembled request body for the Copilot SDK session.
  */
 export function serializePayload(
 	vulnerability: VulnerabilityMetadata,
@@ -45,7 +38,7 @@ export function serializePayload(
 	// Step 3: JSON.stringify() the payload into the user message content
 	const userContent = JSON.stringify(payload);
 
-	// Step 4-5: Assemble the OpenAI request body
+	// Step 4-5: Assemble the LLM request body
 	return {
 		model,
 		messages: [

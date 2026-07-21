@@ -1,7 +1,7 @@
 /**
  * LLM request types for the Ariadne Feedback module.
  *
- * These types define the data contract for the OpenAI API request
+ * These types define the data contract for the Copilot SDK request
  * and response format used by the LLM pipeline (UC-3.1 / UC-3.2).
  */
 
@@ -9,7 +9,7 @@ import type { VulnerabilityMetadata, ActiveJavaFile } from '../vulnerability_res
 
 /**
  * The complete prompt payload that gets JSON.stringify()'d into the
- * OpenAI user message content.
+ * user message content.
  */
 export interface LLMPromptPayload {
 	vulnerability: VulnerabilityMetadata;
@@ -17,19 +17,19 @@ export interface LLMPromptPayload {
 }
 
 /**
- * A single message in the OpenAI Chat Completions format.
+ * A single message in the chat prompt format consumed by callLLM().
  */
-export interface OpenAIMessage {
+export interface LLMMessage {
 	role: 'system' | 'user' | 'assistant';
 	content: string;
 }
 
 /**
- * The request body sent to POST /v1/chat/completions.
+ * The request body passed to the Copilot SDK via callLLM().
  */
 export interface AriadneLLMRequestBody {
 	model: string;
-	messages: OpenAIMessage[];
+	messages: LLMMessage[];
 }
 
 /**
