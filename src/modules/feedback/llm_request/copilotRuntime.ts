@@ -24,12 +24,18 @@ function getPlatformPackageNames(): string[] {
 export function resolveCopilotCliBinary(extensionPath: string): string {
 	const require = createRequire(join(extensionPath, 'package.json'));
 	const searchPaths = require.resolve.paths('@github/copilot') ?? [];
+	const binaryNames =
+		process.platform === 'win32'
+			? ['copilot.exe', 'copilot']
+			: ['copilot', 'copilot.exe'];
 
 	for (const base of searchPaths) {
 		for (const packageName of getPlatformPackageNames()) {
-			const candidate = join(base, '@github', packageName, 'copilot');
-			if (existsSync(candidate)) {
-				return candidate;
+			for (const binaryName of binaryNames) {
+				const candidate = join(base, '@github', packageName, binaryName);
+				if (existsSync(candidate)) {
+					return candidate;
+				}
 			}
 		}
 	}
