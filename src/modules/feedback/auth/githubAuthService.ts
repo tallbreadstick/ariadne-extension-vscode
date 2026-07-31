@@ -11,7 +11,7 @@ import { AuthStorage } from './authStorage.js';
 import {
 	GITHUB_AUTH_SCOPES,
 	TERMS_VERSION,
-	type SignInPanelViewModel,
+	type AuthPanelState,
 } from './authTypes.js';
 
 export class GitHubAuthService {
@@ -33,23 +33,36 @@ export class GitHubAuthService {
 		);
 	}
 
-	async getPanelViewModel(): Promise<SignInPanelViewModel> {
+	/** Sync stored session metadata with VS Code's GitHub auth provider. */
+	async initialize(): Promise<void> {
+		await this.syncStoredSession();
+	}
+
+	async getPanelViewModel(): Promise<AuthPanelState> {
 		const consent = await this.storage.loadConsent();
+		if (!this.hasValidConsent(consent)) {
+			return {
+				status: 'signed-out',
+				hasConsent: false,
+				analyticsConsent: false,
+			};
+		}
+
 		const sessionMeta = await this.storage.loadSessionMeta();
 		const liveSession = await this.getLiveSession();
 
-		if (liveSession && sessionMeta) {
+		if (liveSession && sessionMeta && consent) {
 			return {
 				status: 'signed-in',
 				accountLabel: liveSession.account.label,
 				signedInAt: sessionMeta.signedInAt,
-				analyticsConsent: Boolean(consent?.analyticsConsentAt),
+				analyticsConsent: Boolean(consent.analyticsConsentAt),
 			};
 		}
 
 		return {
 			status: 'signed-out',
-			hasConsent: this.hasValidConsent(consent),
+			hasConsent: true,
 			analyticsConsent: Boolean(consent?.analyticsConsentAt),
 		};
 	}
@@ -98,23 +111,18 @@ export class GitHubAuthService {
 	}
 
 	async signOut(): Promise<void> {
-		const sessionMeta = await this.storage.loadSessionMeta();
-		const liveSession = await this.getLiveSession();
-		const session = liveSession ?? (sessionMeta
-			? { id: sessionMeta.sessionId, account: { id: sessionMeta.accountId, label: sessionMeta.accountLabel } }
-			: undefined);
-
 		await this.storage.clearSessionMeta();
 		await this.storage.clearConsent();
+		this._onDidChangeAuth.fire();
 
-		if (session) {
-			await vscode.commands.executeCommand(
+		const liveSession = await this.getLiveSession();
+		if (liveSession) {
+			// Best-effort global GitHub sign-out; UI already reflects Ariadne sign-out.
+			void vscode.commands.executeCommand(
 				'workbench.action.accounts.signOut',
-				{ providerId: 'github', account: session.account },
+				{ providerId: 'github', account: liveSession.account },
 			);
 		}
-
-		this._onDidChangeAuth.fire();
 	}
 
 	/**
@@ -157,6 +165,12 @@ export class GitHubAuthService {
 	}
 
 	private async syncStoredSession(): Promise<void> {
+		const consent = await this.storage.loadConsent();
+		if (!this.hasValidConsent(consent)) {
+			await this.storage.clearSessionMeta();
+			return;
+		}
+
 		const liveSession = await this.getLiveSession();
 		if (!liveSession) {
 			await this.storage.clearSessionMeta();
