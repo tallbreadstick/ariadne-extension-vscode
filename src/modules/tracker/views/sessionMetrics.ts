@@ -53,6 +53,11 @@ const NOTIFICATION_ICON_SVG =
 			stroke-linecap="round" />
 	</svg>`;
 
+const REINFORCEMENT_ICON_SVG =
+	`<svg class="reinforcement-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<path d="M12 3l2.8 5.7L21 9.5l-4.5 4.4L17.6 20 12 17l-5.6 3 1.1-6.1L3 9.5l6.2-.8L12 3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+	</svg>`;
+
 // ── Partial builders ──────────────────────────────────────────────────
 
 function buildMetricCard(title: string, value: number, severity: Severity): string {
@@ -99,6 +104,22 @@ function buildNotificationFeed(metrics: SessionMetrics): string {
 		</div>`;
 }
 
+function buildReinforcementBanner(metrics: SessionMetrics): string {
+	if (!metrics.reinforcement) {
+		return '';
+	}
+
+	const { title, detail, tone } = metrics.reinforcement;
+	return /* html */ `
+		<div class="reinforcement-card ${tone}">
+			<div class="reinforcement-icon-wrap">${REINFORCEMENT_ICON_SVG}</div>
+			<div class="reinforcement-copy">
+				<div class="reinforcement-title">${title}</div>
+				<div class="reinforcement-detail">${detail}</div>
+			</div>
+		</div>`;
+}
+
 // ── CSS ───────────────────────────────────────────────────────────────
 
 const CSS = /* css */ `
@@ -112,6 +133,9 @@ const CSS = /* css */ `
 		--muted: var(--vscode-descriptionForeground);
 		--accent: #46d5c4;
 		--accent-strong: #5ce6d7;
+		--success: #6ce9a6;
+		--info: #8bb8ff;
+		--encouragement: #f4c86a;
 		--red: var(--vscode-errorForeground);
 		--blue: var(--vscode-textLink-activeForeground);
 		--radius: 8px;
@@ -130,6 +154,71 @@ const CSS = /* css */ `
 	}
 
 	.dashboard { display: grid; gap: 16px; }
+
+	.reinforcement-card {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 12px;
+		align-items: start;
+		padding: 14px 16px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: linear-gradient(135deg,
+			color-mix(in srgb, var(--panel) 88%, transparent),
+			color-mix(in srgb, var(--panel) 72%, transparent));
+	}
+
+	.reinforcement-card.success {
+		border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent);
+	}
+
+	.reinforcement-card.info {
+		border-color: color-mix(in srgb, var(--info) 30%, var(--border));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--info) 10%, transparent);
+	}
+
+	.reinforcement-card.encouragement {
+		border-color: color-mix(in srgb, var(--encouragement) 30%, var(--border));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--encouragement) 10%, transparent);
+	}
+
+	.reinforcement-icon-wrap {
+		width: 34px;
+		height: 34px;
+		border-radius: 999px;
+		display: grid;
+		place-items: center;
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		color: var(--accent);
+		flex: 0 0 auto;
+	}
+
+	.reinforcement-card.success .reinforcement-icon-wrap { color: var(--success); }
+	.reinforcement-card.info .reinforcement-icon-wrap { color: var(--info); }
+	.reinforcement-card.encouragement .reinforcement-icon-wrap { color: var(--encouragement); }
+
+	.reinforcement-icon {
+		width: 18px;
+		height: 18px;
+	}
+
+	.reinforcement-copy {
+		display: grid;
+		gap: 4px;
+	}
+
+	.reinforcement-title {
+		font-size: 13px;
+		font-weight: 700;
+		color: var(--text);
+	}
+
+	.reinforcement-detail {
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--muted);
+	}
 
 	.metrics-grid {
 		display: grid;
@@ -335,6 +424,7 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 	</head>
 	<body>
 		<section class="dashboard">
+			${buildReinforcementBanner(metrics)}
 			<div class="metrics-grid">
 				${buildMetricCard('Critical Issues', critical, 'critical')}
 				${buildMetricCard('High Issues', high, 'high')}

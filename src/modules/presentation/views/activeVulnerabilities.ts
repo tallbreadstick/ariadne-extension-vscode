@@ -418,7 +418,7 @@ export function buildActiveVulnerabilitiesHtml(
         <div class="empty-state" role="status" aria-live="polite">
             <div class="empty-title">No active vulnerabilities</div>
             <div class="empty-subtitle">
-                You are all clear for this scan cycle.
+                You are all clear for this scan cycle. Nice work keeping the current surface clean.
             </div>
         </div>`;
 

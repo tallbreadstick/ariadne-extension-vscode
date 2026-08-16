@@ -10,6 +10,9 @@
 /** Severity levels for a detected vulnerability. */
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
+/** Tone used for positive reinforcement surfaces. */
+export type ReinforcementTone = 'success' | 'info' | 'encouragement';
+
 /**
  * A single vulnerability finding produced by an Ariadne scan session.
  *
@@ -64,6 +67,16 @@ export interface SessionNotification {
 	timestamp: string;
 }
 
+/** Compact positive reinforcement summary for the current scan session. */
+export interface SessionReinforcement {
+	/** Short headline shown in the Session Metrics summary banner. */
+	title: string;
+	/** Supporting detail text tied to actual scan outcomes. */
+	detail: string;
+	/** Visual tone used by the summary banner. */
+	tone: ReinforcementTone;
+}
+
 /**
  * Aggregated metrics for the current scan session,
  * displayed in the Session Metrics panel.
@@ -79,6 +92,8 @@ export interface SessionMetrics {
 	low: number;
 	/** Trend breakdown for this session. */
 	trends: TrendData;
+	/** Optional positive reinforcement summary for the current session. */
+	reinforcement?: SessionReinforcement;
 	/** Optional list of notifications to display in a scrollable feed at the bottom of the panel. */
 	notifications?: SessionNotification[];
 }

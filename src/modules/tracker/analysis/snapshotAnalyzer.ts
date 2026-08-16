@@ -31,6 +31,7 @@ import type {
 import type {
 	SessionMetrics,
 	SessionNotification,
+	SessionReinforcement,
 } from '../../presentation/panelTypes.js';
 
 // ══════════════════════════════════════════════════════════════════════
@@ -102,10 +103,8 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 		throw new Error('[Ariadne] analyzeSession requires at least 1 scan snapshot.');
 	}
 
-	const currentScan = snapshots[snapshots.length - 1];
-	const previousScan = snapshots.length >= 2
-		? snapshots[snapshots.length - 2]
-		: null;
+	const currentScan = snapshots.at(-1)!;
+	const previousScan = snapshots.at(-2) ?? null;
 
 	const activeFindings = currentScan.vulnerabilities;
 	const currentMap = buildVulnMap(activeFindings);
@@ -113,101 +112,138 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 		? buildVulnMap(previousScan.vulnerabilities)
 		: new Map<string, Vulnerability>();
 
-	// ── Collect all vulnerability keys that ever appeared ──────────
-	// Used for resolution detection across the entire session.
+	const allPriorKeys = collectPriorKeys(snapshots);
+	const classified = classifyCurrentFindings(currentMap, previousMap);
+	const resolved = collectResolvedFindings(snapshots, currentMap, previousMap, allPriorKeys);
+
+	return {
+		currentScan,
+		previousScan,
+		activeFindings,
+		deltas: [...classified.deltas, ...resolved.deltas],
+		severityCounts: countSeverities(activeFindings),
+		persistingPatterns: classified.persistingPatterns,
+		improvingTrends: classified.improvingTrends + resolved.improvingTrends,
+		resolvedThisSession: resolved.resolvedThisSession,
+		newVulnerabilities: classified.newVulnerabilities,
+	};
+}
+
+function collectPriorKeys(snapshots: ScanSnapshot[]): Set<string> {
 	const allPriorKeys = new Set<string>();
 	for (let i = 0; i < snapshots.length - 1; i++) {
-		for (const v of snapshots[i].vulnerabilities) {
-			allPriorKeys.add(vulnKey(v));
+		for (const vulnerability of snapshots[i].vulnerabilities) {
+			allPriorKeys.add(vulnKey(vulnerability));
 		}
 	}
+	return allPriorKeys;
+}
 
+function classifyCurrentFindings(
+	currentMap: Map<string, Vulnerability>,
+	previousMap: Map<string, Vulnerability>,
+): {
+	deltas: VulnerabilityDelta[];
+	persistingPatterns: number;
+	improvingTrends: number;
+	newVulnerabilities: number;
+} {
 	const deltas: VulnerabilityDelta[] = [];
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
-	let resolvedThisSession = 0;
 	let newVulnerabilities = 0;
 
-	// ── Classify active findings ──────────────────────────────────
-	for (const [key, vuln] of currentMap) {
-		const prev = previousMap.get(key);
-		const currentCount = vuln.instances.length;
+	for (const [key, vulnerability] of currentMap) {
+		const previous = previousMap.get(key);
+		const currentCount = vulnerability.instances.length;
 
-		let status: VulnerabilityStatus;
-		let previousCount: number;
-
-		if (!prev) {
-			// Not in the immediately previous scan → new
-			status = 'new';
-			previousCount = 0;
+		if (!previous) {
 			newVulnerabilities++;
+			deltas.push({
+				vulnerability,
+				status: 'new',
+				previousInstanceCount: 0,
+				currentInstanceCount: currentCount,
+			});
+			continue;
+		}
+
+		const previousCount = previous.instances.length;
+		const status: VulnerabilityStatus = currentCount < previousCount
+			? 'improving'
+			: 'persisting';
+
+		if (status === 'improving') {
+			improvingTrends++;
 		} else {
-			previousCount = prev.instances.length;
-			if (currentCount < previousCount) {
-				status = 'improving';
-				improvingTrends++;
-			} else {
-				// currentCount >= previousCount → persisting
-				status = 'persisting';
-				persistingPatterns++;
-			}
+			persistingPatterns++;
 		}
 
 		deltas.push({
-			vulnerability: vuln,
+			vulnerability,
 			status,
 			previousInstanceCount: previousCount,
 			currentInstanceCount: currentCount,
 		});
 	}
 
-	// ── Detect resolved vulnerabilities ───────────────────────────
-	// A vulnerability is resolved if it appeared in ANY prior scan
-	// but is absent from the current scan.
-	//
-	// If it was also present in the IMMEDIATELY PREVIOUS scan, it
-	// counts as improving too (N instances → 0 is the final improvement).
+	return { deltas, persistingPatterns, improvingTrends, newVulnerabilities };
+}
+
+function collectResolvedFindings(
+	snapshots: ScanSnapshot[],
+	currentMap: Map<string, Vulnerability>,
+	previousMap: Map<string, Vulnerability>,
+	allPriorKeys: Set<string>,
+): {
+	deltas: VulnerabilityDelta[];
+	improvingTrends: number;
+	resolvedThisSession: number;
+} {
+	const deltas: VulnerabilityDelta[] = [];
+	let improvingTrends = 0;
+	let resolvedThisSession = 0;
+
 	for (const priorKey of allPriorKeys) {
-		if (!currentMap.has(priorKey)) {
-			// Find the last known state of this vulnerability
-			// (scan backwards from the second-to-last snapshot)
-			let lastKnown: Vulnerability | undefined;
-			for (let i = snapshots.length - 2; i >= 0; i--) {
-				lastKnown = snapshots[i].vulnerabilities.find(
-					(v) => vulnKey(v) === priorKey,
-				);
-				if (lastKnown) { break; }
-			}
+		if (currentMap.has(priorKey)) {
+			continue;
+		}
 
-			if (lastKnown) {
-				deltas.push({
-					vulnerability: lastKnown,
-					status: 'resolved',
-					previousInstanceCount: lastKnown.instances.length,
-					currentInstanceCount: 0,
-				});
-				resolvedThisSession++;
+		const lastKnown = findLastKnownVulnerability(snapshots, priorKey);
+		if (!lastKnown) {
+			continue;
+		}
 
-				// If the vulnerability was in the immediately previous scan,
-				// going from N → 0 is also an improvement.
-				if (previousMap.has(priorKey)) {
-					improvingTrends++;
-				}
-			}
+		deltas.push({
+			vulnerability: lastKnown,
+			status: 'resolved',
+			previousInstanceCount: lastKnown.instances.length,
+			currentInstanceCount: 0,
+		});
+		resolvedThisSession++;
+
+		if (previousMap.has(priorKey)) {
+			improvingTrends++;
 		}
 	}
 
-	return {
-		currentScan,
-		previousScan,
-		activeFindings,
-		deltas,
-		severityCounts: countSeverities(activeFindings),
-		persistingPatterns,
-		improvingTrends,
-		resolvedThisSession,
-		newVulnerabilities,
-	};
+	return { deltas, improvingTrends, resolvedThisSession };
+}
+
+function findLastKnownVulnerability(
+	snapshots: ScanSnapshot[],
+	priorKey: string,
+): Vulnerability | undefined {
+	for (let i = snapshots.length - 2; i >= 0; i--) {
+		const lastKnown = snapshots[i].vulnerabilities.find(
+			(vulnerability) => vulnKey(vulnerability) === priorKey,
+		);
+		if (lastKnown) {
+			return lastKnown;
+		}
+	}
+
+	return undefined;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -235,8 +271,61 @@ export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
 			improvingTrends: analysis.improvingTrends,
 			resolvedThisSession: analysis.resolvedThisSession,
 		},
+		reinforcement: deriveReinforcement(analysis),
 		notifications: generateNotifications(analysis),
 	};
+}
+
+/**
+ * Builds a compact encouragement banner from the current session state.
+ *
+ * The summary is intentionally conservative: it only appears when the
+ * scan results show real progress, or when the workspace is currently
+ * clean enough to merit a positive acknowledgement.
+ */
+function deriveReinforcement(analysis: SessionAnalysis): SessionReinforcement | undefined {
+	const { activeFindings, improvingTrends, resolvedThisSession, newVulnerabilities, persistingPatterns } = analysis;
+
+	if (activeFindings.length === 0) {
+		return {
+			title: 'Clean scan',
+			detail: 'No active vulnerabilities are left in the latest scan. Nice work keeping the current surface clean.',
+			tone: 'success',
+		};
+	}
+
+	if (resolvedThisSession > 0) {
+		const patternSuffix = resolvedThisSession === 1 ? '' : 's';
+		const shrinkingSuffix = improvingTrends === 1 ? ' is' : 's are';
+		const improvementSuffix = improvingTrends > 0
+			? `, and ${improvingTrends} more pattern${shrinkingSuffix} shrinking.`
+			: '.';
+
+		return {
+			title: 'Progress made',
+			detail: `${resolvedThisSession} pattern${patternSuffix} resolved this session${improvementSuffix}`,
+			tone: 'success',
+		};
+	}
+
+	if (improvingTrends > 0 && newVulnerabilities === 0) {
+		const trendSuffix = improvingTrends === 1 ? ' is' : 's are';
+		return {
+			title: 'Good momentum',
+			detail: `${improvingTrends} vulnerability pattern${trendSuffix} trending down with no new issues introduced this scan.`,
+			tone: 'encouragement',
+		};
+	}
+
+	if (newVulnerabilities === 0 && persistingPatterns === 0) {
+		return {
+			title: 'Steady progress',
+			detail: 'No new vulnerabilities were introduced in this scan.',
+			tone: 'info',
+		};
+	}
+
+	return undefined;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -270,6 +359,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 		const fileHint = firstOccurrence
 			? extractFileName(firstOccurrence.file_path)
 			: 'unknown file';
+		const lineSuffix = firstOccurrence ? ` at line ${firstOccurrence.line_number}` : '';
 
 		// Stable ID: same vulnerability + same status → same ID across restarts.
 		const notifId = `${delta.status}::${v.cwe_id}::${v.type}`;
@@ -281,7 +371,7 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
 					message: 'New vulnerability detected',
 					detail:
 						`${v.type} (${v.cwe_id}) found in ${fileHint}` +
-						`${firstOccurrence ? ` at line ${firstOccurrence.line_number}` : ''}` +
+						lineSuffix +
 						'. Review immediately.',
 					timestamp: 'just now',
 				});
@@ -329,6 +419,6 @@ function generateNotifications(analysis: SessionAnalysis): SessionNotification[]
  * e.g. "src/java/com/.../LoginController.java" → "LoginController.java"
  */
 function extractFileName(filePath: string): string {
-	const parts = filePath.replace(/\\/g, '/').split('/');
-	return parts[parts.length - 1] || filePath;
+	const parts = filePath.replaceAll('\\', '/').split('/');
+	return parts.at(-1) || filePath;
 }

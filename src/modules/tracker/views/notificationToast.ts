@@ -98,7 +98,7 @@ function showImprovingToast(analysis: SessionAnalysis): void {
 		: `${improvingTypes.slice(0, 3).join(', ')} and ${improvingTypes.length - 3} more`;
 
 	vscode.window.showInformationMessage(
-		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — ${detail}`,
+		`Ariadne: Nice work — ${count} ${count === 1 ? 'issue is' : 'issues are'} improving. ${detail}`,
 	);
 }
 
@@ -118,7 +118,7 @@ function showResolvedToast(analysis: SessionAnalysis): void {
 		: `${resolvedTypes.slice(0, 3).join(', ')} and ${resolvedTypes.length - 3} more`;
 
 	vscode.window.showInformationMessage(
-		`Ariadne: ${count} ${count === 1 ? 'pattern' : 'patterns'} resolved — ${detail}`,
+		`Ariadne: Great job — ${count} ${count === 1 ? 'pattern' : 'patterns'} resolved. ${detail}`,
 	);
 }
 
