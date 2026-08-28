@@ -1,0 +1,96 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ariadne",
+  "scopeName": "source.ariadne",
+  "fileTypes": ["ariadne"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#cwe" },
+    { "include": "#functions" },
+    { "include": "#booleans" },
+    { "include": "#operators" },
+    { "include": "#commands" },
+    { "include": "#fields" },
+    { "include": "#literals" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.number-sign.ariadne",
+      "begin": "#",
+      "end": "$"
+    },
+    "strings": {
+      "name": "string.quoted.double.ariadne",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.ariadne",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "cwe": {
+      "name": "constant.other.cwe.ariadne",
+      "match": "\\bCWE-\\d+\\b"
+    },
+    "functions": {
+      "name": "support.function.ariadne",
+      "match": "\\b(?:path_has|auth_gate|manual_auth_detected|public_auth_routes)\\b"
+    },
+    "booleans": {
+      "name": "constant.language.boolean.ariadne",
+      "match": "\\b(?:TRUE|FALSE)\\b"
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.logical.ariadne",
+          "match": "\\b(?:AND|OR|NOT)\\b"
+        },
+        {
+          "name": "keyword.operator.comparison.ariadne",
+          "match": "(?:!=|>=|<=|=|>|<)"
+        }
+      ]
+    },
+    "commands": {
+      "name": "keyword.control.ariadne",
+      "match": "\\b(?:FLOW_POLICY|DESCRIPTION|INCLUDE|VERSION|SOURCE|GUARD|MATCH|PACK|RULE)\\b"
+    },
+    "fields": {
+      "name": "keyword.other.ariadne",
+      "match": "\\b(?:USE_FLOW_POLICY|INSTEAD_OF|REGISTER|STRATEGY|MATCHES|SEVERITY|PREFIX|ENGINE|EXCEPT|ROUTE|KIND|NAMES|REGEX|WHEN|FROM|FIND|FILE|BIND|NAME|OWASP|CWE|USE|ON|TO|IN)\\b"
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "constant.language.severity.ariadne",
+          "match": "\\b(?:critical|high|medium|low)\\b"
+        },
+        {
+          "name": "constant.language.kind.ariadne",
+          "match": "\\b(?:user_input|sensitive|taint|match|config|structural)\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.braces.ariadne",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.separator.comma.ariadne",
+          "match": ","
+        },
+        {
+          "name": "punctuation.definition.parameters.ariadne",
+          "match": "[()]"
+        }
+      ]
+    }
+  }
+}

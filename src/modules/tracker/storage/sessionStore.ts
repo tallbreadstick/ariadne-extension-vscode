@@ -27,6 +27,7 @@ import {
 	WS_SCAN_SNAPSHOTS,
 	WS_SESSION_META,
 	WS_DISMISSED_NOTIFICATIONS,
+	WS_EXPANDED_VULN_KEY,
 	GL_USER_CONFIG,
 } from './storageKeys.js';
 
@@ -151,6 +152,21 @@ export class SessionStore {
 	/** Persists global user preferences. */
 	async saveUserConfig(config: UserConfig): Promise<void> {
 		await this.context.globalState.update(GL_USER_CONFIG, config);
+	}
+
+	// ── Active Vulnerabilities UI (workspaceState — per project) ──
+
+	/** Loads the expanded vulnerability card key for this workspace, if any. */
+	loadExpandedVulnKey(): string | undefined {
+		return this.context.workspaceState.get<string | undefined>(
+			WS_EXPANDED_VULN_KEY,
+			undefined,
+		);
+	}
+
+	/** Persists or clears the expanded vulnerability card key for this workspace. */
+	async saveExpandedVulnKey(key: string | undefined): Promise<void> {
+		await this.context.workspaceState.update(WS_EXPANDED_VULN_KEY, key);
 	}
 
 	// ── Dismissed Notifications (workspaceState — per project) ──

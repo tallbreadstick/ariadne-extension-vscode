@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { join, relative } from 'node:path';
 import { AriadneSession } from './iostream';
 
 /**
@@ -43,6 +44,44 @@ function isTrackedFilePath(fsPath: string): boolean {
 
 function isTrackedDocument(doc: vscode.TextDocument): boolean {
 	return isTrackedFilePath(doc.uri.fsPath);
+}
+
+function isAriadnePath(fsPath: string): boolean {
+	return fsPath.endsWith('.ariadne');
+}
+
+function collectRuleOverlays(): Record<string, string> {
+	const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	if (!root) {
+		return {};
+	}
+	const rulesDir = join(root, 'rules');
+	const overlays: Record<string, string> = {};
+	for (const doc of vscode.workspace.textDocuments) {
+		if (!isAriadnePath(doc.uri.fsPath)) {
+			continue;
+		}
+		const rel = relative(rulesDir, doc.uri.fsPath).replace(/\\/g, '/');
+		if (!rel || rel.startsWith('..')) {
+			continue;
+		}
+		overlays[rel] = doc.getText();
+	}
+	return overlays;
+}
+
+let rulesReloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRulesReload(session: AriadneSession): void {
+	if (rulesReloadTimer) {
+		clearTimeout(rulesReloadTimer);
+	}
+	rulesReloadTimer = setTimeout(() => {
+		rulesReloadTimer = null;
+		const overlays = collectRuleOverlays();
+		console.log(`[Ariadne TS] ReloadRules overlays=${Object.keys(overlays).join(',') || '(disk)'}`);
+		session.send({ type: 'ReloadRules', overlays });
+	}, DEBOUNCE_MS);
 }
 
 function resolveDocument(filePath: string): vscode.TextDocument | undefined {
@@ -187,23 +226,53 @@ export function registerDocumentEvents(
 	// ============================================================
 	// INIT — seed the engine with the workspace root
 	// ============================================================
-	const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '/';
-	console.log(`[Ariadne TS] Init root=${root}`);
-	session.send({ type: 'Init', root });
+	const bootstrap = (): void => {
+		const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '/';
+		console.log(`[Ariadne TS] Init root=${root}`);
+		session.send({ type: 'Init', root });
 
-	// ============================================================
-	// INITIAL OPEN FILES — sync buffer for files already open
-	// ============================================================
-	vscode.workspace.textDocuments
-		.filter(isTrackedDocument)
-		.forEach((doc) => {
-			console.log(`[Ariadne TS] OpenFile (preloaded) ${doc.uri.fsPath}`);
-			session.send({
-				type: 'OpenFile',
-				path: doc.uri.fsPath,
-				content: doc.getText(),
+		vscode.workspace.textDocuments
+			.filter(isTrackedDocument)
+			.forEach((doc) => {
+				console.log(`[Ariadne TS] OpenFile (preloaded) ${doc.uri.fsPath}`);
+				session.send({
+					type: 'OpenFile',
+					path: doc.uri.fsPath,
+					content: doc.getText(),
+				});
 			});
-		});
+	};
+
+	bootstrap();
+	session.onRestarted(bootstrap);
+	scheduleRulesReload(session);
+
+	context.subscriptions.push(
+		vscode.workspace.onDidOpenTextDocument((doc) => {
+			if (isAriadnePath(doc.uri.fsPath)) {
+				scheduleRulesReload(session);
+			}
+		}),
+		vscode.workspace.onDidSaveTextDocument((doc) => {
+			if (isAriadnePath(doc.uri.fsPath)) {
+				scheduleRulesReload(session);
+			}
+		}),
+		vscode.workspace.onDidChangeTextDocument((event) => {
+			if (event.contentChanges.length === 0) {
+				return;
+			}
+			if (isAriadnePath(event.document.uri.fsPath)) {
+				scheduleRulesReload(session);
+			}
+		}),
+	);
+
+	const rulesWatcher = vscode.workspace.createFileSystemWatcher('**/*.ariadne');
+	rulesWatcher.onDidCreate(() => scheduleRulesReload(session));
+	rulesWatcher.onDidChange(() => scheduleRulesReload(session));
+	rulesWatcher.onDidDelete(() => scheduleRulesReload(session));
+	context.subscriptions.push(rulesWatcher);
 
 	// ============================================================
 	// FILE OPEN

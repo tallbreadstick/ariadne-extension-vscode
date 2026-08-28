@@ -11,7 +11,32 @@ import { SEVERITY_COLORS, severityCssVars } from '../severityColors.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 
+const SEVERITY_OPTIONS: Severity[] = ['critical', 'high', 'medium', 'low'];
+
+export interface ActiveVulnerabilitiesOptions {
+	/** Vulnerability key to render expanded when reopening a workspace. */
+	expandedKey?: string;
+}
+
+/** Stable key for accordion persistence across scans and workspace reopens. */
+export function buildVulnKey(vuln: Vulnerability): string {
+	return `${vuln.cwe}|${vuln.filePath}|${vuln.line}|${vuln.title}`;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
+
+function escapeHtml(value: string): string {
+	return value
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;');
+}
+
+function escapeAttr(value: string): string {
+	return escapeHtml(value).replaceAll('\n', ' ');
+}
 
 function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
@@ -53,12 +78,22 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const label = capitalize(vuln.severity);
 	const location = `${vuln.filePath} : Line ${vuln.line}`;
 	const openAttr = expanded ? ' open' : '';
-    const commandArgs = encodeURIComponent(JSON.stringify([vuln.cwe, vuln.title]));
-    const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
-	const vulnKey = encodeURIComponent(`${vuln.cwe}|${vuln.filePath}|${vuln.line}|${vuln.title}`);
+	const commandArgs = encodeURIComponent(JSON.stringify([vuln.cwe, vuln.title]));
+	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
+	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
+	const searchText = escapeAttr(
+		[vuln.title, vuln.cwe, vuln.owaspRef ?? '', vuln.filePath, vuln.description, vuln.severity]
+			.join(' ')
+			.toLowerCase(),
+	);
 
 	return /* html */ `
-		<details data-vuln-key="${vulnKey}"${openAttr}>
+		<details
+			class="vuln-card"
+			data-vuln-key="${vulnKey}"
+			data-severity="${vuln.severity}"
+			data-cwe="${escapeAttr(vuln.cwe)}"
+			data-search-text="${searchText}"${openAttr}>
 			<summary>
 				<div class="summary-row">
 					<div class="summary-left">
@@ -141,6 +176,67 @@ const CSS = /* css */ `
     }
 
     .vuln-stack { display: grid; gap: 12px; }
+
+    .toolbar {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding-bottom: 8px;
+        background: var(--bg);
+    }
+
+    .toolbar-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr;
+    }
+
+    .search-input,
+    .filter-select {
+        width: 100%;
+        padding: 6px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--vscode-input-background, var(--card));
+        color: var(--vscode-input-foreground, var(--text));
+        font: inherit;
+        font-size: 12px;
+    }
+
+    .search-input:focus,
+    .filter-select:focus {
+        outline: 1px solid var(--vscode-focusBorder, var(--file));
+        outline-offset: -1px;
+    }
+
+    .filter-row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .results-meta {
+        font-size: 11px;
+        color: var(--muted);
+    }
+
+    .filter-empty {
+        display: none;
+        padding: 16px 12px;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+        color: var(--muted);
+        text-align: center;
+        font-size: 12px;
+    }
+
+    .filter-empty.visible { display: block; }
+
+    .vuln-card.hidden { display: none; }
 
     .empty-state {
         display: grid;
@@ -401,26 +497,77 @@ const CSS = /* css */ `
 
 // ── Public API ────────────────────────────────────────────────────────
 
+function buildSeverityOptions(): string {
+	return SEVERITY_OPTIONS.map((severity) =>
+		`<option value="${severity}">${capitalize(severity)}</option>`,
+	).join('');
+}
+
+function buildCweOptions(vulns: Vulnerability[]): string {
+	const cwes = [...new Set(vulns.map((v) => v.cwe))].sort();
+	return cwes.map((cwe) =>
+		`<option value="${escapeAttr(cwe)}">${escapeHtml(cwe)}</option>`,
+	).join('');
+}
+
+function buildToolbar(vulns: Vulnerability[]): string {
+	if (vulns.length === 0) {
+		return '';
+	}
+
+	return /* html */ `
+		<div class="toolbar">
+			<div class="toolbar-row">
+				<input
+					class="search-input"
+					id="vuln-search"
+					type="search"
+					placeholder="Search title, CWE, file, OWASP…"
+					aria-label="Search vulnerabilities"
+				/>
+			</div>
+			<div class="filter-row">
+				<select class="filter-select" id="severity-filter" aria-label="Filter by severity">
+					<option value="">All severities</option>
+					${buildSeverityOptions()}
+				</select>
+				<select class="filter-select" id="cwe-filter" aria-label="Filter by CWE">
+					<option value="">All CWEs</option>
+					${buildCweOptions(vulns)}
+				</select>
+			</div>
+			<div class="results-meta" id="results-meta" aria-live="polite"></div>
+		</div>`;
+}
+
 /**
  * Builds the complete HTML document for the Active Vulnerabilities panel.
  *
- * @param vulns - Vulnerability findings from the current scan session.
- * @param expandFirst - When true, the first item is rendered expanded.
- *   Pass true only when the panel is opened; scan refreshes should leave
- *   all cards collapsed so user-expanded state is not reset.
+ * Cards start collapsed on first open. When a workspace is reopened, the
+ * previously expanded card is restored via {@link ActiveVulnerabilitiesOptions.expandedKey}.
  */
 export function buildActiveVulnerabilitiesHtml(
 	vulns: Vulnerability[],
-	expandFirst = false,
+	options: ActiveVulnerabilitiesOptions = {},
 ): string {
-    const cards = vulns.map((v, i) => buildVulnCard(v, expandFirst && i === 0)).join('\n');
-    const emptyState = /* html */ `
+	const expandedKey = options.expandedKey
+		? encodeURIComponent(options.expandedKey)
+		: undefined;
+	const cards = vulns.map((v) => {
+		const key = encodeURIComponent(buildVulnKey(v));
+		return buildVulnCard(v, key === expandedKey);
+	}).join('\n');
+	const emptyState = /* html */ `
         <div class="empty-state" role="status" aria-live="polite">
             <div class="empty-title">No active vulnerabilities</div>
             <div class="empty-subtitle">
                 You are all clear for this scan cycle.
             </div>
         </div>`;
+	const filterEmptyState = /* html */ `
+		<div class="filter-empty" id="filter-empty" role="status" aria-live="polite">
+			No vulnerabilities match the current search or filters.
+		</div>`;
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -431,12 +578,21 @@ export function buildActiveVulnerabilitiesHtml(
 		<style>${CSS}</style>
 	</head>
 	<body>
-		<section class="vuln-stack">
+		${buildToolbar(vulns)}
+		<section class="vuln-stack" id="vuln-stack">
             ${vulns.length === 0 ? emptyState : cards}
 		</section>
+		${vulns.length === 0 ? '' : filterEmptyState}
 		<script>
 			(function () {
 				const vscode = acquireVsCodeApi();
+				const cards = Array.from(document.querySelectorAll('.vuln-card'));
+				const searchInput = document.getElementById('vuln-search');
+				const severityFilter = document.getElementById('severity-filter');
+				const cweFilter = document.getElementById('cwe-filter');
+				const resultsMeta = document.getElementById('results-meta');
+				const filterEmpty = document.getElementById('filter-empty');
+				const totalCount = cards.length;
 
 				function readUiState() {
 					const saved = vscode.getState();
@@ -447,23 +603,72 @@ export function buildActiveVulnerabilitiesHtml(
 					vscode.setState({ ...readUiState(), ...patch });
 				}
 
-				function collectOpenKeys() {
-					return Array.from(document.querySelectorAll('details[open]'))
-						.map((el) => el.dataset.vulnKey)
-						.filter(Boolean);
+				function persistExpandedKey(key) {
+					persistUiState({ expandedKey: key ?? null });
+					vscode.postMessage({ type: 'vuln-expanded', key: key ?? null });
+				}
+
+				function applyAccordion(openedEl) {
+					cards.forEach((el) => {
+						if (el !== openedEl) {
+							el.open = false;
+						}
+					});
+					persistExpandedKey(openedEl?.dataset.vulnKey ?? null);
+				}
+
+				function cardMatchesFilters(el) {
+					const query = (searchInput?.value ?? '').trim().toLowerCase();
+					const severity = severityFilter?.value ?? '';
+					const cwe = cweFilter?.value ?? '';
+
+					if (severity && el.dataset.severity !== severity) {
+						return false;
+					}
+					if (cwe && el.dataset.cwe !== cwe) {
+						return false;
+					}
+					if (query && !(el.dataset.searchText ?? '').includes(query)) {
+						return false;
+					}
+					return true;
+				}
+
+				function applyFilters() {
+					let visibleCount = 0;
+					cards.forEach((el) => {
+						const visible = cardMatchesFilters(el);
+						el.classList.toggle('hidden', !visible);
+						if (visible) {
+							visibleCount += 1;
+						}
+					});
+
+					if (resultsMeta) {
+						resultsMeta.textContent = visibleCount === totalCount
+							? totalCount + ' vulnerabilit' + (totalCount === 1 ? 'y' : 'ies')
+							: 'Showing ' + visibleCount + ' of ' + totalCount;
+					}
+
+					if (filterEmpty) {
+						filterEmpty.classList.toggle('visible', totalCount > 0 && visibleCount === 0);
+					}
 				}
 
 				function restoreUiState() {
 					const state = readUiState();
 
-					if (Array.isArray(state.openKeys)) {
-						const openSet = new Set(state.openKeys);
-						document.querySelectorAll('details[data-vuln-key]').forEach((el) => {
-							if (openSet.has(el.dataset.vulnKey)) {
-								el.open = true;
-							}
-						});
+					if (searchInput && typeof state.searchQuery === 'string') {
+						searchInput.value = state.searchQuery;
 					}
+					if (severityFilter && typeof state.severityFilter === 'string') {
+						severityFilter.value = state.severityFilter;
+					}
+					if (cweFilter && typeof state.cweFilter === 'string') {
+						cweFilter.value = state.cweFilter;
+					}
+
+					applyFilters();
 
 					if (typeof state.scrollTop === 'number' && state.scrollTop > 0) {
 						requestAnimationFrame(() => {
@@ -475,7 +680,9 @@ export function buildActiveVulnerabilitiesHtml(
 				function snapshotUiState() {
 					persistUiState({
 						scrollTop: window.scrollY,
-						openKeys: collectOpenKeys(),
+						searchQuery: searchInput?.value ?? '',
+						severityFilter: severityFilter?.value ?? '',
+						cweFilter: cweFilter?.value ?? '',
 					});
 				}
 
@@ -487,10 +694,29 @@ export function buildActiveVulnerabilitiesHtml(
 					{ passive: true },
 				);
 
-				document.querySelectorAll('details[data-vuln-key]').forEach((el) => {
+				cards.forEach((el) => {
 					el.addEventListener('toggle', () => {
-						persistUiState({ openKeys: collectOpenKeys() });
+						if (el.open) {
+							applyAccordion(el);
+							return;
+						}
+						if (!cards.some((card) => card.open)) {
+							persistExpandedKey(null);
+						}
 					});
+				});
+
+				searchInput?.addEventListener('input', () => {
+					persistUiState({ searchQuery: searchInput.value });
+					applyFilters();
+				});
+				severityFilter?.addEventListener('change', () => {
+					persistUiState({ severityFilter: severityFilter.value });
+					applyFilters();
+				});
+				cweFilter?.addEventListener('change', () => {
+					persistUiState({ cweFilter: cweFilter.value });
+					applyFilters();
 				});
 
 				document.addEventListener(
@@ -511,6 +737,9 @@ export function buildActiveVulnerabilitiesHtml(
 				);
 
 				restoreUiState();
+				if (totalCount > 0) {
+					applyFilters();
+				}
 			})();
 		</script>
 	</body>

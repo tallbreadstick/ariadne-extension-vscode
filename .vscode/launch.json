@@ -10,7 +10,8 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}"
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"/home/tallbreadstick/Projects/Rust/Clap/ariadne-core"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"

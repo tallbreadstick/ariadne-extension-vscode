@@ -1,0 +1,23 @@
+{
+  "comments": {
+    "lineComment": "#"
+  },
+  "brackets": [
+    ["{", "}"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" }
+  ],
+  "surroundingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" }
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(RULE|GUARD|SOURCE|FLOW_POLICY|MATCH|STRATEGY|WHEN|EXCEPT|MATCHES|NAMES)\\b.*$",
+    "decreaseIndentPattern": "^\\s*$"
+  }
+}
