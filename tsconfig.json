@@ -6,6 +6,7 @@
 		"sourceMap": true,
 		"rootDir": "src",
 		"strict": true,
+		"skipLibCheck": true,
 		"types": ["node", "mocha"]
 	},
 	"exclude": ["src/test"]

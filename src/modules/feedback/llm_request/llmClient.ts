@@ -1,78 +1,87 @@
 /**
- * UC-3.3 — OpenAI LLM Client.
+ * UC-3.3 — GitHub Copilot SDK LLM Client.
  *
- * Sends the assembled request body to the OpenAI Chat Completions API
- * over HTTPS with a 15-second hard timeout (SRS Section 3.1.3).
- *
- * ─────────────────────────────────────────────────────────────────────
- * STATUS: DORMANT — Exported but not called in the active code path.
- * Will be called from extension.ts when the SAST core is ready.
- * ─────────────────────────────────────────────────────────────────────
+ * Sends the assembled prompt to GitHub Copilot via the Copilot SDK,
+ * authenticated with the user's GitHub token from VS Code sign-in.
+ * Uses a 15-second hard timeout (SRS Section 3.1.3).
  */
 
+import { createCopilotClient, type CopilotRuntimeOptions } from './copilotRuntime.js';
 import type { AriadneLLMRequestBody } from './requestTypes.js';
 
 /** Timeout duration in milliseconds — per SRS Section 3.1.3 */
 const LLM_TIMEOUT_MS = 15_000;
 
-/** OpenAI Chat Completions endpoint (HTTPS / TLS 1.2+) */
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+function extractMessageContent(
+	requestBody: AriadneLLMRequestBody,
+	role: 'system' | 'user',
+): string {
+	const message = requestBody.messages.find((entry) => entry.role === role);
+	if (!message?.content) {
+		throw new Error(`LLM request missing ${role} message content`);
+	}
+	return message.content;
+}
+
+export interface CallLLMOptions extends CopilotRuntimeOptions {}
 
 /**
- * Calls the OpenAI Chat Completions API and returns the raw response text.
+ * Calls GitHub Copilot through the Copilot SDK and returns the raw response text.
  *
  * @param requestBody - The fully assembled request body from serializePayload().
- * @param apiKey - The user's OpenAI API key.
- * @returns The raw content string from `choices[0].message.content`.
- * @throws {Error} On network errors, non-2xx status, timeout, or missing content.
+ * @param options - GitHub token plus runtime paths for the Copilot CLI.
+ * @returns The assistant message content from Copilot.
+ * @throws {Error} On auth failures, timeouts, or missing response content.
  */
 export async function callLLM(
 	requestBody: AriadneLLMRequestBody,
-	apiKey: string,
+	options: CallLLMOptions,
 ): Promise<string> {
-	// 15-second hard timeout via AbortController
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+	const { approveAll } = await import('@github/copilot-sdk');
 
+	const systemContent = extractMessageContent(requestBody, 'system');
+	const userContent = extractMessageContent(requestBody, 'user');
+
+	const client = await createCopilotClient(options);
+
+	let session;
 	try {
-		const response = await fetch(OPENAI_API_URL, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${apiKey}`,
+		await client.start();
+
+		session = await client.createSession({
+			model: requestBody.model,
+			clientName: 'ariadne-vscode',
+			onPermissionRequest: approveAll,
+			availableTools: [],
+			infiniteSessions: { enabled: false },
+			systemMessage: {
+				mode: 'replace',
+				content: systemContent,
 			},
-			body: JSON.stringify(requestBody),
-			signal: controller.signal,
 		});
 
-		if (!response.ok) {
-			const errorBody = await response.text().catch(() => '(no body)');
-			throw new Error(
-				`OpenAI API returned ${response.status}: ${errorBody}`,
-			);
-		}
+		const response = await session.sendAndWait(
+			{ prompt: userContent },
+			LLM_TIMEOUT_MS,
+		);
 
-		const data = (await response.json()) as {
-			choices?: Array<{ message?: { content?: string } }>;
-		};
-
-		const content = data.choices?.[0]?.message?.content;
+		const content = response?.data.content?.trim();
 		if (!content) {
-			throw new Error(
-				'OpenAI response missing choices[0].message.content',
-			);
+			throw new Error('Copilot response missing assistant message content');
 		}
 
 		return content;
 	} catch (error: unknown) {
-		// Distinguish timeout from other errors
-		if (error instanceof DOMException && error.name === 'AbortError') {
+		if (error instanceof Error && /timed?\s*out/i.test(error.message)) {
 			throw new Error(
-				`OpenAI request timed out after ${LLM_TIMEOUT_MS / 1000} seconds`,
+				`Copilot request timed out after ${LLM_TIMEOUT_MS / 1000} seconds`,
 			);
 		}
 		throw error;
 	} finally {
-		clearTimeout(timeoutId);
+		if (session) {
+			await session.disconnect().catch(() => undefined);
+		}
+		await client.stop().catch(() => undefined);
 	}
 }

@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
 import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
@@ -18,6 +17,8 @@ import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics'
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
+import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
+import { GitHubAuthService } from './modules/feedback/auth/githubAuthService.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
 import { parseThreeSectionResponse } from './modules/feedback/llm_request/parseResponse.js';
@@ -49,20 +50,6 @@ function toVulnerabilityMetadata(vuln: Vulnerability): VulnerabilityMetadata {
 	};
 }
 
-/**
- * Reads OPENAI_API_KEY from a .env file at the extension root.
- */
-function readApiKeyFromDotEnv(extensionPath: string): string {
-	try {
-		const envPath = path.join(extensionPath, '.env');
-		const content = fs.readFileSync(envPath, 'utf-8');
-		const match = content.match(/^OPENAI_API_KEY=(.+)$/m);
-		return match?.[1]?.trim() ?? '';
-	} catch {
-		return '';
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
@@ -70,6 +57,18 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
+	const githubAuth = new GitHubAuthService(context);
+
+	let latestSignInHtml = buildSignInPanelHtml({ status: 'signed-out' });
+
+	const refreshSignInPanel = async (
+		signInProvider: AriadneViewProvider,
+		override?: Parameters<typeof buildSignInPanelHtml>[0],
+	): Promise<void> => {
+		const model = override ?? await githubAuth.getPanelViewModel();
+		latestSignInHtml = buildSignInPanelHtml(model);
+		signInProvider.updateHtml(latestSignInHtml);
+	};
 
 	// ── Restore UI from stored snapshots (survives VS Code restarts) ────
 	const storedSnapshots = store.loadSnapshots();
@@ -145,6 +144,63 @@ export function activate(context: vscode.ExtensionContext) {
 	const sessionMetricsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.sessionMetrics',
 		sessionMetricsProvider,
+	);
+
+	const signInProvider = new AriadneViewProvider(
+		latestSignInHtml,
+		async (msg) => {
+			if (msg.type === 'github-sign-in') {
+				await refreshSignInPanel(signInProvider, { status: 'signing-in' });
+				try {
+					await githubAuth.signIn({
+						termsAccepted: msg.termsAccepted === true,
+						analyticsConsent: msg.analyticsConsent === true,
+					});
+					await refreshSignInPanel(signInProvider);
+					vscode.window.showInformationMessage(
+						'Ariadne: Signed in to GitHub. AI feedback will use your Copilot allowance.',
+					);
+				} catch (error: unknown) {
+					const message =
+						error instanceof Error ? error.message : 'GitHub sign-in failed.';
+					await refreshSignInPanel(signInProvider, {
+						status: 'error',
+						errorMessage: message,
+					});
+				}
+				return;
+			}
+
+			if (msg.type === 'github-sign-out') {
+				try {
+					await githubAuth.signOut();
+					await refreshSignInPanel(signInProvider);
+					vscode.window.showInformationMessage('Ariadne: Signed out of GitHub.');
+				} catch (error: unknown) {
+					const message =
+						error instanceof Error ? error.message : 'GitHub sign-out failed.';
+					vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				}
+				return;
+			}
+
+			if (msg.type === 'github-auth-refresh') {
+				await refreshSignInPanel(signInProvider);
+			}
+		},
+	);
+	signInProvider.setResolveHtml(() => latestSignInHtml);
+	void refreshSignInPanel(signInProvider);
+
+	const signInDisposable = vscode.window.registerWebviewViewProvider(
+		'ariadne.panel.signIn',
+		signInProvider,
+	);
+
+	context.subscriptions.push(
+		githubAuth.onDidChangeAuth(() => {
+			void refreshSignInPanel(signInProvider);
+		}),
 	);
 
 	// ── Diagnostic / inline highlight manager ───────────────────────────
@@ -233,6 +289,13 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// ── Feedback panel command (LLM-powered) ─────────────────────────────
+	const openSignInPanel = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openSignInPanel',
+		async () => {
+			await vscode.commands.executeCommand('ariadne.panel.signIn.focus');
+		},
+	);
+
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
 		async (cwe?: string, title?: string) => {
@@ -252,18 +315,29 @@ export function activate(context: vscode.ExtensionContext) {
 
 			const vulnMetadata = toVulnerabilityMetadata(vuln);
 
-			const config = vscode.workspace.getConfiguration('ariadne');
-			const apiKey =
-				config.get<string>('openai.apiKey', '') ||
-				readApiKeyFromDotEnv(context.extensionPath);
-			const model = config.get<string>('openai.model', 'gpt-5.5');
+			const isSignedIn = await githubAuth.isAuthenticated();
+			if (!isSignedIn) {
+				const signIn = 'Sign In';
+				const choice = await vscode.window.showWarningMessage(
+					'Ariadne: Sign in to GitHub to use AI vulnerability explanations.',
+					signIn,
+				);
+				if (choice === signIn) {
+					await vscode.commands.executeCommand('ariadne.panel.signIn.focus');
+				}
+				return;
+			}
 
-			if (!apiKey) {
+			const gitHubToken = await githubAuth.getAccessToken();
+			if (!gitHubToken) {
 				vscode.window.showErrorMessage(
-					'Ariadne: No OpenAI API key configured. Set it in Settings → Ariadne.',
+					'Ariadne: Could not retrieve your GitHub session. Please sign in again.',
 				);
 				return;
 			}
+
+			const config = vscode.workspace.getConfiguration('ariadne');
+			const model = config.get<string>('copilot.model', 'gpt-5.5');
 
 			const panel = vscode.window.createWebviewPanel(
 				'ariadne.feedback',
@@ -284,7 +358,11 @@ export function activate(context: vscode.ExtensionContext) {
 					activeFilePath,
 					model,
 				);
-				const rawResponse = await callLLM(requestBody, apiKey);
+				const rawResponse = await callLLM(requestBody, {
+					gitHubToken,
+					copilotHome: join(context.globalStorageUri.fsPath, 'copilot'),
+					extensionPath: context.extensionPath,
+				});
 				const sections = parseThreeSectionResponse(rawResponse);
 
 				const finding: FeedbackFinding = {
@@ -328,6 +406,8 @@ export function activate(context: vscode.ExtensionContext) {
 		helloWorld,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
+		signInDisposable,
+		openSignInPanel,
 		openFeedbackPanel,
 	);
 }

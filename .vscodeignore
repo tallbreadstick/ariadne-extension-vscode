@@ -2,6 +2,10 @@
 .vscode-test/**
 out/**
 node_modules/**
+!node_modules/@github/**
+!node_modules/koffi/**
+!node_modules/vscode-jsonrpc/**
+!node_modules/zod/**
 src/**
 .gitignore
 .yarnrc
