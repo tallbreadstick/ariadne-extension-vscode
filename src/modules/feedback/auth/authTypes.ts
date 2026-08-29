@@ -2,6 +2,8 @@
  * Types for GitHub authentication and user consent in the AI feedback layer.
  */
 
+import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js';
+
 /** GitHub OAuth scopes requested for Copilot SDK integration. */
 export const GITHUB_AUTH_SCOPES = ['read:user', 'user:email'] as const;
 
@@ -24,12 +26,23 @@ export interface StoredAuthSession {
 	scopes: readonly string[];
 }
 
+/** Auth state for the sidebar (settings are attached when rendering). */
+export type AuthPanelState = Omit<SignInPanelViewModel, 'settings'>;
+
 /** View-model passed into the sign-in panel HTML builder. */
 export interface SignInPanelViewModel {
-	status: 'signed-out' | 'signed-in' | 'signing-in' | 'error';
+	status: 'loading' | 'signed-out' | 'signed-in' | 'signing-in' | 'error';
 	accountLabel?: string;
 	signedInAt?: number;
 	hasConsent?: boolean;
 	analyticsConsent?: boolean;
 	errorMessage?: string;
+	copilotUsage?: {
+		label: string;
+		remainingPercent: number;
+		usedPercent: number;
+		isUnlimited: boolean;
+		resetDate?: string;
+	};
+	settings: SidebarSettingsViewModel;
 }

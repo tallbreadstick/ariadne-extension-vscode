@@ -14,7 +14,7 @@
     "onCommand:ariadne-extension-vscode.analyze",
     "onView:ariadne.panel.activeVulnerabilities",
     "onView:ariadne.panel.sessionMetrics",
-    "onView:ariadne.panel.signIn"
+    "onView:ariadne.sidebar.signIn"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -34,9 +34,20 @@
       {
         "command": "ariadne-extension-vscode.openSignInPanel",
         "title": "Ariadne: Sign In to GitHub"
+      },
+      {
+        "command": "ariadne-extension-vscode.openTermsOfUse",
+        "title": "Ariadne: Terms of Use"
       }
     ],
     "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ariadne-sidebar",
+          "title": "Ariadne",
+          "icon": "media/shield.svg"
+        }
+      ],
       "panel": [
         {
           "id": "ariadne-panel",
@@ -46,6 +57,14 @@
       ]
     },
     "views": {
+      "ariadne-sidebar": [
+        {
+          "type": "webview",
+          "id": "ariadne.sidebar.signIn",
+          "name": "Account",
+          "icon": "$(account)"
+        }
+      ],
       "ariadne-panel": [
         {
           "type": "webview",
@@ -60,13 +79,6 @@
           "name": "SESSION METRICS",
           "group": "right",
           "icon": "$(graph)"
-        },
-        {
-          "type": "webview",
-          "id": "ariadne.panel.signIn",
-          "name": "GITHUB SIGN-IN",
-          "group": "right",
-          "icon": "$(account)"
         }
       ]
     },
@@ -75,15 +87,15 @@
       "properties": {
         "ariadne.copilot.model": {
           "type": "string",
-          "default": "gpt-5.5",
+          "default": "gemini-3.5-flash",
           "enum": [
-            "gpt-5.5",
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4.1-mini",
-            "gpt-4.1-nano"
+            "gpt-5-mini",
+            "claude-haiku-4.5",
+            "gemini-3.5-flash",
+            "gpt-5.4-mini",
+            "gpt-5.5"
           ],
-          "markdownDescription": "GitHub Copilot model to use for generating vulnerability explanations."
+          "markdownDescription": "GitHub Copilot model for vulnerability explanations. Lightweight models (gpt-5-mini, claude-haiku-4.5, gemini-3.5-flash) are fastest for plain-English feedback."
         }
       }
     },

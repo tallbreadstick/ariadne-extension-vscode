@@ -6,6 +6,7 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	private pendingBadgeCount?: number;
 	/** Optional hook to rebuild HTML when the panel becomes visible. */
 	private resolveHtml?: () => string;
+	private resolveHtmlApplied = false;
 	private readonly messageHandler?: (msg: Record<string, unknown>) => void;
 
 	constructor(initialHtml: string, onMessage?: (msg: Record<string, unknown>) => void) {
@@ -29,8 +30,9 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 			enableCommandUris: true,
 		};
 
-		if (this.resolveHtml) {
+		if (this.resolveHtml && !this.resolveHtmlApplied) {
 			this.currentHtml = this.resolveHtml();
+			this.resolveHtmlApplied = true;
 		}
 
 		webviewView.webview.html = this.currentHtml;
@@ -65,6 +67,9 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	 * `resolveWebviewView` will pick up `currentHtml` automatically.
 	 */
 	updateHtml(html: string): void {
+		if (html === this.currentHtml) {
+			return;
+		}
 		this.currentHtml = html;
 		if (this.webviewView) {
 			this.webviewView.webview.html = html;

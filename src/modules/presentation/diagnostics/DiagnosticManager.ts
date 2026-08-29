@@ -1,22 +1,10 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { AriadneFinding } from "./diagnosticTypes";
+import { SEVERITY_BG_TITLE, SEVERITY_COLORS_TITLE } from "../severityColors.js";
 
-// Design tokens — mirrored from activeVulnerabilities.ts CSS variables
-const SEVERITY_COLOR: Record<AriadneFinding["severity"], string> = {
-  Critical: "#E24B4A",
-  High:     "#BA7517",
-  Medium:   "#227AD0",
-  Low:      "#5CA221",
-};
-
-// Highlight background colours at 20% opacity (hex alpha 33 = 51/255 ≈ 20%)
-const SEVERITY_BG: Record<AriadneFinding["severity"], string> = {
-  Critical: "#EA2D2E33",
-  High:     "#BA751733",
-  Medium:   "#0074BD33",
-  Low:      "#608B4E33",
-};
+const SEVERITY_COLOR = SEVERITY_COLORS_TITLE;
+const SEVERITY_BG = SEVERITY_BG_TITLE;
 
 // ── UC-2.3: Severity → DiagnosticSeverity mapping ─────────────────────
 // Used when publishing zero-width diagnostics to the Problems Panel.

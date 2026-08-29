@@ -7,6 +7,8 @@
  */
 
 import { SessionMetrics, SessionNotification } from '../../presentation/panelTypes.js';
+import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
+import type { Severity } from '../../presentation/panelTypes.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
@@ -53,12 +55,13 @@ const NOTIFICATION_ICON_SVG =
 
 // ── Partial builders ──────────────────────────────────────────────────
 
-function buildMetricCard(title: string, value: number): string {
+function buildMetricCard(title: string, value: number, severity: Severity): string {
+	const accent = SEVERITY_COLORS[severity];
 	return /* html */ `
-		<div class="metric-card">
+		<div class="metric-card" style="border-left: 3px solid ${accent};">
 			<div class="metric-title">${title}</div>
 			<div class="metric-row">
-				<div class="metric-value">${value}</div>
+				<div class="metric-value" style="color: ${accent};">${value}</div>
 				<div class="metric-trend">
 					${TREND_CHART_SVG}
 					<span>${value}</span>
@@ -333,10 +336,10 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 	<body>
 		<section class="dashboard">
 			<div class="metrics-grid">
-				${buildMetricCard('Critical Issues', critical)}
-				${buildMetricCard('High Issues', high)}
-				${buildMetricCard('Medium Issues', medium)}
-				${buildMetricCard('Low Issues', low)}
+				${buildMetricCard('Critical Issues', critical, 'critical')}
+				${buildMetricCard('High Issues', high, 'high')}
+				${buildMetricCard('Medium Issues', medium, 'medium')}
+				${buildMetricCard('Low Issues', low, 'low')}
 			</div>
 
 			<div class="divider"></div>

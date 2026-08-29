@@ -17,6 +17,7 @@
 
 import * as vscode from 'vscode';
 import type { SessionAnalysis } from '../analysis/analysisTypes.js';
+import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 
 // ── Status bar item ───────────────────────────────────────────────────
 
@@ -87,16 +88,16 @@ function buildTooltip(analysis: SessionAnalysis): vscode.MarkdownString {
 	md.supportHtml = true;
 
 	const { critical, high, medium, low } = analysis.severityCounts;
-	const red = '#E24B4A';
-	const orange = '#BA7517';
-	const blue = '#227AD0';
-	const green = '#5CA221';
+	const red = SEVERITY_COLORS.critical;
+	const orange = SEVERITY_COLORS.high;
+	const yellow = SEVERITY_COLORS.medium;
+	const green = SEVERITY_COLORS.low;
 	const teal = '#4EC9B0';
 
 	// ── Severity breakdown ────────────────────────────────────────
 	md.appendMarkdown(`<span style="color:${red};">$(graph-line)</span>&ensp;**${critical}** Critical Issues\n\n`);
 	md.appendMarkdown(`<span style="color:${orange};">$(graph-line)</span>&ensp;**${high}** High Issues\n\n`);
-	md.appendMarkdown(`<span style="color:${blue};">$(graph-line)</span>&ensp;**${medium}** Medium Issues\n\n`);
+	md.appendMarkdown(`<span style="color:${yellow};">$(graph-line)</span>&ensp;**${medium}** Medium Issues\n\n`);
 	md.appendMarkdown(`<span style="color:${green};">$(graph-line)</span>&ensp;**${low}** Low Issues\n\n`);
 
 	// ── Separator ─────────────────────────────────────────────────

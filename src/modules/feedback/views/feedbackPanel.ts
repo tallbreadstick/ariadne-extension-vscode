@@ -1,5 +1,6 @@
 import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackFinding } from '../llm_feedback/feedbackTypes.js';
+import { severityCssVars } from '../../presentation/severityColors.js';
 
 /**
  * Union type representing the three possible states of the feedback panel.
@@ -62,10 +63,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 --border: var(--vscode-panel-border);
                 --text: var(--vscode-foreground);
                 --muted: var(--vscode-descriptionForeground);
-                --critical: #E24B4A;
-        		--high: #BA7517;
-        		--medium: #227AD0;
-        		--low: #5CA221;
+                ${severityCssVars()}
                 --code-bg: var(--vscode-textCodeBlock-background);
                 
                 /* Text Colors from your image */

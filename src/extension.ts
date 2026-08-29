@@ -18,7 +18,16 @@ import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics'
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
 import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
+import { buildTermsOfUseHtml } from './modules/feedback/views/termsOfUsePanel.js';
 import { GitHubAuthService } from './modules/feedback/auth/githubAuthService.js';
+import type { AuthPanelState, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
+import {
+	COPILOT_MODEL_OPTIONS,
+	DEFAULT_COPILOT_MODEL,
+	type SidebarSettingsViewModel,
+} from './modules/feedback/settings/extensionSettings.js';
+import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js';
+import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
 import { parseThreeSectionResponse } from './modules/feedback/llm_request/parseResponse.js';
@@ -50,6 +59,37 @@ function toVulnerabilityMetadata(vuln: Vulnerability): VulnerabilityMetadata {
 	};
 }
 
+async function focusSignInSidebar(): Promise<void> {
+	await vscode.commands.executeCommand('workbench.view.extension.ariadne-sidebar');
+	await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+}
+
+function copilotRuntimeOptions(
+	context: vscode.ExtensionContext,
+	gitHubToken: string,
+): {
+	gitHubToken: string;
+	copilotHome: string;
+	extensionPath: string;
+} {
+	return {
+		gitHubToken,
+		copilotHome: join(context.globalStorageUri.fsPath, 'copilot'),
+		extensionPath: context.extensionPath,
+	};
+}
+
+function getSidebarSettings(): SidebarSettingsViewModel {
+	const config = vscode.workspace.getConfiguration('ariadne');
+	return {
+		copilotModel: config.get<string>('copilot.model', DEFAULT_COPILOT_MODEL),
+		copilotModelOptions: COPILOT_MODEL_OPTIONS,
+	};
+}
+
+function isCopilotModel(value: string): value is typeof COPILOT_MODEL_OPTIONS[number] {
+	return (COPILOT_MODEL_OPTIONS as readonly string[]).includes(value);
+}
 // ─────────────────────────────────────────────────────────────────────
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
@@ -58,14 +98,45 @@ export function activate(context: vscode.ExtensionContext) {
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
 	const githubAuth = new GitHubAuthService(context);
+	const copilotManager = new CopilotClientManager();
 
-	let latestSignInHtml = buildSignInPanelHtml({ status: 'signed-out' });
+	let latestSignInHtml = buildSignInPanelHtml({
+		status: 'loading',
+		settings: getSidebarSettings(),
+	});
 
 	const refreshSignInPanel = async (
 		signInProvider: AriadneViewProvider,
-		override?: Parameters<typeof buildSignInPanelHtml>[0],
+		override?: AuthPanelState,
 	): Promise<void> => {
-		const model = override ?? await githubAuth.getPanelViewModel();
+		const settings = getSidebarSettings();
+		let model: SignInPanelViewModel = {
+			...(override ?? await githubAuth.getPanelViewModel()),
+			settings,
+		};
+
+		if (model.status === 'signed-in' && !override) {
+			const token = await githubAuth.getAccessToken();
+			if (token) {
+				const usage = await fetchCopilotQuotaUsage(
+					copilotManager,
+					copilotRuntimeOptions(context, token),
+				);
+				if (usage) {
+					model = {
+						...model,
+						copilotUsage: {
+							label: usage.label,
+							remainingPercent: usage.remainingPercent,
+							usedPercent: usage.usedPercent,
+							isUnlimited: usage.isUnlimited,
+							resetDate: usage.resetDate,
+						},
+					};
+				}
+			}
+		}
+
 		latestSignInHtml = buildSignInPanelHtml(model);
 		signInProvider.updateHtml(latestSignInHtml);
 	};
@@ -157,6 +228,10 @@ export function activate(context: vscode.ExtensionContext) {
 						analyticsConsent: msg.analyticsConsent === true,
 					});
 					await refreshSignInPanel(signInProvider);
+					const token = await githubAuth.getAccessToken();
+					if (token) {
+						copilotManager.prewarm(copilotRuntimeOptions(context, token));
+					}
 					vscode.window.showInformationMessage(
 						'Ariadne: Signed in to GitHub. AI feedback will use your Copilot allowance.',
 					);
@@ -172,8 +247,14 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			if (msg.type === 'github-sign-out') {
+				await refreshSignInPanel(signInProvider, {
+					status: 'signed-out',
+					hasConsent: false,
+					analyticsConsent: false,
+				});
 				try {
 					await githubAuth.signOut();
+					await copilotManager.dispose();
 					await refreshSignInPanel(signInProvider);
 					vscode.window.showInformationMessage('Ariadne: Signed out of GitHub.');
 				} catch (error: unknown) {
@@ -186,14 +267,30 @@ export function activate(context: vscode.ExtensionContext) {
 
 			if (msg.type === 'github-auth-refresh') {
 				await refreshSignInPanel(signInProvider);
+				return;
+			}
+
+			if (msg.type === 'update-copilot-model' && typeof msg.model === 'string') {
+				if (isCopilotModel(msg.model)) {
+					const config = vscode.workspace.getConfiguration('ariadne');
+					await config.update(
+						'copilot.model',
+						msg.model,
+						vscode.ConfigurationTarget.Global,
+					);
+				}
+				await refreshSignInPanel(signInProvider);
 			}
 		},
 	);
 	signInProvider.setResolveHtml(() => latestSignInHtml);
-	void refreshSignInPanel(signInProvider);
+	void (async () => {
+		await githubAuth.initialize();
+		await refreshSignInPanel(signInProvider);
+	})();
 
 	const signInDisposable = vscode.window.registerWebviewViewProvider(
-		'ariadne.panel.signIn',
+		'ariadne.sidebar.signIn',
 		signInProvider,
 	);
 
@@ -201,7 +298,23 @@ export function activate(context: vscode.ExtensionContext) {
 		githubAuth.onDidChangeAuth(() => {
 			void refreshSignInPanel(signInProvider);
 		}),
+		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration('ariadne.copilot.model')) {
+				void refreshSignInPanel(signInProvider);
+			}
+		}),
+		{ dispose: () => { void copilotManager.dispose(); } },
 	);
+
+	void githubAuth.isAuthenticated().then(async (signedIn) => {
+		if (!signedIn) {
+			return;
+		}
+		const token = await githubAuth.getAccessToken();
+		if (token) {
+			copilotManager.prewarm(copilotRuntimeOptions(context, token));
+		}
+	});
 
 	// ── Diagnostic / inline highlight manager ───────────────────────────
 	const diagnosticManager = new DiagnosticManager(context);
@@ -292,7 +405,20 @@ export function activate(context: vscode.ExtensionContext) {
 	const openSignInPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSignInPanel',
 		async () => {
-			await vscode.commands.executeCommand('ariadne.panel.signIn.focus');
+			await focusSignInSidebar();
+		},
+	);
+
+	const openTermsOfUse = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openTermsOfUse',
+		() => {
+			const panel = vscode.window.createWebviewPanel(
+				'ariadne.termsOfUse',
+				'Ariadne: Terms of Use',
+				vscode.ViewColumn.One,
+				{ enableScripts: false },
+			);
+			panel.webview.html = buildTermsOfUseHtml();
 		},
 	);
 
@@ -317,14 +443,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 			const isSignedIn = await githubAuth.isAuthenticated();
 			if (!isSignedIn) {
-				const signIn = 'Sign In';
-				const choice = await vscode.window.showWarningMessage(
+				await focusSignInSidebar();
+				vscode.window.showInformationMessage(
 					'Ariadne: Sign in to GitHub to use AI vulnerability explanations.',
-					signIn,
 				);
-				if (choice === signIn) {
-					await vscode.commands.executeCommand('ariadne.panel.signIn.focus');
-				}
 				return;
 			}
 
@@ -337,7 +459,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			const config = vscode.workspace.getConfiguration('ariadne');
-			const model = config.get<string>('copilot.model', 'gpt-5.5');
+			const model = config.get<string>('copilot.model', 'gemini-3.5-flash');
 
 			const panel = vscode.window.createWebviewPanel(
 				'ariadne.feedback',
@@ -359,9 +481,8 @@ export function activate(context: vscode.ExtensionContext) {
 					model,
 				);
 				const rawResponse = await callLLM(requestBody, {
-					gitHubToken,
-					copilotHome: join(context.globalStorageUri.fsPath, 'copilot'),
-					extensionPath: context.extensionPath,
+					...copilotRuntimeOptions(context, gitHubToken),
+					clientManager: copilotManager,
 				});
 				const sections = parseThreeSectionResponse(rawResponse);
 
@@ -408,6 +529,7 @@ export function activate(context: vscode.ExtensionContext) {
 		sessionMetricsDisposable,
 		signInDisposable,
 		openSignInPanel,
+		openTermsOfUse,
 		openFeedbackPanel,
 	);
 }

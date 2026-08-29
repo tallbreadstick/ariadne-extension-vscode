@@ -3,10 +3,11 @@
  *
  * Sends the assembled prompt to GitHub Copilot via the Copilot SDK,
  * authenticated with the user's GitHub token from VS Code sign-in.
- * Uses a 15-second hard timeout (SRS Section 3.1.3).
+ * Uses a warm client manager to avoid cold-start latency on each request.
  */
 
-import { createCopilotClient, type CopilotRuntimeOptions } from './copilotRuntime.js';
+import { CopilotClientManager } from './copilotClientManager.js';
+import type { CopilotRuntimeOptions } from './copilotRuntime.js';
 import type { AriadneLLMRequestBody } from './requestTypes.js';
 
 /** Timeout duration in milliseconds — per SRS Section 3.1.3 */
@@ -23,15 +24,12 @@ function extractMessageContent(
 	return message.content;
 }
 
-export interface CallLLMOptions extends CopilotRuntimeOptions {}
+export interface CallLLMOptions extends CopilotRuntimeOptions {
+	clientManager: CopilotClientManager;
+}
 
 /**
  * Calls GitHub Copilot through the Copilot SDK and returns the raw response text.
- *
- * @param requestBody - The fully assembled request body from serializePayload().
- * @param options - GitHub token plus runtime paths for the Copilot CLI.
- * @returns The assistant message content from Copilot.
- * @throws {Error} On auth failures, timeouts, or missing response content.
  */
 export async function callLLM(
 	requestBody: AriadneLLMRequestBody,
@@ -42,18 +40,17 @@ export async function callLLM(
 	const systemContent = extractMessageContent(requestBody, 'system');
 	const userContent = extractMessageContent(requestBody, 'user');
 
-	const client = await createCopilotClient(options);
+	const client = await options.clientManager.getClient(options);
 
 	let session;
 	try {
-		await client.start();
-
 		session = await client.createSession({
 			model: requestBody.model,
 			clientName: 'ariadne-vscode',
 			onPermissionRequest: approveAll,
 			availableTools: [],
 			infiniteSessions: { enabled: false },
+			enableSessionTelemetry: false,
 			systemMessage: {
 				mode: 'replace',
 				content: systemContent,
@@ -82,6 +79,5 @@ export async function callLLM(
 		if (session) {
 			await session.disconnect().catch(() => undefined);
 		}
-		await client.stop().catch(() => undefined);
 	}
 }

@@ -17,7 +17,7 @@ import { ARIADNE_SYSTEM_PROMPT } from './systemPrompt.js';
  * @param vulnerability - Metadata from the SAST engine finding.
  * @param activeFileContent - Full text of the Java file (or "" on read failure).
  * @param activeFilePath - Path to the active Java file.
- * @param model - Copilot model identifier (e.g. "gpt-5.5").
+ * @param model - Copilot model identifier (e.g. "gpt-5-mini").
  * @returns A fully assembled request body for the Copilot SDK session.
  */
 export function serializePayload(

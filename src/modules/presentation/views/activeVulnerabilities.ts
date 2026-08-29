@@ -7,6 +7,7 @@
  */
 
 import { Vulnerability, Severity } from '../panelTypes.js';
+import { SEVERITY_COLORS, severityCssVars } from '../severityColors.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 
@@ -21,13 +22,7 @@ function buildMeta(vuln: Vulnerability): string {
 }
 
 function severityColor(severity: Severity): string {
-	const map: Record<Severity, string> = {
-		critical: 'var(--critical)',
-		high: 'var(--high)',
-		medium: 'var(--medium)',
-		low: 'var(--low)',
-	};
-	return map[severity];
+	return SEVERITY_COLORS[severity];
 }
 
 // ── SVGs ─────────────────────────────────────────────────────────────
@@ -60,9 +55,10 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const openAttr = expanded ? ' open' : '';
     const commandArgs = encodeURIComponent(JSON.stringify([vuln.cwe, vuln.title]));
     const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
+	const vulnKey = encodeURIComponent(`${vuln.cwe}|${vuln.filePath}|${vuln.line}|${vuln.title}`);
 
 	return /* html */ `
-		<details${openAttr}>
+		<details data-vuln-key="${vulnKey}"${openAttr}>
 			<summary>
 				<div class="summary-row">
 					<div class="summary-left">
@@ -90,14 +86,13 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">File Location</div>
-						<a class="detail-value file goto-location"
-						   href="#" role="link"
+						<button type="button" class="detail-value file goto-location"
 						   data-file="${vuln.filePath}"
 						   data-line="${vuln.line}"
 						   title="Open ${vuln.filePath} at line ${vuln.line}">
 							${FILE_SVG}
 							<span>${location}</span>
-						</a>
+						</button>
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">CWE · OWASP Reference</div>
@@ -127,10 +122,7 @@ const CSS = /* css */ `
         --border: var(--vscode-panel-border);
         --text: var(--vscode-foreground);
         --muted: var(--vscode-descriptionForeground);
-        --critical: #E24B4A;
-        --high: #BA7517;
-        --medium: #227AD0;
-        --low: #5CA221;
+        ${severityCssVars()}
 		--file: #569CD6;
 		--reference: #CE9178 ;
         --button-bg: var(--vscode-button-background);
@@ -198,7 +190,7 @@ const CSS = /* css */ `
 		color: var(--file);
 	}
 
-	a.goto-location {
+	button.goto-location {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
@@ -209,13 +201,17 @@ const CSS = /* css */ `
 		padding: 2px 4px;
 		margin: -2px -4px;
 		transition: background 0.15s ease, color 0.15s ease;
+		background: none;
+		border: none;
+		font: inherit;
+		text-align: left;
 	}
 
-	a.goto-location:hover {
+	button.goto-location:hover {
 		text-decoration: underline;
 	}
 
-	a.goto-location .file-icon {
+	button.goto-location .file-icon {
 		width: 14px;
 		height: 14px;
 		flex: 0 0 auto;
@@ -441,16 +437,80 @@ export function buildActiveVulnerabilitiesHtml(
 		<script>
 			(function () {
 				const vscode = acquireVsCodeApi();
-				document.addEventListener('click', (e) => {
-					const link = e.target.closest('.goto-location');
-					if (!link) return;
-					e.preventDefault();
-					vscode.postMessage({
-						type: 'goto-line',
-						filePath: link.dataset.file,
-						line: Number(link.dataset.line),
+
+				function readUiState() {
+					const saved = vscode.getState();
+					return saved && typeof saved === 'object' ? saved : {};
+				}
+
+				function persistUiState(patch) {
+					vscode.setState({ ...readUiState(), ...patch });
+				}
+
+				function collectOpenKeys() {
+					return Array.from(document.querySelectorAll('details[open]'))
+						.map((el) => el.dataset.vulnKey)
+						.filter(Boolean);
+				}
+
+				function restoreUiState() {
+					const state = readUiState();
+
+					if (Array.isArray(state.openKeys)) {
+						const openSet = new Set(state.openKeys);
+						document.querySelectorAll('details[data-vuln-key]').forEach((el) => {
+							if (openSet.has(el.dataset.vulnKey)) {
+								el.open = true;
+							}
+						});
+					}
+
+					if (typeof state.scrollTop === 'number' && state.scrollTop > 0) {
+						requestAnimationFrame(() => {
+							window.scrollTo(0, state.scrollTop);
+						});
+					}
+				}
+
+				function snapshotUiState() {
+					persistUiState({
+						scrollTop: window.scrollY,
+						openKeys: collectOpenKeys(),
+					});
+				}
+
+				window.addEventListener(
+					'scroll',
+					() => {
+						persistUiState({ scrollTop: window.scrollY });
+					},
+					{ passive: true },
+				);
+
+				document.querySelectorAll('details[data-vuln-key]').forEach((el) => {
+					el.addEventListener('toggle', () => {
+						persistUiState({ openKeys: collectOpenKeys() });
 					});
 				});
+
+				document.addEventListener(
+					'click',
+					(e) => {
+						const link = e.target.closest('.goto-location');
+						if (!link) return;
+						e.preventDefault();
+						e.stopPropagation();
+						snapshotUiState();
+						vscode.postMessage({
+							type: 'goto-line',
+							filePath: link.dataset.file,
+							line: Number(link.dataset.line),
+						});
+					},
+					true,
+				);
+
+				restoreUiState();
 			})();
 		</script>
 	</body>
