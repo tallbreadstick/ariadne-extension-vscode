@@ -21,6 +21,7 @@ import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.j
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
 import { parseThreeSectionResponse } from './modules/feedback/llm_request/parseResponse.js';
+import { sanitizeLlmError } from './modules/feedback/llm_request/sanitizeError.js';
 import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
 
@@ -298,12 +299,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 				panel.webview.postMessage({ type: 'llm-result', finding });
 			} catch (error: unknown) {
-				const message =
+				const rawMessage =
 					error instanceof Error ? error.message : 'Unknown error';
-				console.error('[Ariadne] LLM pipeline error:', message);
+				console.error('[Ariadne] LLM pipeline error:', rawMessage);
 				panel.webview.postMessage({
 					type: 'llm-error',
-					message: `Ariadne could not retrieve an explanation: ${message}`,
+					message: sanitizeLlmError(rawMessage),
 				});
 			}
 		},
