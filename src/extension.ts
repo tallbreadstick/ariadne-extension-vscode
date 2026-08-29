@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
 import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
+import { registerRuleLanguage } from './modules/rules/ruleDiagnostics';
 import {
 	metadataToVulnerability,
 	metadataToScanSnapshot,
@@ -12,7 +13,7 @@ import {
 // ── Presentation layer ────────────────────────────────────────────────
 import { DiagnosticManager } from './modules/presentation/diagnostics/DiagnosticManager';
 import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
-import { buildActiveVulnerabilitiesHtml } from './modules/presentation/views/activeVulnerabilities';
+import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
@@ -90,6 +91,28 @@ function getSidebarSettings(): SidebarSettingsViewModel {
 function isCopilotModel(value: string): value is typeof COPILOT_MODEL_OPTIONS[number] {
 	return (COPILOT_MODEL_OPTIONS as readonly string[]).includes(value);
 }
+function resolveExpandedVulnKey(
+	vulns: Vulnerability[],
+	store: SessionStore,
+): string | undefined {
+	const stored = store.loadExpandedVulnKey();
+	if (!stored) {
+		return undefined;
+	}
+	const validKeys = new Set(vulns.map(buildVulnKey));
+	if (!validKeys.has(stored)) {
+		void store.saveExpandedVulnKey(undefined);
+		return undefined;
+	}
+	return stored;
+}
+
+function buildVulnsHtml(vulns: Vulnerability[], store: SessionStore): string {
+	return buildActiveVulnerabilitiesHtml(vulns, {
+		expandedKey: resolveExpandedVulnKey(vulns, store),
+	});
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
@@ -146,7 +169,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let latestVulnerabilities: Vulnerability[] = [];
 
-	let initialVulnsHtml = buildActiveVulnerabilitiesHtml([]);
+	let initialVulnsHtml = buildVulnsHtml([], store);
 	let initialMetricsHtml = buildSessionMetricsHtml({
 		critical: 0, high: 0, medium: 0, low: 0,
 		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 },
@@ -186,7 +209,7 @@ export function activate(context: vscode.ExtensionContext) {
 			),
 			);
 			latestVulnerabilities = restoredVulns;
-			initialVulnsHtml = buildActiveVulnerabilitiesHtml(restoredVulns);
+			initialVulnsHtml = buildVulnsHtml(restoredVulns, store);
 		} catch {
 			// If stored data is corrupted, start fresh
 			console.warn('[Ariadne] Could not restore session from stored snapshots.');
@@ -194,9 +217,19 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 
 	// ── Panel providers ────────────────────────────────────────────────
-	const activeVulnsProvider = new AriadneViewProvider(initialVulnsHtml);
+	const activeVulnsProvider = new AriadneViewProvider(
+		initialVulnsHtml,
+		(msg) => {
+			if (msg.type === 'vuln-expanded') {
+				const key = msg.key === null || msg.key === undefined
+					? undefined
+					: String(msg.key);
+				void store.saveExpandedVulnKey(key);
+			}
+		},
+	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildActiveVulnerabilitiesHtml(latestVulnerabilities, true),
+		buildVulnsHtml(latestVulnerabilities, store),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -325,13 +358,14 @@ export function activate(context: vscode.ExtensionContext) {
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();
 	registerDocumentEvents(context, session);
+	registerRuleLanguage(context);
 
 	// ── Wire findings from the engine to every UI surface ───────────────
 	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
 		// ── 1. Active Vulnerabilities panel ─────────────────────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
-		activeVulnsProvider.updateHtml(buildActiveVulnerabilitiesHtml(vulns));
+		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
 		// ── 2. Persist scan snapshot ──────────────────────────────────────

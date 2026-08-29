@@ -19,6 +19,9 @@ export const WS_SESSION_META = 'ariadne.sessionMeta';
 /** Key for the persisted set of dismissed notification IDs. */
 export const WS_DISMISSED_NOTIFICATIONS = 'ariadne.dismissedNotifications';
 
+/** Key for the single expanded vulnerability card in the active-vulns panel. */
+export const WS_EXPANDED_VULN_KEY = 'ariadne.expandedVulnKey';
+
 // ── globalState keys (cross-project) ──────────────────────────────────
 
 /** Key for the persisted UserConfig object. */

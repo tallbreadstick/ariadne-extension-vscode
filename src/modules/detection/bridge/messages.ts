@@ -43,4 +43,6 @@ export type AriadneMessage =
 	// ANALYSIS CONTROL
 	// ============================================================
 
-	| { type: 'Analyze'; path: string | null };
+	| { type: 'Analyze'; path: string | null }
+
+	| { type: 'ReloadRules'; overlays: Record<string, string> };
