@@ -1,15 +1,13 @@
 # ariadne-extension-vscode
 
-VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by OpenAI.
+VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by GitHub Copilot.
 
-This extension does **not** embed the analysis engine. It spawns the **`ariadne`** CLI from [`ariadne-core`](../ariadne-core/) in session mode. Install the core first:
+This extension does **not** embed the analysis engine. It spawns the **`ariadne`** CLI in session mode. Install the scanner binary first — see the scanner core documentation for Rust/Cargo setup.
 
 ```powershell
-cd ..\ariadne-core
+# From the scanner core repository
 cargo install --path .
 ```
-
-See [`../ariadne-core/README.md`](../ariadne-core/README.md) for Rust/Cargo setup.
 
 ## Prerequisites
 
@@ -18,7 +16,7 @@ See [`../ariadne-core/README.md`](../ariadne-core/README.md) for Rust/Cargo setu
 | [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
 | npm | Bundled with Node.js |
 | [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
-| `ariadne` on PATH | From `cargo install --path .` in `ariadne-core` |
+| `ariadne` on PATH | From `cargo install --path .` in scanner core |
 
 ## Install dependencies
 
@@ -110,19 +108,10 @@ Open **File → Preferences → Settings** and search for **Ariadne**, or edit `
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `ariadne.openai.apiKey` | `""` | OpenAI API key for the feedback panel |
-| `ariadne.openai.model` | `gpt-5.5` | Model for explanations (`gpt-4o`, `gpt-4o-mini`, etc.) |
+| `ariadne.executable` | `"ariadne"` | Path to the scanner binary |
+| `ariadne.copilot.model` | `""` | Override Copilot model selection |
 
-Analysis and diagnostics work without an API key. The key is only needed for **Ask Ariadne**.
-
-Example `settings.json` snippet:
-
-```json
-{
-  "ariadne.openai.apiKey": "sk-...",
-  "ariadne.openai.model": "gpt-4o-mini"
-}
-```
+Authentication is handled via the VS Code Copilot extension SDK.
 
 ## npm scripts (reference)
 
@@ -134,15 +123,16 @@ Example `settings.json` snippet:
 | `lint` | `npm run lint` | ESLint only |
 | `check-types` | `npm run check-types` | TypeScript check only |
 | `test` | `npm test` | Extension tests (`vscode-test`) |
+| `workflow` | `npm run workflow` | Agentic workflow CLI |
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
-| No findings / core errors in Debug Console | `ariadne` not on PATH | `cd ../ariadne-core && cargo install --path .` |
-| Stale results after core changes | Old binary still installed | `cargo install --path . --force`, reload window |
-| Ask Ariadne errors | Missing or invalid API key | Set `ariadne.openai.apiKey` |
+| No findings / core errors in Debug Console | `ariadne` not on PATH | Install scanner via cargo |
+| Stale results after core changes | Old binary still installed | Reinstall scanner binary, reload window |
+| Ask Ariadne errors | Copilot auth failure | Check VS Code Copilot extension status |
 
 Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.
 
@@ -153,10 +143,14 @@ ariadne-extension-vscode/
 ├── src/
 │   ├── extension.ts              ← activation entry point
 │   └── modules/
-│       ├── detection/            ← bridge to Rust core (IPC)
-│       ├── presentation/         ← diagnostics, webviews
-│       ├── feedback/             ← LLM “Ask Ariadne”
-│       └── tracker/              ← status bar, metrics
+│       ├── core/                 ← binary resolution
+│       ├── detection/bridge/     ← IPC with scanner (spawn, messages, convert)
+│       ├── presentation/         ← diagnostics, webviews, panels
+│       ├── feedback/             ← Copilot "Ask Ariadne", auth, settings
+│       ├── tracker/              ← status bar, session metrics, storage
+│       └── rules/                ← .ariadne rule file support
+├── scripts/                      ← workflow CLI tooling
+├── docs/                         ← specs, plans, architecture, agent docs
 ├── dist/extension.js             ← built output (after compile)
 ├── package.json
 └── .vscode/launch.json           ← F5 “Run Extension”
@@ -164,5 +158,5 @@ ariadne-extension-vscode/
 
 ## See also
 
-- [`../README.md`](../README.md) — full-stack quick start
-- [`../ariadne-core/README.md`](../ariadne-core/README.md) — install and use the `ariadne` CLI
+- Full-stack quick start — see the parent repository README
+- Scanner core — see the scanner core documentation for building and installing the `ariadne` CLI
