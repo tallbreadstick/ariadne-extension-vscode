@@ -29,6 +29,22 @@ These plugins optimize how agents write code. They are referenced in `AGENTS.md`
 
 Each skill is a set of instructions installed in the agent's harness (e.g., Antigravity skills directory, Cursor rules, Claude rules). Refer to each skill's repo README for installation instructions specific to your agent tool.
 
+### Cursor (this repo)
+
+This repository is a TypeScript VS Code extension with HTML webviews. Do not install ECC's `--profile minimal` pack — it still copies every language.
+
+```bash
+./install.sh --target cursor --no-hooks typescript web
+```
+
+Keep only:
+
+- **Ponytail**: `.cursor/rules/ponytail.mdc`
+- **Impeccable**: `.cursor/skills/impeccable/`, `.cursor/agents/impeccable-*.md`, `.cursor/hooks.json`
+- **ECC**: `common-*`, `typescript-*`, and `web-*` rules, plus the planner/reviewer/tdd/docs agents and skills listed in `.cursor/rules/common-agents.mdc`
+
+Do not commit `.impeccable/config.local.json` or `.cursor/ecc-install-state.json` (machine-local).
+
 ## When to apply
 
 - **Ponytail**: Always. Every code change must pass the decision ladder.
