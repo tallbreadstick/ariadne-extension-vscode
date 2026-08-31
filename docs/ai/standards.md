@@ -93,6 +93,48 @@ Security is integrated throughout the development lifecycle, not bolted on after
 - record meaningful technical tradeoffs in `docs/ai/decisions.md`
 - prefer reproducible commands that work for a teammate on a fresh machine
 
+## Git conventions
+
+### Commit message format
+
+```text
+<type>: <short summary>
+```
+
+- **Subject line**: max 72 characters, lowercase type prefix, imperative mood ("add feature" not "added feature")
+- **Body** (optional): wrap at 72 characters, explain **what** changed and **why**, not **how**
+- **Footer** (optional): reference issues (`Fixes #123`, `Closes #456`, `Related to #789`)
+
+### Commit types
+
+| Type | When to use |
+|---|---|
+| `feature` | A new feature |
+| `fix` | A bug fix |
+| `docs` | Documentation updates |
+| `style` | Code style changes (formatting, no logic changes) |
+| `refactor` | Code restructuring (no behavior changes) |
+| `test` | Adding or modifying tests |
+| `chore` | Maintenance (dependencies, configs, etc.) |
+| `perf` | Performance improvements |
+| `ci` | Changes to CI/CD workflows |
+
+### Branching
+
+- Branch names use the pattern: `<category>/<short-description>`
+- Categories: `feature/`, `fix/`, `docs/`, `tech/`, `refactor/`
+- Use kebab-case for the description: `feature/code-lens-provider`, `fix/hover-crash`
+- Keep branches short-lived — merge or rebase frequently
+
+### General git rules
+
+- write atomic commits — each commit should represent one logical change
+- do not mix unrelated changes in a single commit
+- do not commit generated files (`dist/`, `node_modules/`, `.vsix`)
+- do not commit secrets, API keys, or private repo URLs
+- prefer incremental commits over a single large commit when the work has distinct logical steps
+- squash fixup commits before merging to main
+
 ## Workflow artifacts
 
 - create or update a task brief in `docs/ai/tasks/` for every non-trivial change
