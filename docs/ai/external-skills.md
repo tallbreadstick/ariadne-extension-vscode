@@ -2,7 +2,7 @@
 
 These plugins optimize how agents write code. They are referenced in `AGENTS.md` and `docs/ai/standards.md`.
 
-## Installed skills
+## Recommended skills
 
 ### Ponytail — Clean Code
 

@@ -201,7 +201,7 @@ src/
 
 ## External skill compliance
 
-The following agent skills are installed in the project's agent harnesses. Agents should follow their guidance:
+The following agent skills are recommended for this project. If installed in your agent harness, follow their guidance:
 
 - **Ponytail**: Apply the YAGNI-first decision ladder before writing new code. Prefer reusing existing code, stdlib, and platform features over adding dependencies or writing new abstractions. Never cut validation, error handling, or security.
 - **ECC**: Research and plan before implementing. Use structured skills for complex tasks. Follow security instincts (no hardcoded secrets, audit dependencies, validate inputs).

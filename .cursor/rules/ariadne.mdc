@@ -3,7 +3,7 @@ Read docs/ai/commands.md and docs/ai/standards.md before every task.
 
 If docs/ai/project-context.md or docs/ai/decisions.md have unfilled placeholders, follow the Agent bootstrap protocol in AGENTS.md before starting implementation.
 
-External plugins installed: Impeccable, Ponytail, ECC.
+Recommended external plugins: Impeccable, Ponytail, ECC. Install per docs/ai/external-skills.md.
 Follow Ponytail's decision ladder before writing new code.
 Follow ECC's research-first instinct before implementing.
 
