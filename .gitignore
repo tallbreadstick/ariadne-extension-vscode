@@ -5,3 +5,5 @@ node_modules
 *.vsix
 .env
 iterations/
+.impeccable/config.local.json
+.cursor/ecc-install-state.json
