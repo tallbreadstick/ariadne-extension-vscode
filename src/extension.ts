@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
+import { fingerprintScan } from './modules/detection/bridge/fingerprint';
 import { runSession } from './modules/detection/bridge/iostream';
 import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
 import { registerRuleLanguage } from './modules/rules/ruleDiagnostics';
@@ -357,11 +358,20 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();
-	registerDocumentEvents(context, session);
+	const analysisBuffers = registerDocumentEvents(context, session);
 	registerRuleLanguage(context);
 
 	// ── Wire findings from the engine to every UI surface ───────────────
 	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
+		const sentBuffers = analysisBuffers.dequeueAnalysis();
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+		const fingerprinted = fingerprintScan(findings, sentBuffers, workspaceRoot);
+		const uniqueEligible = fingerprinted.findings.filter(
+			(row) => row.fingerprint.continuityEligible && !row.fingerprint.continuityAmbiguous,
+		).length;
+		const ineligibleCount = fingerprinted.findings.filter(
+			(row) => !row.fingerprint.continuityEligible,
+		).length;
 		// ── 1. Active Vulnerabilities panel ─────────────────────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
@@ -402,7 +412,10 @@ export function activate(context: vscode.ExtensionContext) {
 				`Persisting: ${sessionAnalysis.persistingPatterns}, ` +
 				`Improving: ${sessionAnalysis.improvingTrends}, ` +
 				`Resolved: ${sessionAnalysis.resolvedThisSession}, ` +
-				`New: ${sessionAnalysis.newVulnerabilities}`,
+				`New: ${sessionAnalysis.newVulnerabilities} | ` +
+				`Fingerprints: ${uniqueEligible} unique-eligible, ` +
+				`${fingerprinted.ambiguousCount} ambiguous, ` +
+				`${ineligibleCount} ineligible`,
 			);
 		} catch {
 			// analyzeSession throws on empty array (guarded above, but be safe)

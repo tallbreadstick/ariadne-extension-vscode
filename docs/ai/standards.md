@@ -151,7 +151,7 @@ src/
   modules/
     core/                         # Binary resolution (ariadneExecutable.ts)
     detection/
-      bridge/                     # TS ↔ scanner IPC (iostream, messages, convert, documentEvents)
+      bridge/                     # TS ↔ scanner IPC (iostream, messages, convert, documentEvents, fingerprint)
     presentation/
       AriadneViewProvider.ts      # Base webview view provider
       panelTypes.ts               # Presentation-layer vulnerability type

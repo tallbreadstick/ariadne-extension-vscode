@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { join, relative } from 'node:path';
+import { AnalysisBufferTracker } from './fingerprint';
 import { AriadneSession } from './iostream';
 
 /**
@@ -112,20 +113,30 @@ function clearTimers(state: FileUpdateState): void {
  * Push the current in-memory buffer to the engine. The session re-analyses
  * automatically after every UpdateFile — no separate Analyze IPC needed.
  */
-function sendFullDocumentUpdate(session: AriadneSession, doc: vscode.TextDocument): void {
+function sendFullDocumentUpdate(
+	session: AriadneSession,
+	doc: vscode.TextDocument,
+	buffers: AnalysisBufferTracker,
+): void {
 	const fullText = doc.getText();
+	buffers.recordFile(doc.uri.fsPath, fullText);
 	session.send({
 		type: 'UpdateFile',
 		path: doc.uri.fsPath,
 		edits: [{ start: 0, end: fullText.length, new_text: fullText }],
 	});
+	buffers.enqueueAnalysis();
 }
 
 /**
  * Send the latest buffer to the engine. If the document changed during the
  * send, mark pending again and schedule one more trailing scan.
  */
-function flushDocumentUpdate(session: AriadneSession, filePath: string): void {
+function flushDocumentUpdate(
+	session: AriadneSession,
+	filePath: string,
+	buffers: AnalysisBufferTracker,
+): void {
 	const doc = resolveDocument(filePath);
 	if (!doc) {
 		return;
@@ -133,7 +144,7 @@ function flushDocumentUpdate(session: AriadneSession, filePath: string): void {
 
 	const versionAtFlush = doc.version;
 	console.log(`[Ariadne TS] UpdateFile ${filePath} len=${doc.getText().length}`);
-	sendFullDocumentUpdate(session, doc);
+	sendFullDocumentUpdate(session, doc, buffers);
 
 	const state = fileUpdateState.get(filePath);
 	if (!state) {
@@ -144,7 +155,7 @@ function flushDocumentUpdate(session: AriadneSession, filePath: string): void {
 	if (latest && latest.version !== versionAtFlush) {
 		// New edits landed while we flushed — ensure one more trailing scan.
 		state.pending = true;
-		scheduleTrailingScan(session, filePath);
+		scheduleTrailingScan(session, filePath, buffers);
 	} else {
 		state.pending = false;
 		if (!state.trailingTimer) {
@@ -153,7 +164,11 @@ function flushDocumentUpdate(session: AriadneSession, filePath: string): void {
 	}
 }
 
-function scheduleTrailingScan(session: AriadneSession, filePath: string): void {
+function scheduleTrailingScan(
+	session: AriadneSession,
+	filePath: string,
+	buffers: AnalysisBufferTracker,
+): void {
 	const state = getOrCreateState(filePath);
 
 	if (state.trailingTimer) {
@@ -165,7 +180,7 @@ function scheduleTrailingScan(session: AriadneSession, filePath: string): void {
 		if (!state.pending) {
 			return;
 		}
-		flushDocumentUpdate(session, filePath);
+		flushDocumentUpdate(session, filePath, buffers);
 		if (!state.pending) {
 			if (state.maxWaitTimer) {
 				clearTimeout(state.maxWaitTimer);
@@ -175,7 +190,11 @@ function scheduleTrailingScan(session: AriadneSession, filePath: string): void {
 	}, DEBOUNCE_MS);
 }
 
-function scheduleMaxWaitScan(session: AriadneSession, filePath: string): void {
+function scheduleMaxWaitScan(
+	session: AriadneSession,
+	filePath: string,
+	buffers: AnalysisBufferTracker,
+): void {
 	const state = getOrCreateState(filePath);
 
 	if (state.maxWaitTimer) {
@@ -185,21 +204,25 @@ function scheduleMaxWaitScan(session: AriadneSession, filePath: string): void {
 	state.maxWaitTimer = setTimeout(() => {
 		state.maxWaitTimer = null;
 		if (state.pending) {
-			flushDocumentUpdate(session, filePath);
+			flushDocumentUpdate(session, filePath, buffers);
 		}
 		if (state.pending) {
-			scheduleMaxWaitScan(session, filePath);
+			scheduleMaxWaitScan(session, filePath, buffers);
 		}
 	}, DEBOUNCE_MS);
 }
 
-function scheduleDocumentUpdate(session: AriadneSession, doc: vscode.TextDocument): void {
+function scheduleDocumentUpdate(
+	session: AriadneSession,
+	doc: vscode.TextDocument,
+	buffers: AnalysisBufferTracker,
+): void {
 	const filePath = doc.uri.fsPath;
 	const state = getOrCreateState(filePath);
 	state.pending = true;
 
-	scheduleTrailingScan(session, filePath);
-	scheduleMaxWaitScan(session, filePath);
+	scheduleTrailingScan(session, filePath, buffers);
+	scheduleMaxWaitScan(session, filePath, buffers);
 }
 
 function cancelPendingUpdate(filePath: string): void {
@@ -213,28 +236,40 @@ function cancelPendingUpdate(filePath: string): void {
 
 /**
  * Registers VS Code filesystem + editor events and converts them
- * into structured IPC messages for the Rust SAST engine.
+ * into structured IPC messages for the scanner session.
  *
  * File mutation events automatically trigger re-analysis in the
  * session after each UpdateFile / Create / Delete / Rename.
+ *
+ * @returns Tracker of last-sent file texts, paired FIFO with findings
  */
 export function registerDocumentEvents(
 	context: vscode.ExtensionContext,
 	session: AriadneSession,
-): void {
+): AnalysisBufferTracker {
+	const buffers = new AnalysisBufferTracker();
 
 	// ============================================================
 	// INIT — seed the engine with the workspace root
 	// ============================================================
 	const bootstrap = (): void => {
+		for (const state of fileUpdateState.values()) {
+			clearTimers(state);
+		}
+		fileUpdateState.clear();
+		buffers.reset();
 		const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '/';
 		console.log(`[Ariadne TS] Init root=${root}`);
 		session.send({ type: 'Init', root });
+		// Init runs before OpenFile. Pair it with an empty snapshot so those
+		// findings stay ineligible instead of hashing later editor text.
+		buffers.enqueueAnalysis();
 
 		vscode.workspace.textDocuments
 			.filter(isTrackedDocument)
 			.forEach((doc) => {
 				console.log(`[Ariadne TS] OpenFile (preloaded) ${doc.uri.fsPath}`);
+				buffers.recordFile(doc.uri.fsPath, doc.getText());
 				session.send({
 					type: 'OpenFile',
 					path: doc.uri.fsPath,
@@ -281,6 +316,7 @@ export function registerDocumentEvents(
 		vscode.workspace.onDidOpenTextDocument((doc) => {
 			if (!isTrackedDocument(doc)) { return; }
 			console.log(`[Ariadne TS] OpenFile ${doc.uri.fsPath}`);
+			buffers.recordFile(doc.uri.fsPath, doc.getText());
 			session.send({
 				type: 'OpenFile',
 				path: doc.uri.fsPath,
@@ -297,7 +333,9 @@ export function registerDocumentEvents(
 			event.files.forEach((file) => {
 				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] CreateFile ${file.fsPath}`);
+				buffers.recordFile(file.fsPath, '');
 				session.send({ type: 'CreateFile', path: file.fsPath, content: '' });
+				buffers.enqueueAnalysis();
 			});
 		}),
 	);
@@ -310,7 +348,9 @@ export function registerDocumentEvents(
 			event.files.forEach((file) => {
 				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] DeleteFile ${file.fsPath}`);
+				buffers.recordDelete(file.fsPath);
 				session.send({ type: 'DeleteFile', path: file.fsPath });
+				buffers.enqueueAnalysis();
 			});
 		}),
 	);
@@ -327,11 +367,13 @@ export function registerDocumentEvents(
 				console.log(
 					`[Ariadne TS] RenameFile ${file.oldUri.fsPath} → ${file.newUri.fsPath}`,
 				);
+				buffers.recordRename(file.oldUri.fsPath, file.newUri.fsPath);
 				session.send({
 					type: 'RenameFile',
 					old_path: file.oldUri.fsPath,
 					new_path: file.newUri.fsPath,
 				});
+				buffers.enqueueAnalysis();
 			});
 		}),
 	);
@@ -343,7 +385,7 @@ export function registerDocumentEvents(
 		vscode.workspace.onDidChangeTextDocument((event) => {
 			if (!isTrackedDocument(event.document)) { return; }
 			if (event.contentChanges.length === 0) { return; }
-			scheduleDocumentUpdate(session, event.document);
+			scheduleDocumentUpdate(session, event.document, buffers);
 		}),
 	);
 
@@ -357,7 +399,7 @@ export function registerDocumentEvents(
 
 			const state = fileUpdateState.get(filePath);
 			if (state?.pending) {
-				flushDocumentUpdate(session, filePath);
+				flushDocumentUpdate(session, filePath, buffers);
 			}
 			cancelPendingUpdate(filePath);
 
@@ -365,4 +407,6 @@ export function registerDocumentEvents(
 			session.send({ type: 'CloseFile', path: filePath });
 		}),
 	);
+
+	return buffers;
 }

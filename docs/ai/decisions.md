@@ -103,6 +103,15 @@ Within each section, newest decision at the top.
 >
 > During ongoing work, append a new ADR here whenever you introduce a new framework, dependency, design pattern, or make a significant architectural choice.
 
+### Derive finding fingerprints in the extension from queued sent buffers
+
+- date: 2026-08-31
+- status: accepted
+- context: Trends continuity needs stable logical/content/scope hashes. The scanner payload has metadata and line numbers but not enclosing-symbol paths, source ranges, or hashes. Changing the scanner contract was deferred so Phase 1 can ship in the public extension repo alone.
+- decision: Compute SHA-256 fingerprints in TypeScript from existing finding metadata plus a FIFO snapshot of file text sent on analysis-triggering IPC (`Init`, `CreateFile`, `DeleteFile`, `RenameFile`, `UpdateFile`). Do not re-hash the live editor buffer at callback time. Continuity key is `(fingerprintVersion, logicalFingerprint, scopeFingerprint)`. Duplicate keys in one scan are ambiguous. `.env` hygiene findings are excluded. Content uses a normalized Java line (or taint origin+sink lines) or a parsed properties value. Enclosing path is a brace-depth heuristic on snapshot Java, or the property key for config.
+- consequences: First `Init` findings are often ineligible (empty snapshot before `OpenFile`). Line-level slices are coarser than range-based hashes. FIFO pairing can desync if findings arrive without a matching send. Hashes of secret-bearing lines still correlate identical secrets. Fingerprints are not persisted in SessionStore in this phase.
+- task: docs/ai/tasks/archive/2026-08-31-fingerprint-phase-1.md
+
 ### Template for new entries
 
 <!--

@@ -11,6 +11,12 @@ Known gaps, deferred improvements, and follow-up work.
 - Cross-session longitudinal tracking — currently limited to single workspace sessions
 - Instructor dashboard or aggregated class-level metrics — out of scope for capstone
 
+## Trends / fingerprints
+
+- Persist fingerprints and use them for session continuity (this phase computes hashes in memory only)
+- Replace line-slice content hashes with scanner-provided ranges if the payload grows
+- Queue SessionStore snapshot writes; `onFindings` is currently unqueued read-modify-write
+
 ## Extension UX
 
 - Overhaul of scan metadata transformation pipeline (statuses, computations) — planned post-MVP

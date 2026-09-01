@@ -34,6 +34,7 @@ Current system shape, module boundaries, and conventions.
 │  │   iostream.ts    — spawn + manage ariadne session process │   │
 │  │   messages.ts    — IPC message contract (AriadneMessage)  │   │
 │  │   convert.ts     — scanner output → TS types              │   │
+│  │   fingerprint.ts — sent-buffer queue + finding hashes     │   │
 │  │   documentEvents — VS Code events → IPC messages          │   │
 │  └──────────────────────┬───────────────────────────────────┘   │
 │                          │                                       │
@@ -52,7 +53,7 @@ Current system shape, module boundaries, and conventions.
 | Module | Path | Responsibility |
 |---|---|---|
 | Core | `src/modules/core/` | Binary resolution (`ariadneExecutable.ts`) |
-| Bridge | `src/modules/detection/bridge/` | Spawn scanner, serialize/deserialize IPC messages, convert results to TS types |
+| Bridge | `src/modules/detection/bridge/` | Spawn scanner, serialize/deserialize IPC messages, convert results to TS types, derive finding fingerprints from queued sent buffers |
 | Presentation | `src/modules/presentation/` | AriadneViewProvider, severity colors, panel type definitions |
 | Diagnostics | `src/modules/presentation/diagnostics/` | DiagnosticManager (inline squiggles + decorations), HoverProvider, finding types |
 | Active Vulns | `src/modules/presentation/views/` | Active Vulnerabilities webview panel HTML builder |
@@ -95,6 +96,8 @@ Engine emits VulnerabilityMetadata[] as JSON on stdout
     ▼
 iostream.ts parses JSON lines → session.onFindings() callback
     │
+    ├──→ fingerprint.ts hashes findings against the queued sent-buffer snapshot
+    │     (counts only in logs; hashes are not persisted in this phase)
     ├──→ convert.ts → metadataToVulnerability() → Active Vulnerabilities panel
     ├──→ convert.ts → groupFindingsByFile() → DiagnosticManager (squiggles + decorations)
     ├──→ convert.ts → metadataToScanSnapshot() → SessionStore → snapshotAnalyzer
