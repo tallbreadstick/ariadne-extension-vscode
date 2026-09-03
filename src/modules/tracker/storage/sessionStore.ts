@@ -2,30 +2,41 @@
  * Session persistence layer for the Ariadne extension.
  *
  * Wraps the VS Code ExtensionContext state APIs to provide a
- * clean, type-safe interface for persisting scan data:
+ * clean, type-safe interface for persisting lifecycle data:
  *
  * - **workspaceState** (per-project):
- *   - `ScanSnapshot[]` — full scan history, accumulated forever
- *   - `SessionMeta` — scan counter seed, session start time, totals
+ *   - `SessionRecord`              — active (in-progress) session
+ *   - `SessionRecord[]`            — completed sessions
+ *   - `FindingLifecycleRecord[]`   — live finding lifecycle state
+ *   - `SessionMeta`                — scan counter seed, session start time
  *
  * - **globalState** (cross-project):
  *   - `UserConfig` — notification preferences, etc.
  *
+ * Write serialization: all writes go through `enqueuePersist()` to
+ * prevent concurrent workspaceState updates from rapid onFindings
+ * callbacks (the engine may emit results faster than VS Code can
+ * flush to disk).
+ *
  * ─────────────────────────────────────────────────────────────────────
  * USAGE (in extension.ts):
  *   const store = new SessionStore(context);
- *   const history = store.loadSnapshots();        // restore on activate
- *   await store.appendSnapshot(newSnapshot);       // after each scan
- *   const id = await store.nextScanId();           // "scan-007"
+ *   await store.migrateFromLegacy();
+ *   const session = store.loadActiveSession();
+ *   const lifecycles = store.loadFindingLifecycles();
+ *   await store.saveFindingLifecycles(updatedLifecycles);
  * ─────────────────────────────────────────────────────────────────────
  */
 
 import * as vscode from 'vscode';
-import type { ScanSnapshot } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type { FindingLifecycleRecord, SessionRecord } from '../analysis/lifecycleTypes.js';
 import type { SessionMeta, UserConfig } from './storageTypes.js';
 import {
 	WS_SCAN_SNAPSHOTS,
 	WS_SESSION_META,
+	WS_ACTIVE_SESSION,
+	WS_COMPLETED_SESSIONS,
+	WS_FINDING_LIFECYCLES,
 	WS_DISMISSED_NOTIFICATIONS,
 	WS_EXPANDED_VULN_KEY,
 	GL_USER_CONFIG,
@@ -37,6 +48,7 @@ const DEFAULT_SESSION_META: SessionMeta = {
 	sessionStartTime: Date.now(),
 	totalScansCount: 0,
 	scanIdSeed: 0,
+	sessionIdSeed: 0,
 };
 
 const DEFAULT_USER_CONFIG: UserConfig = {
@@ -48,58 +60,116 @@ const DEFAULT_USER_CONFIG: UserConfig = {
 // ══════════════════════════════════════════════════════════════════════
 
 export class SessionStore {
+
+	/**
+	 * Serial promise chain that ensures workspaceState writes complete
+	 * in order. Each `enqueuePersist` call chains onto the previous one.
+	 */
+	private writeQueue: Promise<void> = Promise.resolve();
+
 	constructor(private readonly context: vscode.ExtensionContext) {}
 
-	// ── Scan Snapshots (workspaceState — per project) ─────────────
+	// ── Migration ─────────────────────────────────────────────────
 
 	/**
-	 * Loads all stored scan snapshots for the current workspace.
-	 * Returns an empty array if no scans have been persisted yet.
+	 * Clears legacy `ariadne.scanSnapshots` data if present.
+	 *
+	 * The old model stored an unbounded ScanSnapshot[] array.
+	 * The new model uses FindingLifecycleRecord[] + SessionRecord.
+	 * There is no migration path — the data models are fundamentally
+	 * different.
 	 */
-	loadSnapshots(): ScanSnapshot[] {
-		const snapshots = this.context.workspaceState.get<ScanSnapshot[]>(
-			WS_SCAN_SNAPSHOTS,
+	async migrateFromLegacy(): Promise<void> {
+		const legacy = this.context.workspaceState.get(WS_SCAN_SNAPSHOTS);
+		if (legacy !== undefined) {
+			await this.context.workspaceState.update(WS_SCAN_SNAPSHOTS, undefined);
+			console.log('[Ariadne Store] Cleared legacy scanSnapshots data.');
+		}
+	}
+
+	// ── Active Session (workspaceState — per project) ─────────────
+
+	/** Loads the active (in-progress) session, or null if none exists. */
+	loadActiveSession(): SessionRecord | null {
+		return this.context.workspaceState.get<SessionRecord>(
+			WS_ACTIVE_SESSION,
+			null as unknown as SessionRecord,
+		) ?? null;
+	}
+
+	/** Persists the active session record. */
+	async saveActiveSession(session: SessionRecord): Promise<void> {
+		return this.enqueuePersist(() =>
+			this.context.workspaceState.update(WS_ACTIVE_SESSION, session),
+		);
+	}
+
+	/** Clears the active session (e.g. after finalization). */
+	async clearActiveSession(): Promise<void> {
+		return this.enqueuePersist(() =>
+			this.context.workspaceState.update(WS_ACTIVE_SESSION, undefined),
+		);
+	}
+
+	/**
+	 * Clears ALL lifecycle data for a clean slate.
+	 * Wipes: active session, completed sessions, finding lifecycles,
+	 * and resets the session ID seed.
+	 */
+	async clearAllLifecycleData(): Promise<void> {
+		return this.enqueuePersist(async () => {
+			await this.context.workspaceState.update(WS_ACTIVE_SESSION, undefined);
+			await this.context.workspaceState.update(WS_COMPLETED_SESSIONS, undefined);
+			await this.context.workspaceState.update(WS_FINDING_LIFECYCLES, undefined);
+			const meta = this.loadSessionMeta();
+			meta.sessionIdSeed = 0;
+			await this.saveSessionMeta(meta);
+			console.log('[Ariadne Store] Cleared all lifecycle data.');
+		});
+	}
+
+	// ── Completed Sessions (workspaceState — per project) ─────────
+
+	/** Loads all completed session records. */
+	loadCompletedSessions(): SessionRecord[] {
+		return this.context.workspaceState.get<SessionRecord[]>(
+			WS_COMPLETED_SESSIONS,
 			[],
 		);
-		if (snapshots.length > 0) {
-			console.log(`[Ariadne Store] Loaded ${snapshots.length} stored snapshot(s)`);
-		}
-		return snapshots;
 	}
 
-	/**
-	 * Appends a new snapshot to the stored history and persists
-	 * immediately. The full array is re-written on each call.
-	 */
-	async appendSnapshot(snapshot: ScanSnapshot): Promise<void> {
-		const snapshots = this.loadSnapshots();
-		snapshots.push(snapshot);
-		await this.context.workspaceState.update(WS_SCAN_SNAPSHOTS, snapshots);
+	/** Appends a completed session and persists immediately. */
+	async appendCompletedSession(session: SessionRecord): Promise<void> {
+		return this.enqueuePersist(async () => {
+			const sessions = this.loadCompletedSessions();
+			sessions.push(session);
+			await this.context.workspaceState.update(WS_COMPLETED_SESSIONS, sessions);
+			console.log(
+				`[Ariadne Store] Saved completed session ${session.sessionId} ` +
+				`(${session.lifecycleSummaries.length} lifecycle summaries). ` +
+				`Total completed: ${sessions.length}`,
+			);
+		});
+	}
 
-		// Debug: count instances and occurrences for the log
-		let totalInstances = 0;
-		let totalOccurrences = 0;
-		for (const v of snapshot.vulnerabilities) {
-			totalInstances += v.instances.length;
-			for (const inst of v.instances) {
-				totalOccurrences += inst.occurrences.length;
-			}
-		}
-		console.log(
-			`[Ariadne Store] Saved ${snapshot.scan_id}: ` +
-			`${snapshot.vulnerabilities.length} vulns, ` +
-			`${totalInstances} instances, ` +
-			`${totalOccurrences} occurrences — ` +
-			`total stored: ${snapshots.length}`,
+	// ── Finding Lifecycles (workspaceState — per project) ─────────
+
+	/** Loads the current finding lifecycle records. */
+	loadFindingLifecycles(): FindingLifecycleRecord[] {
+		return this.context.workspaceState.get<FindingLifecycleRecord[]>(
+			WS_FINDING_LIFECYCLES,
+			[],
 		);
 	}
 
-	/**
-	 * Replaces the entire stored snapshot array.
-	 * Useful for future clear/prune/archive operations.
-	 */
-	async replaceSnapshots(snapshots: ScanSnapshot[]): Promise<void> {
-		await this.context.workspaceState.update(WS_SCAN_SNAPSHOTS, snapshots);
+	/** Persists updated finding lifecycle records. */
+	async saveFindingLifecycles(lifecycles: FindingLifecycleRecord[]): Promise<void> {
+		return this.enqueuePersist(async () => {
+			await this.context.workspaceState.update(WS_FINDING_LIFECYCLES, lifecycles);
+			console.log(
+				`[Ariadne Store] Saved ${lifecycles.length} finding lifecycle(s).`,
+			);
+		});
 	}
 
 	// ── Session Metadata (workspaceState — per project) ───────────
@@ -133,6 +203,23 @@ export class SessionStore {
 		await this.saveSessionMeta(meta);
 		const id = `scan-${String(meta.scanIdSeed).padStart(3, '0')}`;
 		console.log(`[Ariadne Store] Generated ${id} (total scans: ${meta.totalScansCount})`);
+		return id;
+	}
+
+	/**
+	 * Atomically increments the session ID seed and returns a new
+	 * unique session identifier (e.g. "session-002").
+	 *
+	 * Uses a persistent counter — not dependent on async writes.
+	 */
+	nextSessionId(): string {
+		const meta = this.loadSessionMeta();
+		// Handle legacy SessionMeta that doesn't have sessionIdSeed yet
+		meta.sessionIdSeed = (meta.sessionIdSeed ?? 0) + 1;
+		// Synchronous-enough: saveSessionMeta is a direct workspaceState write
+		void this.saveSessionMeta(meta);
+		const id = `session-${String(meta.sessionIdSeed).padStart(3, '0')}`;
+		console.log(`[Ariadne Store] Generated ${id}`);
 		return id;
 	}
 
@@ -193,5 +280,19 @@ export class SessionStore {
 			await this.context.workspaceState.update(WS_DISMISSED_NOTIFICATIONS, dismissed);
 			console.log(`[Ariadne Store] Dismissed notification: ${notificationId}`);
 		}
+	}
+
+	// ── Write serialization ──────────────────────────────────────
+
+	/**
+	 * Enqueues a persistence operation onto the serial write chain.
+	 *
+	 * The onFindings callback can fire faster than workspaceState can
+	 * flush. Without serialization, concurrent read-modify-write cycles
+	 * can lose data. This chains each write onto the previous one.
+	 */
+	private enqueuePersist(fn: () => Promise<void> | Thenable<void>): Promise<void> {
+		this.writeQueue = this.writeQueue.then(fn, fn);
+		return this.writeQueue;
 	}
 }
