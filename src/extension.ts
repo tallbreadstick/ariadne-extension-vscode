@@ -7,6 +7,7 @@ import { registerRuleLanguage } from './modules/rules/ruleDiagnostics';
 import {
 	metadataToVulnerability,
 	metadataToScanSnapshot,
+	metadataToObservedFindings,
 	groupFindingsByFile,
 } from './modules/detection/bridge/convert';
 
@@ -36,11 +37,19 @@ import { sanitizeLlmError } from './modules/feedback/llm_request/sanitizeError.j
 import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
 
-// ── Tracker (status bar + analysis engine) ────────────────────────────
+// ── Tracker (lifecycle engine + views) ────────────────────────────────
 import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
 import { showSessionToasts } from './modules/tracker/views/notificationToast.js';
-import { analyzeSession, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
+import { buildSessionAnalysis, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
+import {
+	processObservation,
+	startSession,
+	setSessionBaseline,
+	updateSessionLatest,
+	finalizeSession,
+} from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
+import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
 import type { Vulnerability } from './modules/presentation/panelTypes.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -123,6 +132,9 @@ export function activate(context: vscode.ExtensionContext) {
 	const githubAuth = new GitHubAuthService(context);
 	const copilotManager = new CopilotClientManager();
 
+	// ── Migrate from legacy snapshot storage ───────────────────────────
+	void store.migrateFromLegacy();
+
 	let latestSignInHtml = buildSignInPanelHtml({
 		status: 'loading',
 		settings: getSidebarSettings(),
@@ -164,10 +176,25 @@ export function activate(context: vscode.ExtensionContext) {
 		signInProvider.updateHtml(latestSignInHtml);
 	};
 
-	// ── Restore UI from stored snapshots (survives VS Code restarts) ────
-	const storedSnapshots = store.loadSnapshots();
+	// ── Initialize lifecycle state ─────────────────────────────────────
+	let lifecycles: FindingLifecycleRecord[] = store.loadFindingLifecycles();
+
+	// If a previous active session exists (e.g. VS Code reloaded before
+	// deactivation could persist), finalize it now and start fresh.
+	const staleSession = store.loadActiveSession();
+	if (staleSession) {
+		const finalized = finalizeSession(staleSession, lifecycles, Date.now());
+		void store.appendCompletedSession(finalized);
+		void store.clearActiveSession();
+		console.log(`[Ariadne] Finalized stale session ${staleSession.sessionId} from previous activation.`);
+	}
+
+	// Start a new active session
+	let activeSession = startSession(store.nextSessionId(), Date.now());
+	void store.saveActiveSession(activeSession);
 
 	let latestVulnerabilities: Vulnerability[] = [];
+	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
 
 	let initialVulnsHtml = buildVulnsHtml([], store);
 	let initialMetricsHtml = buildSessionMetricsHtml({
@@ -175,45 +202,9 @@ export function activate(context: vscode.ExtensionContext) {
 		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 },
 	});
 
-	if (storedSnapshots.length > 0) {
-		try {
-			const restoredAnalysis = analyzeSession(storedSnapshots);
-			const restoredMetrics = toSessionMetrics(restoredAnalysis);
-
-			// Filter out previously dismissed notifications
-			const dismissed = new Set(store.loadDismissedNotifications());
-			if (restoredMetrics.notifications) {
-				restoredMetrics.notifications = restoredMetrics.notifications
-					.filter(n => !dismissed.has(n.id));
-			}
-
-			initialMetricsHtml = buildSessionMetricsHtml(restoredMetrics);
-
-			// Restore active vulnerabilities from the latest scan's findings
-			const latestScan = storedSnapshots[storedSnapshots.length - 1];
-			const restoredVulns = latestScan.vulnerabilities.flatMap((v, vi) =>
-				v.instances.flatMap((inst, ii) =>
-					inst.occurrences.map((occ, oi) => metadataToVulnerability({
-						type: v.type,
-						cwe_id: v.cwe_id,
-						owasp_category: v.owasp_category,
-						severity: v.severity,
-						file_path: occ.file_path,
-						line_number: occ.line_number,
-						rule_id: v.rule_id,
-						column_number: occ.column_number,
-						taint_trace: occ.taint_trace,
-						instance_name: inst.name,
-						instance_kind: inst.kind,
-					}, vi * 100 + ii * 10 + oi)),
-			),
-			);
-			latestVulnerabilities = restoredVulns;
-			initialVulnsHtml = buildVulnsHtml(restoredVulns, store);
-		} catch {
-			// If stored data is corrupted, start fresh
-			console.warn('[Ariadne] Could not restore session from stored snapshots.');
-		}
+	// Restore UI from lifecycle data if available
+	if (lifecycles.length > 0) {
+		console.log(`[Ariadne] Restored ${lifecycles.length} finding lifecycle(s) from storage.`);
 	}
 
 	// ── Panel providers ────────────────────────────────────────────────
@@ -353,8 +344,6 @@ export function activate(context: vscode.ExtensionContext) {
 	const diagnosticManager = new DiagnosticManager(context);
 	registerHoverProvider(context, diagnosticManager);
 
-	// ── Latest known findings (needed for feedback panel lookup) ────────
-
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();
 	registerDocumentEvents(context, session);
@@ -368,18 +357,38 @@ export function activate(context: vscode.ExtensionContext) {
 		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
-		// ── 2. Persist scan snapshot ──────────────────────────────────────
+		// ── 2. Build scan snapshot (kept for SessionAnalysis compatibility) ──
 		const scanId = await store.nextScanId();
-		const snapshot = metadataToScanSnapshot(findings, scanId);
-		await store.appendSnapshot(snapshot);
+		const currentSnapshot = metadataToScanSnapshot(findings, scanId);
 
-		// ── 3. Session Metrics panel ─────────────────────────────────────
+		// ── 3. Lifecycle engine — process the observation ───────────────
+		const observedFindings = metadataToObservedFindings(findings);
+		const timestamp = Date.now();
+
+		// Set session baseline on first observation, update latest checkpoint
+		setSessionBaseline(activeSession, observedFindings, timestamp);
+		updateSessionLatest(activeSession, observedFindings, timestamp);
+
+		const result = processObservation(
+			observedFindings,
+			lifecycles,
+			timestamp,
+		);
+		lifecycles = result.lifecycles;
+
+		// Persist updated lifecycles (serialized via write queue)
+		void store.saveFindingLifecycles(lifecycles);
+
+		// ── 4. Session Metrics panel ────────────────────────────────────
 		try {
-			const scanHistory = store.loadSnapshots();
-			const sessionAnalysis = analyzeSession(scanHistory);
-			const sessionMetrics = toSessionMetrics(sessionAnalysis);
+			const sessionAnalysis = buildSessionAnalysis(
+				result.classifications,
+				currentSnapshot,
+				previousScanSnapshot,
+			);
 
 			// Filter out previously dismissed notifications
+			const sessionMetrics = toSessionMetrics(sessionAnalysis);
 			const dismissed = new Set(store.loadDismissedNotifications());
 			if (sessionMetrics.notifications) {
 				sessionMetrics.notifications = sessionMetrics.notifications
@@ -389,9 +398,7 @@ export function activate(context: vscode.ExtensionContext) {
 			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
 			updateStatusBar(sessionAnalysis);
 
-			// ── 3b. VS Code toast notifications (UC-4.3) ────────────────
-			// Fire-and-forget: each category is independently throttled
-			// with a 60 s cooldown to prevent notification flooding.
+			// ── 4b. VS Code toast notifications ─────────────────────────
 			showSessionToasts(sessionAnalysis);
 
 			// Debug: log analysis results
@@ -402,22 +409,30 @@ export function activate(context: vscode.ExtensionContext) {
 				`Persisting: ${sessionAnalysis.persistingPatterns}, ` +
 				`Improving: ${sessionAnalysis.improvingTrends}, ` +
 				`Resolved: ${sessionAnalysis.resolvedThisSession}, ` +
-				`New: ${sessionAnalysis.newVulnerabilities}`,
+				`Recurring: ${sessionAnalysis.recurringPatterns}`,
 			);
 		} catch {
-			// analyzeSession throws on empty array (guarded above, but be safe)
+			// buildSessionAnalysis guards are in place, but be safe
 		}
 
-		// ── 3. Inline squiggles + diagnostics ────────────────────────────
-		// Eagerly publish diagnostics for ALL files with findings so that
-		// the native Problems Panel stays in sync with the Active
-		// Vulnerabilities webview — even for files not currently open.
-		// Decorations (squiggles) are applied lazily when the tab is opened.
+		// Track previous snapshot for the next cycle
+		previousScanSnapshot = currentSnapshot;
+
+		// ── 5. Inline squiggles + diagnostics ───────────────────────────
 		const byFile = groupFindingsByFile(findings);
 		diagnosticManager.publishAllDiagnostics(byFile);
 	});
 
-	context.subscriptions.push({ dispose: () => session.kill() });
+	// ── Finalize session on deactivation ─────────────────────────────────
+	context.subscriptions.push({
+		dispose: () => {
+			const finalized = finalizeSession(activeSession, lifecycles, Date.now());
+			// Best-effort persist — VS Code may not await this
+			void store.appendCompletedSession(finalized);
+			void store.clearActiveSession();
+			session.kill();
+		},
+	});
 
 	// Re-apply decorations whenever the user switches to a different tab
 	// (decorations are editor-bound, not document-bound, in VS Code).
@@ -453,6 +468,138 @@ export function activate(context: vscode.ExtensionContext) {
 				{ enableScripts: false },
 			);
 			panel.webview.html = buildTermsOfUseHtml();
+		},
+	);
+
+	// ── Debug command — inspect lifecycle data ────────────────────────
+	const debugLifecycles = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugLifecycles',
+		() => {
+			const sessionData = store.loadActiveSession();
+			const completedSessions = store.loadCompletedSessions();
+
+			console.log('╔══════════════════════════════════════════════════════════╗');
+			console.log('║        ARIADNE — LIFECYCLE DEBUG DUMP                   ║');
+			console.log('╚══════════════════════════════════════════════════════════╝');
+
+			// ── Active Session ──
+			console.log('\n── Active Session ──');
+			if (sessionData) {
+				console.log(`  Session ID : ${sessionData.sessionId}`);
+				console.log(`  Started At : ${new Date(sessionData.startedAt).toISOString()}`);
+				console.log(`  Ended At   : ${sessionData.endedAt ? new Date(sessionData.endedAt).toISOString() : '(active)'}`);
+				if (sessionData.baselineCheckpoint) {
+					console.log(`  Baseline   : ${sessionData.baselineCheckpoint.findings.length} finding(s) at ${new Date(sessionData.baselineCheckpoint.timestamp).toISOString()}`);
+				} else {
+					console.log(`  Baseline   : (not yet captured)`);
+				}
+				if (sessionData.finalCheckpoint) {
+					console.log(`  Final      : ${sessionData.finalCheckpoint.findings.length} finding(s) at ${new Date(sessionData.finalCheckpoint.timestamp).toISOString()}`);
+				} else {
+					console.log(`  Final      : (not yet captured)`);
+				}
+			} else {
+				console.log('  (no active session)');
+			}
+
+			// ── Completed Sessions ──
+			console.log(`\n── Completed Sessions: ${completedSessions.length} ──`);
+			for (const s of completedSessions) {
+				const duration = s.endedAt
+					? `${Math.round((s.endedAt - s.startedAt) / 1000)}s`
+					: '?';
+				const baselineCount = s.baselineCheckpoint?.findings.length ?? 0;
+				const finalCount = s.finalCheckpoint?.findings.length ?? 0;
+				console.log(
+					`\n  ┌─ ${s.sessionId} ──────────────────────────────` +
+					`\n  │ Started At      : ${new Date(s.startedAt).toISOString()}` +
+					`\n  │ Ended At        : ${s.endedAt ? new Date(s.endedAt).toISOString() : '(not finalized)'}` +
+					`\n  │ Duration        : ${duration}` +
+					`\n  │ Baseline Chkpt  : ${baselineCount} finding(s)${s.baselineCheckpoint ? ` at ${new Date(s.baselineCheckpoint.timestamp).toISOString()}` : ''}` +
+					`\n  │ Final Chkpt     : ${finalCount} finding(s)${s.finalCheckpoint ? ` at ${new Date(s.finalCheckpoint.timestamp).toISOString()}` : ''}` +
+					`\n  │ Lifecycles      : ${s.lifecycleSummaries.length}`,
+				);
+				for (const lc of s.lifecycleSummaries) {
+					const lcStatus = lc.durableResolutionAt
+						? 'RESOLVED'
+						: lc.missingSince
+							? 'ABSENT'
+							: 'ACTIVE';
+					console.log(
+						`  │   [${lcStatus}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
+						`\n  │     Severity      : ${lc.severity}` +
+						`\n  │     Rule ID       : ${lc.ruleId}` +
+						`\n  │     File          : ${lc.filePath}` +
+						`\n  │     Fingerprint   : ${lc.logicalFingerprint}` +
+						`\n  │     Confirmations : ${lc.confirmationCount}` +
+						`\n  │     Occurrences   : ${lc.baselineOccurrenceCount} → ${lc.currentOccurrenceCount}` +
+						`\n  │     Recurrences   : ${lc.recurrenceCount}`,
+					);
+				}
+				console.log(`  └──────────────────────────────────────────`);
+			}
+
+			// ── Finding Lifecycles ──
+			console.log(`\n── Finding Lifecycles: ${lifecycles.length} ──`);
+			for (const lc of lifecycles) {
+				const age = Date.now() - lc.firstConfirmedAt;
+				const ageStr = age < 60_000
+					? `${Math.round(age / 1000)}s`
+					: `${Math.round(age / 60_000)}m`;
+
+				const status = lc.durableResolutionAt
+					? 'RESOLVED'
+					: lc.missingSince
+						? 'ABSENT'
+						: lc.confirmationCount >= 2 && age >= 30_000
+							? 'PERSISTING'
+							: 'CANDIDATE';
+
+				console.log(
+					`  [${status}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
+					`\n    Severity           : ${lc.severity}` +
+					`\n    Rule ID            : ${lc.ruleId}` +
+					`\n    File               : ${lc.filePath}` +
+					`\n    Logical Fingerprint: ${lc.logicalFingerprint}` +
+					`\n    Content Fingerprint: ${lc.contentFingerprint || '(empty)'}` +
+					`\n    Scope Fingerprint  : ${lc.scopeFingerprint || '(empty)'}` +
+					`\n    Age                : ${ageStr}` +
+					`\n    First Confirmed At : ${new Date(lc.firstConfirmedAt).toISOString()}` +
+					`\n    Last Confirmed At  : ${new Date(lc.lastConfirmedAt).toISOString()}` +
+					`\n    Missing Since      : ${lc.missingSince ? new Date(lc.missingSince).toISOString() : '(active)'}` +
+					`\n    Provisional Res.   : ${lc.provisionalResolutionAt ? new Date(lc.provisionalResolutionAt).toISOString() : '(none)'}` +
+					`\n    Durable Res.       : ${lc.durableResolutionAt ? new Date(lc.durableResolutionAt).toISOString() : '(none)'}` +
+					`\n    Confirmations      : ${lc.confirmationCount}` +
+					`\n    Baseline Occs.     : ${lc.baselineOccurrenceCount}` +
+					`\n    Current Occs.      : ${lc.currentOccurrenceCount}` +
+					`\n    Recurrences        : ${lc.recurrenceCount}` +
+					`\n    Toggles            : ${lc.inSessionToggleCount}` +
+					`\n    Restorations       : ${lc.identicalRestorationCount}`,
+				);
+			}
+
+			console.log('\n═══════════════════════════════════════════════════════════');
+
+			vscode.window.showInformationMessage(
+				`Ariadne Debug: ${lifecycles.length} lifecycle(s), ` +
+				`${completedSessions.length} completed session(s). ` +
+				`See Developer Console for details.`,
+			);
+		},
+	);
+
+	// ── Debug command — reset all lifecycle data ──────────────────────
+	const debugResetLifecycles = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugResetLifecycles',
+		async () => {
+			await store.clearAllLifecycleData();
+			lifecycles = [];
+			activeSession = startSession(store.nextSessionId(), Date.now());
+			void store.saveActiveSession(activeSession);
+			console.log('[Ariadne Debug] All lifecycle data cleared. Fresh session started.');
+			vscode.window.showInformationMessage(
+				`Ariadne Debug: All data cleared. New session: ${activeSession.sessionId}`,
+			);
 		},
 	);
 
@@ -544,18 +691,7 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// ── Status bar — create once, updated via updateStatusBar() ─────────
-	// If we have stored snapshots, initialise with the restored analysis;
-	// otherwise show a neutral "Ariadne" label until the first scan.
-	if (storedSnapshots.length > 0) {
-		try {
-			const restoredAnalysis = analyzeSession(storedSnapshots);
-			context.subscriptions.push(createAriadneStatusBarItem(restoredAnalysis));
-		} catch {
-			context.subscriptions.push(createAriadneStatusBarItem());
-		}
-	} else {
-		context.subscriptions.push(createAriadneStatusBarItem());
-	}
+	context.subscriptions.push(createAriadneStatusBarItem());
 
 	context.subscriptions.push(
 		helloWorld,
@@ -565,6 +701,8 @@ export function activate(context: vscode.ExtensionContext) {
 		openSignInPanel,
 		openTermsOfUse,
 		openFeedbackPanel,
+		debugLifecycles,
+		debugResetLifecycles,
 	);
 }
 

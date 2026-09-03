@@ -61,6 +61,14 @@
       {
         "command": "ariadne-extension-vscode.openTermsOfUse",
         "title": "Ariadne: Terms of Use"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugLifecycles",
+        "title": "Ariadne: Debug — Show Lifecycle Data"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugResetLifecycles",
+        "title": "Ariadne: Debug — Reset All Lifecycle Data"
       }
     ],
     "viewsContainers": {
