@@ -1,11 +1,12 @@
 /**
  * Converters from the flat VulnerabilityMetadata emitted by the Rust
- * SAST engine to the two UI-facing type shapes used by the extension:
+ * SAST engine to the type shapes used by the extension:
  *
- * 1. `Vulnerability`   — presentation/panelTypes.ts  (active-vulns panel)
- * 2. `AriadneFinding`  — presentation/diagnostics/diagnosticTypes.ts (inline highlights)
- * 3. `ScanSnapshot`    — feedback/vulnerability_results/vulnerabilityTypes.ts
- *                        (session-metrics tracker)
+ * 1. `Vulnerability`      — presentation/panelTypes.ts  (active-vulns panel)
+ * 2. `AriadneFinding`     — presentation/diagnostics/diagnosticTypes.ts (inline highlights)
+ * 3. `ScanSnapshot`       — feedback/vulnerability_results/vulnerabilityTypes.ts
+ *                           (session-metrics tracker)
+ * 4. `ObservedFinding[]`  — tracker/analysis/lifecycleTypes.ts (lifecycle engine)
  */
 
 import type { Vulnerability as PanelVulnerability } from '../../presentation/panelTypes.js';
@@ -17,6 +18,7 @@ import type {
 	Instance,
 	Occurrence,
 } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type { ObservedFinding } from '../../tracker/analysis/lifecycleTypes.js';
 
 // ── Presentation panel ────────────────────────────────────────────────
 
@@ -161,6 +163,69 @@ export function metadataToScanSnapshot(
 	}
 
 	return { scan_id: scanId, timestamp: Date.now(), vulnerabilities };
+}
+
+// ── Lifecycle engine input ─────────────────────────────────────────────
+
+/**
+ * Converts flat VulnerabilityMetadata[] into ObservedFinding[] for
+ * the lifecycle engine.
+ *
+ * Groups findings by a derived logical fingerprint and counts
+ * occurrences per instance. The fingerprint is a temporary derived
+ * key from available fields — it will be replaced by the scanner's
+ * SHA256 hash once the fingerprinting teammate's work is integrated.
+ */
+export function metadataToObservedFindings(
+	findings: VulnerabilityMetadata[],
+): ObservedFinding[] {
+	// Group by logical fingerprint → count occurrences
+	const grouped = new Map<string, { finding: VulnerabilityMetadata; count: number }>();
+
+	for (const f of findings) {
+		const fp = deriveLogicalFingerprint(f);
+		const existing = grouped.get(fp);
+		if (existing) {
+			existing.count += 1;
+		} else {
+			grouped.set(fp, { finding: f, count: 1 });
+		}
+	}
+
+	const observed: ObservedFinding[] = [];
+	for (const [fp, { finding, count }] of grouped) {
+		observed.push({
+			logicalFingerprint: fp,
+			contentFingerprint: '',
+			scopeFingerprint: '',
+			ruleId: finding.rule_id ?? '',
+			cweId: finding.cwe_id,
+			type: finding.type,
+			severity: finding.severity,
+			instanceName: finding.instance_name ?? '',
+			filePath: finding.file_path,
+			occurrenceCount: count,
+		});
+	}
+
+	return observed;
+}
+
+/**
+ * Derives a temporary logical fingerprint from available metadata fields.
+ *
+ * Excludes `line_number` because line numbers shift under normal editing.
+ * This will be replaced by the scanner's SHA256 fingerprint once that
+ * teammate's work is integrated.
+ */
+function deriveLogicalFingerprint(m: VulnerabilityMetadata): string {
+	return [
+		m.rule_id ?? '',
+		m.cwe_id,
+		m.type,
+		m.instance_name ?? '',
+		shortPath(m.file_path),
+	].join('::');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
