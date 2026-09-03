@@ -1,8 +1,12 @@
 /**
- * - Persisting patterns - warning toast alerting the student
- * - Improving trends - informational toast encouraging the student
- * - Resolved vulnerabilities - informational toast confirming resolution
- * - New vulnerabilities - warning toast for newly detected issues
+ * Toast notification service for the Session-Based Reinforcement Tracker.
+ *
+ * Fires VS Code toast notifications for significant lifecycle events:
+ *
+ * - Recurring patterns — warning toast for findings that keep reappearing
+ * - Persisting patterns — warning toast alerting the student
+ * - Improving trends — informational toast encouraging the student
+ * - Resolved vulnerabilities — informational toast confirming resolution
  *
  * -------------------------------
  * ANTI-SPAM DESIGN
@@ -10,7 +14,7 @@
  * 1. Aggregation - multiple findings of the same status category are collapsed into a single summary toast (e.g., "3 persisting patterns detected").
  * 2. Cooldown - a per-category cooldown (default 60 s) prevents the same category from firing again within the window, even if a new scan cycle completes.
  *
- * The service is stateless across VS Code restarts — the cooldown... timers are in-memory only.
+ * The service is stateless across VS Code restarts — the cooldown timers are in-memory only.
  * -------------------------------
  *
  * EXPORTS:
@@ -32,13 +36,13 @@ const COOLDOWN_MS = 60_000; // 60 seconds
  * Tracks the last time a toast was fired for each notification category.
  * In-memory only - resets when the extension host restarts.
  */
-type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'new';
+type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'recurring';
 
 const lastFiredAt: Record<ToastCategory, number> = {
 	persisting: 0,
 	improving: 0,
 	resolved: 0,
-	new: 0,
+	recurring: 0,
 };
 
 /**
@@ -59,7 +63,9 @@ function tryAcquire(category: ToastCategory): boolean {
 /**
  * Shows a warning toast for persisting patterns.
  *
- * Per UC-4.3: "If a persisting pattern is detected, a soft toast; notification is triggered to alert the student of the unresolved vulnerability class."
+ * Per UC-4.3: "If a persisting pattern is detected, a soft toast
+ * notification is triggered to alert the student of the unresolved
+ * vulnerability class."
  */
 function showPersistingToast(analysis: SessionAnalysis): void {
 	const count = analysis.persistingPatterns;
@@ -122,23 +128,23 @@ function showResolvedToast(analysis: SessionAnalysis): void {
 	);
 }
 
-// Shows a warning toast for newly detected vulnerabilities
+// Shows a warning toast for recurring patterns
 
-function showNewToast(analysis: SessionAnalysis): void {
-	const count = analysis.newVulnerabilities;
+function showRecurringToast(analysis: SessionAnalysis): void {
+	const count = analysis.recurringPatterns;
 	if (count === 0) { return; }
-	if (!tryAcquire('new')) { return; }
+	if (!tryAcquire('recurring')) { return; }
 
-	const newTypes = analysis.deltas
-		.filter((d) => d.status === 'new')
+	const recurringTypes = analysis.deltas
+		.filter((d) => d.status === 'recurring')
 		.map((d) => d.vulnerability.type);
 
-	const detail = newTypes.length <= 3
-		? newTypes.join(', ')
-		: `${newTypes.slice(0, 3).join(', ')} and ${newTypes.length - 3} more`;
+	const detail = recurringTypes.length <= 3
+		? recurringTypes.join(', ')
+		: `${recurringTypes.slice(0, 3).join(', ')} and ${recurringTypes.length - 3} more`;
 
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} new ${count === 1 ? 'vulnerability' : 'vulnerabilities'} detected — ${detail}`,
+		`Ariadne: ${count} recurring ${count === 1 ? 'pattern' : 'patterns'} detected — ${detail}`,
 	);
 }
 
@@ -146,37 +152,30 @@ function showNewToast(analysis: SessionAnalysis): void {
 // PUBLIC API
 
 /**
- * Evaluates the session analysis and fires at most one VS Code toast.. notification per applicable category, respecting cooldown windows.
+ * Evaluates the session analysis and fires at most one VS Code toast
+ * notification per applicable category, respecting cooldown windows.
  *
  * This is a fire-and-forget function — call it from the scan pipeline
- * after `analyzeSession()` and `toSessionMetrics()` have updated the
- * Session Metrics panel.
+ * after the lifecycle engine has classified findings and the Session
+ * Metrics panel has been updated.
  *
  * Priority order (most urgent first):
- *   1. New vulnerabilities (warning)
+ *   1. Recurring patterns (warning)
  *   2. Persisting patterns (warning)
  *   3. Improving trends (info)
  *   4. Resolved patterns (info)
  *
- * Requires at least two scan cycles to have meaningful delta data;
- * if only one scan has been performed, this function returns silently.
- *
- * @param analysis - The computed SessionAnalysis from `analyzeSession()`
+ * @param analysis - The computed SessionAnalysis from buildSessionAnalysis()
  */
 export function showSessionToasts(analysis: SessionAnalysis): void {
-	// Guard: need at least 2 scans for meaningful pattern classification
-	if (!analysis.previousScan) {
-		return;
-	}
-
 	try {
 		// Fire in priority order — each category independently throttled
-		showNewToast(analysis);
+		showRecurringToast(analysis);
 		showPersistingToast(analysis);
 		showImprovingToast(analysis);
 		showResolvedToast(analysis);
 	} catch (error) {
-		// EF-2: If the toast notification API is unavailable or throws,
+		// If the toast notification API is unavailable or throws,
 		// log internally and continue — the panel update is unaffected.
 		console.warn(
 			'[Ariadne] Toast notification error (non-fatal):',
