@@ -21,6 +21,8 @@ export interface SessionMeta {
 	totalScansCount: number;
 	/** Auto-increment seed for generating unique scan IDs. */
 	scanIdSeed: number;
+	/** Auto-increment seed for generating unique session IDs. */
+	sessionIdSeed: number;
 }
 
 /**
