@@ -117,4 +117,13 @@ Within each section, newest decision at the top.
 - supersedes: <title of previous decision> (if applicable)
 -->
 
+### Replace raw scan snapshots with finding lifecycle records
+
+- date: 2026-09-03
+- status: accepted
+- context: The MVP tracker stored an unbounded `ScanSnapshot[]` array (every engine result persisted forever) and classified trends by comparing the latest two snapshots using `cwe_id::type` as the identity key. This was insufficient for time-based persistence, durable resolution tracking, recurrence detection, and cross-session analysis required by the research framework.
+- decision: Replace the snapshot-based model with `FindingLifecycleRecord[]` + `SessionRecord`. Findings are matched by a `logicalFingerprint` (scanner SHA256 hash, or a temporary derived key until the fingerprinting teammate's work lands). Lifecycle records track confirmation count, observed duration, absence grace period, provisional/durable resolution, recurrence, and identical-restoration toggles. The four public statuses are Persisting, Improving, Resolved, and Recurring — `new` is removed from the public taxonomy (new findings are internal "candidates"). A serial write queue prevents concurrent workspaceState races.
+- consequences: Breaking storage migration — old `ariadne.scanSnapshots` data is discarded. The lifecycle engine is a pure logic module with no vscode dependency, enabling unit testing. Cross-repo dependency: the scanner team needs to emit `logicalFingerprint` / `contentFingerprint` / `scopeFingerprint` fields for faithful scope-aware matching. Observation classification (live vs full scan) is deferred to a teammate's separate task.
+- task: docs/ai/tasks/2026-09-03-trends-framework.md
+
 <!-- Add new post-MVP decisions above this line -->
