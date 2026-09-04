@@ -36,6 +36,25 @@ export interface Vulnerability {
 	line: number;
 }
 
+/** A single sub-item entry for a persisting, recurring, or resolved trend row. */
+export interface TrendSubItem {
+	/** Vulnerability type label (e.g. "SQL Injection"). */
+	type: string;
+	/** Current instance count. */
+	instances: number;
+}
+
+/** A single sub-item entry for an improving trend row, with progress label. */
+export interface ImprovingSubItem extends TrendSubItem {
+	/**
+	 * Human-readable progress classification.
+	 * Placeholder until F/P/T calculation is implemented.
+	 */
+	progressLabel: 'Some progress' | 'Clear progress' | 'Major progress';
+	/** Delta string shown alongside the label (e.g. "+2.00"). Placeholder. */
+	progressDelta: string;
+}
+
 /**
  * Trend counters summarising how vulnerability patterns shifted
  * across the current session.
@@ -47,6 +66,26 @@ export interface TrendData {
 	improvingTrends: number;
 	/** Vulnerabilities fully resolved during this session. */
 	resolvedThisSession: number;
+	/**
+	 * Per-vulnerability detail for the Persisting Patterns collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	persistingItems?: TrendSubItem[];
+	/**
+	 * Per-vulnerability detail for the Improving Trends collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	improvingItems?: ImprovingSubItem[];
+	/**
+	 * Per-vulnerability detail for the Recurring Patterns collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	recurringItems?: TrendSubItem[];
+	/**
+	 * Per-vulnerability detail for the Resolved This Session collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	resolvedItems?: TrendSubItem[];
 }
 
 /**
