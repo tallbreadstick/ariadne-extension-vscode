@@ -58,7 +58,7 @@ const NOTIFICATION_BELL_SVG =
 	</svg>`;
 
 const COMMON_VULN_SVG =
-	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+	`<svg class="section-icon" style="color: #E24B4A;" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
 		<path d="M12 8v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 		<circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
@@ -153,7 +153,7 @@ function buildCollapsibleTrendRow(
 					<span class="trend-header-label">${label}</span>
 				</span>
 				<span class="trend-header-right">
-					<span class="trend-instance-count">Instances : ${count}</span>
+					<span class="trend-instance-count">Instances :  <span style="color: var(--text); font-weight: 700;">${count}</span></span>
 					<svg class="chevron-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 						<path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"
 							stroke-linecap="round" stroke-linejoin="round" />
@@ -295,7 +295,7 @@ const CSS = /* css */ `
 		font-weight: 500;
 	}
 
-	.trend-icon { width: 16px; height: 16px; display: inline-block; }
+	.trend-icon { width: 18px; height: 18px; display: inline-block; }
 
 	/* ── Trends card ── */
 	.trends-card {
@@ -309,16 +309,16 @@ const CSS = /* css */ `
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
-		font-size: 12px;
+		font-size: 13px;
 		text-transform: uppercase;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--muted);
 		padding: 12px 14px 8px;
 	}
 
 	/* ── Collapsible trend row ── */
 	.trend-group {
-		border-top: 1px solid rgba(58, 58, 58, 0.6);
+		border-top: 1px solid var(--vscode-panel-border);
 	}
 
 	.trend-header {
@@ -327,7 +327,7 @@ const CSS = /* css */ `
 		align-items: center;
 		justify-content: space-between;
 		gap: 10px;
-		padding: 8px 14px;
+		padding: 12px 14px 8px;
 		background: transparent;
 		border: none;
 		color: var(--text);
@@ -341,7 +341,7 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		font-size: 13px;
+		font-size: 12px;
 		font-weight: 600;
 	}
 
@@ -354,14 +354,16 @@ const CSS = /* css */ `
 
 	.trend-instance-count {
 		font-size: 12px;
+		font-weight: 600;
 		color: var(--muted);
 		white-space: nowrap;
 	}
 
 	.chevron-icon {
-		width: 14px;
-		height: 14px;
-		color: var(--muted);
+		margin-left: 2px;
+		width: 16px;
+		height: 16px;
+		color: var(--text);
 		transition: transform 0.2s ease;
 		flex-shrink: 0;
 	}
@@ -383,6 +385,8 @@ const CSS = /* css */ `
 
 	.trend-body-inner {
 		overflow: hidden;
+		border-top: 1px solid var(--border);
+		background: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
 	}
 
 	/* ── Sub-item rows ── */
@@ -390,8 +394,8 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 5px 14px 5px 38px;
-		font-size: 13px;
+		padding: 12px 14px 8px 38px;
+		font-size: 12px;
 		color: var(--text);
 	}
 
@@ -410,16 +414,17 @@ const CSS = /* css */ `
 	.progress-major { color: var(--blue); }
 
 	.sub-count {
-		font-size: 14px;
-		font-weight: 600;
+		font-size: 12px;
+		font-weight: 700;
 		color: var(--text);
 		min-width: 20px;
-		text-align: right;
+		margin-right: 12px;
+		
 	}
 
 	.trend-sub-placeholder { color: var(--muted); }
 
-	.trend-red   { color: var(--red); }
+	.trend-red   { color: #E24B4A; }
 	.trend-teal  { color: var(--accent-strong); }
 	.trend-blue  { color: var(--blue); }
 
@@ -453,8 +458,8 @@ const CSS = /* css */ `
 	}
 
 	.split-panel-title {
-		font-size: 11px;
-		font-weight: 600;
+		font-size: 13px;
+		font-weight: 700;
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
@@ -471,11 +476,19 @@ const CSS = /* css */ `
 
 	/* ── Common vulnerabilities panel ── */
 	.common-vuln-feed {
+	
 		flex: 1;
+		display: flex;
+		flex-direction: column;
 		overflow-y: auto;
 		padding: 8px;
 		scrollbar-width: thin;
 		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
+	}
+
+	.common-vuln-feed:has(.panel-empty),
+	.notif-feed:has(.panel-empty) {
+		background: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
 	}
 
 	.common-vuln-feed::-webkit-scrollbar { width: 4px; }
@@ -486,6 +499,10 @@ const CSS = /* css */ `
 	}
 
 	.panel-empty {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		font-size: 12px;
 		color: var(--muted);
 		text-align: center;
@@ -497,9 +514,8 @@ const CSS = /* css */ `
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		
 		overflow-y: auto;
-		padding: 8px;
 		scrollbar-width: thin;
 		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
 	}
@@ -520,8 +536,8 @@ const CSS = /* css */ `
 		justify-content: space-between;
 		gap: 10px;
 		background: var(--card);
-		border: 1px solid var(--border);
-		border-radius: calc(var(--radius) - 2px);
+		border-bottom: 1px solid var(--border);
+		
 		padding: 10px 12px;
 		flex-shrink: 0;
 	}
@@ -655,7 +671,9 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 					resolvedSubItems,
 				)}
 			</div>
-
+			
+			<div class="divider"></div>
+			
 			<div class="split-section">
 				${buildCommonVulnerabilitiesPanel()}
 				${buildNotificationsPanel(metrics)}
