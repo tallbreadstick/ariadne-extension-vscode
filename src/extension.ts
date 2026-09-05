@@ -49,6 +49,7 @@ import {
 	finalizeSession,
 } from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
+import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
 import type { Vulnerability } from './modules/presentation/panelTypes.js';
 
@@ -178,6 +179,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Initialize lifecycle state ─────────────────────────────────────
 	let lifecycles: FindingLifecycleRecord[] = store.loadFindingLifecycles();
+
+	// Load persisted save-scan state (first-checkpoint tracking)
+	let saveScanState: SaveScanState = store.loadSaveScanState();
+	// In-memory flag: set to true just before we send the Analyze IPC on save,
+	// cleared once the corresponding findings result has been processed.
+	let saveScanPending = false;
 
 	// If a previous active session exists (e.g. VS Code reloaded before
 	// deactivation could persist), finalize it now and start fresh.
@@ -346,26 +353,42 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();
-	registerDocumentEvents(context, session);
+	registerDocumentEvents(context, session, () => { saveScanPending = true; });
 	registerRuleLanguage(context);
 
 	// ── Wire findings from the engine to every UI surface ───────────────
 	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
-		// ── 1. Active Vulnerabilities panel ─────────────────────────────
+		// ── 1. Active Vulnerabilities panel (always updated) ────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
 		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
-		// ── 2. Build scan snapshot (kept for SessionAnalysis compatibility) ──
+		// ── 2. Inline squiggles + diagnostics (always updated) ──────────
+		const byFile = groupFindingsByFile(findings);
+		diagnosticManager.publishAllDiagnostics(byFile);
+
+		// ── 3. Save-measurement path ────────────────────────────────────
+		// Only save-triggered scans drive lifecycle engine updates,
+		// session baseline, Session Metrics panel, and notifications.
+		if (!saveScanPending) {
+			// Live-edit result — diagnostics already updated above, done.
+			return;
+		}
+
+		// Consume the pending flag before any async work
+		saveScanPending = false;
+
+		// ── 3a. Build scan snapshot ──────────────────────────────────────
 		const scanId = await store.nextScanId();
 		const currentSnapshot = metadataToScanSnapshot(findings, scanId);
 
-		// ── 3. Lifecycle engine — process the observation ───────────────
+		// ── 3b. Lifecycle engine ─────────────────────────────────────────
 		const observedFindings = metadataToObservedFindings(findings);
 		const timestamp = Date.now();
 
-		// Set session baseline on first observation, update latest checkpoint
+		// Initial-checkpoint condition: set session baseline only on the
+		// first save-triggered result (baselineCheckpoint starts null).
 		setSessionBaseline(activeSession, observedFindings, timestamp);
 		updateSessionLatest(activeSession, observedFindings, timestamp);
 
@@ -379,7 +402,19 @@ export function activate(context: vscode.ExtensionContext) {
 		// Persist updated lifecycles (serialized via write queue)
 		void store.saveFindingLifecycles(lifecycles);
 
-		// ── 4. Session Metrics panel ────────────────────────────────────
+		// ── 3c. Update and persist save-scan state ───────────────────────
+		const isFirstSaveScan = saveScanState.initialCheckpointDoneAt === null;
+		if (isFirstSaveScan) {
+			saveScanState.initialCheckpointDoneAt = timestamp;
+			console.log(
+				`[Ariadne] Initial checkpoint set at ${new Date(timestamp).toISOString()}` +
+				` (${findings.length} finding(s))`,
+			);
+		}
+		saveScanState.totalSaveScansThisSession += 1;
+		void store.saveSaveScanState(saveScanState);
+
+		// ── 3d. Session Metrics panel ────────────────────────────────────
 		try {
 			const sessionAnalysis = buildSessionAnalysis(
 				result.classifications,
@@ -387,7 +422,6 @@ export function activate(context: vscode.ExtensionContext) {
 				previousScanSnapshot,
 			);
 
-			// Filter out previously dismissed notifications
 			const sessionMetrics = toSessionMetrics(sessionAnalysis);
 			const dismissed = new Set(store.loadDismissedNotifications());
 			if (sessionMetrics.notifications) {
@@ -398,7 +432,7 @@ export function activate(context: vscode.ExtensionContext) {
 			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
 			updateStatusBar(sessionAnalysis);
 
-			// ── 4b. VS Code toast notifications ─────────────────────────
+			// ── 3e. VS Code toast notifications ──────────────────────────
 			showSessionToasts(sessionAnalysis);
 
 			// Debug: log analysis results
@@ -415,12 +449,8 @@ export function activate(context: vscode.ExtensionContext) {
 			// buildSessionAnalysis guards are in place, but be safe
 		}
 
-		// Track previous snapshot for the next cycle
+		// Track previous snapshot for the next save cycle
 		previousScanSnapshot = currentSnapshot;
-
-		// ── 5. Inline squiggles + diagnostics ───────────────────────────
-		const byFile = groupFindingsByFile(findings);
-		diagnosticManager.publishAllDiagnostics(byFile);
 	});
 
 	// ── Finalize session on deactivation ─────────────────────────────────
@@ -603,6 +633,49 @@ export function activate(context: vscode.ExtensionContext) {
 		},
 	);
 
+	// ── Debug command — show save scan state ──────────────────────────
+	const debugShowSaveScanState = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugShowSaveScanState',
+		() => {
+			const state = store.loadSaveScanState();
+
+			console.log('╔══════════════════════════════════════════════════════════╗');
+			console.log('║        ARIADNE — SAVE SCAN STATE DEBUG DUMP             ║');
+			console.log('╚══════════════════════════════════════════════════════════╝');
+			console.log(`  Initial Checkpoint : ${
+				state.initialCheckpointDoneAt
+					? new Date(state.initialCheckpointDoneAt).toISOString()
+					: '(not yet set — no save scan has been processed)'
+			}`);
+			console.log(`  Save Scans (session): ${state.totalSaveScansThisSession}`);
+			console.log(`  Save Scan Pending   : ${saveScanPending}`);
+			console.log('═══════════════════════════════════════════════════════════');
+
+			const checkpointStr = state.initialCheckpointDoneAt
+				? `set at ${new Date(state.initialCheckpointDoneAt).toISOString()}`
+				: 'not yet set';
+			vscode.window.showInformationMessage(
+				`Ariadne Debug: Initial checkpoint ${checkpointStr}. ` +
+				`Save scans this session: ${state.totalSaveScansThisSession}. ` +
+				`See Developer Console for details.`,
+			);
+		},
+	);
+
+	// ── Debug command — reset save scan state ─────────────────────────
+	const debugResetSaveScanState = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugResetSaveScanState',
+		async () => {
+			await store.clearSaveScanState();
+			saveScanState = store.loadSaveScanState();
+			saveScanPending = false;
+			console.log('[Ariadne Debug] Save scan state reset. Next save will re-trigger the initial checkpoint.');
+			vscode.window.showInformationMessage(
+				'Ariadne Debug: Save scan state reset. Next save will re-trigger the initial checkpoint.',
+			);
+		},
+	);
+
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
 		async (cwe?: string, title?: string) => {
@@ -703,6 +776,8 @@ export function activate(context: vscode.ExtensionContext) {
 		openFeedbackPanel,
 		debugLifecycles,
 		debugResetLifecycles,
+		debugShowSaveScanState,
+		debugResetSaveScanState,
 	);
 }
 

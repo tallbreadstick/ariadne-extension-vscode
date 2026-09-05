@@ -217,10 +217,16 @@ function cancelPendingUpdate(filePath: string): void {
  *
  * File mutation events automatically trigger re-analysis in the
  * session after each UpdateFile / Create / Delete / Rename.
+ *
+ * @param onSaveTrigger - Optional callback fired before the Analyze
+ *   message is sent on a tracked-file save. Use this to mark a
+ *   pending flag so the findings callback can route the result as a
+ *   save measurement instead of a live-edit result.
  */
 export function registerDocumentEvents(
 	context: vscode.ExtensionContext,
 	session: AriadneSession,
+	onSaveTrigger?: () => void,
 ): void {
 
 	// ============================================================
@@ -256,6 +262,11 @@ export function registerDocumentEvents(
 		vscode.workspace.onDidSaveTextDocument((doc) => {
 			if (isAriadnePath(doc.uri.fsPath)) {
 				scheduleRulesReload(session);
+			}
+			if (isTrackedDocument(doc)) {
+				console.log(`[Ariadne TS] Save-triggered scan: ${doc.uri.fsPath}`);
+				onSaveTrigger?.();
+				session.send({ type: 'Analyze', path: null });
 			}
 		}),
 		vscode.workspace.onDidChangeTextDocument((event) => {

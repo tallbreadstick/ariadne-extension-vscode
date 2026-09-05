@@ -69,6 +69,14 @@
       {
         "command": "ariadne-extension-vscode.debugResetLifecycles",
         "title": "Ariadne: Debug — Reset All Lifecycle Data"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugShowSaveScanState",
+        "title": "Ariadne: Debug — Show Save Scan State"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugResetSaveScanState",
+        "title": "Ariadne: Debug — Reset Save Scan State"
       }
     ],
     "viewsContainers": {

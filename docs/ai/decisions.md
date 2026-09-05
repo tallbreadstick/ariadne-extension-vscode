@@ -126,4 +126,24 @@ Within each section, newest decision at the top.
 - consequences: Breaking storage migration — old `ariadne.scanSnapshots` data is discarded. The lifecycle engine is a pure logic module with no vscode dependency, enabling unit testing. Cross-repo dependency: the scanner team needs to emit `logicalFingerprint` / `contentFingerprint` / `scopeFingerprint` fields for faithful scope-aware matching. Observation classification (live vs full scan) is deferred to a teammate's separate task.
 - task: docs/ai/tasks/2026-09-03-trends-framework.md
 
+### Save-triggered scan as the lifecycle engine gate
+
+- date: 2026-09-06
+- status: accepted
+- context: The MVP's `onFindings` callback fed every engine result — live debounced edits and
+  saves alike — into `processObservation`, `setSessionBaseline`, and the Session Metrics panel.
+  The overhaul framework (`sixth-response.md`, Section 2) requires that only save-triggered
+  (settled) observations drive lifecycle, session, and metrics updates, while live-edit results
+  update only Active Vulnerabilities and inline diagnostics.
+- decision: Add an `onDidSaveTextDocument` handler in `documentEvents.ts` that sends an
+  `Analyze` IPC message and triggers an `onSaveTrigger` callback. A `saveScanPending` boolean
+  flag in `extension.ts` routes each `onFindings` result: save-path runs `processObservation`,
+  updates the session baseline (initial-checkpoint condition), persists `SaveScanState`, and
+  refreshes Session Metrics; live-path exits after updating Active Vulnerabilities and diagnostics.
+- consequences: Session Metrics panel and lifecycle records now only update on file save, not
+  during live typing. This matches the spec intent. The 2-second settlement window and
+  `workspaceRevision` guard (also spec requirements) are deferred to the full overhaul task —
+  they require scanner-side `requestId`/`reason` envelope support.
+- task: docs/ai/tasks/2026-09-06-save-triggered-scan.md
+
 <!-- Add new post-MVP decisions above this line -->

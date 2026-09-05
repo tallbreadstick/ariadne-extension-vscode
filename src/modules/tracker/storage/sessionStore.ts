@@ -37,6 +37,7 @@ import {
 	WS_ACTIVE_SESSION,
 	WS_COMPLETED_SESSIONS,
 	WS_FINDING_LIFECYCLES,
+	WS_SAVE_SCAN_STATE,
 	WS_DISMISSED_NOTIFICATIONS,
 	WS_EXPANDED_VULN_KEY,
 	GL_USER_CONFIG,
@@ -53,6 +54,24 @@ const DEFAULT_SESSION_META: SessionMeta = {
 
 const DEFAULT_USER_CONFIG: UserConfig = {
 	notificationsEnabled: true,
+};
+
+/**
+ * Tracks the save-triggered scan routing state.
+ *
+ * - `initialCheckpointDoneAt` — epoch ms when the first save-triggered
+ *   scan result was processed. Null until that result arrives.
+ * - `totalSaveScansThisSession` — count of save-triggered scan results
+ *   processed in the current activation.
+ */
+export interface SaveScanState {
+	initialCheckpointDoneAt: number | null;
+	totalSaveScansThisSession: number;
+}
+
+const DEFAULT_SAVE_SCAN_STATE: SaveScanState = {
+	initialCheckpointDoneAt: null,
+	totalSaveScansThisSession: 0,
 };
 
 // ══════════════════════════════════════════════════════════════════════
@@ -170,6 +189,30 @@ export class SessionStore {
 				`[Ariadne Store] Saved ${lifecycles.length} finding lifecycle(s).`,
 			);
 		});
+	}
+
+	// ── Save Scan State (workspaceState — per project) ─────────────
+
+	/** Loads the save-scan routing state for the current workspace. */
+	loadSaveScanState(): SaveScanState {
+		return this.context.workspaceState.get<SaveScanState>(
+			WS_SAVE_SCAN_STATE,
+			{ ...DEFAULT_SAVE_SCAN_STATE },
+		);
+	}
+
+	/** Persists updated save-scan state. */
+	async saveSaveScanState(state: SaveScanState): Promise<void> {
+		return this.enqueuePersist(() =>
+			this.context.workspaceState.update(WS_SAVE_SCAN_STATE, state),
+		);
+	}
+
+	/** Clears the save-scan state (used by the debug reset command). */
+	async clearSaveScanState(): Promise<void> {
+		return this.enqueuePersist(() =>
+			this.context.workspaceState.update(WS_SAVE_SCAN_STATE, undefined),
+		);
 	}
 
 	// ── Session Metadata (workspaceState — per project) ───────────
