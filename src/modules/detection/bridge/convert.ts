@@ -51,6 +51,7 @@ export function metadataToVulnerability(
  * by DiagnosticManager for inline squiggles and hover popups.
  *
  * Line numbers from the engine are 1-based; VS Code ranges are 0-based.
+ * `start_column` / `end_column` are already 0-based byte offsets.
  */
 export function metadataToAriadneFinding(
 	m: VulnerabilityMetadata,
@@ -58,8 +59,8 @@ export function metadataToAriadneFinding(
 ): AriadneFinding {
 	const line0 = Math.max(0, m.line_number - 1);
 	const sev = capitalize(m.severity) as AriadneFinding['severity'];
-	const startCol =
-		m.column_number !== undefined ? Math.max(0, m.column_number - 1) : 0;
+	const startCol = startColumn0(m);
+	const endLine = m.end_line !== undefined ? Math.max(0, m.end_line - 1) : line0;
 
 	return {
 		id: `engine-finding-${idx}`,
@@ -71,8 +72,8 @@ export function metadataToAriadneFinding(
 		filePath: m.file_path,
 		startLine: line0,
 		startColumn: startCol,
-		endLine: line0,
-		endColumn: 999,
+		endLine,
+		endColumn: m.end_column ?? 999,
 		taintPath: m.taint_trace
 			? {
 				originLine: m.taint_trace.origin_line,
@@ -107,8 +108,9 @@ export function groupFindingsByFile(
  *
  * Grouping strategy:
  *   Level 1  Vulnerability  — by (cwe_id + type)
- *   Level 2  Instance       — by instance_name (falls back to file:line)
- *   Level 3  Occurrence     — one per flat finding
+ *   Level 2  Instance       — by instance_fingerprint, then composed
+ *                             hashes, then enclosing path / name / file:line
+ *   Level 3  Occurrence     — one per flat finding, carrying fingerprints
  */
 export function metadataToScanSnapshot(
 	findings: VulnerabilityMetadata[],
@@ -128,26 +130,38 @@ export function metadataToScanSnapshot(
 	for (const items of vulnMap.values()) {
 		const first = items[0];
 
-		// Group within a vulnerability by instance_name → Instance[]
+		// Group within a vulnerability by durable identity → Instance[]
 		const instanceMap = new Map<string, VulnerabilityMetadata[]>();
 		for (const item of items) {
-			const iKey = item.instance_name ?? `${item.file_path}:${item.line_number}`;
+			const iKey = instanceGroupKey(item);
 			const existing = instanceMap.get(iKey) ?? [];
 			existing.push(item);
 			instanceMap.set(iKey, existing);
 		}
 
 		const instances: Instance[] = [];
-		for (const [iName, iItems] of instanceMap) {
+		for (const [, iItems] of instanceMap) {
+			const firstItem = iItems[0];
 			const occurrences: Occurrence[] = iItems.map((item) => ({
 				file_path: item.file_path,
 				line_number: item.line_number,
 				column_number: item.column_number,
 				taint_trace: item.taint_trace,
+				enclosing_symbol_path: item.enclosing_symbol_path,
+				start_column: item.start_column,
+				end_column: item.end_column,
+				end_line: item.end_line,
+				fingerprint_version: item.fingerprint_version,
+				logical_fingerprint: item.logical_fingerprint,
+				scope_fingerprint: item.scope_fingerprint,
+				content_fingerprint: item.content_fingerprint,
+				instance_fingerprint: item.instance_fingerprint,
 			}));
 			instances.push({
-				name: iName,
-				kind: (iItems[0].instance_kind ?? 'variable') as Instance['kind'],
+				name: firstItem.instance_name
+					?? firstItem.enclosing_symbol_path
+					?? `${firstItem.file_path}:${firstItem.line_number}`,
+				kind: (firstItem.instance_kind ?? 'variable') as Instance['kind'],
 				occurrences,
 			});
 		}
@@ -196,8 +210,8 @@ export function metadataToObservedFindings(
 	for (const [fp, { finding, count }] of grouped) {
 		observed.push({
 			logicalFingerprint: fp,
-			contentFingerprint: '',
-			scopeFingerprint: '',
+			contentFingerprint: finding.content_fingerprint ?? '',
+			scopeFingerprint: finding.scope_fingerprint ?? '',
 			ruleId: finding.rule_id ?? '',
 			cweId: finding.cwe_id,
 			type: finding.type,
@@ -212,13 +226,16 @@ export function metadataToObservedFindings(
 }
 
 /**
- * Derives a temporary logical fingerprint from available metadata fields.
+ * Returns the logical fingerprint for a finding.
  *
- * Excludes `line_number` because line numbers shift under normal editing.
- * This will be replaced by the scanner's SHA256 fingerprint once that
- * teammate's work is integrated.
+ * Prefers the scanner's engine-provided `logical_fingerprint` when
+ * present. Falls back to a derived key from available fields
+ * (excludes `line_number` because line numbers shift under editing).
  */
 function deriveLogicalFingerprint(m: VulnerabilityMetadata): string {
+	if (m.logical_fingerprint) {
+		return m.logical_fingerprint;
+	}
 	return [
 		m.rule_id ?? '',
 		m.cwe_id,
@@ -229,6 +246,41 @@ function deriveLogicalFingerprint(m: VulnerabilityMetadata): string {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Columns from the current engine are 0-based byte offsets (`start_column`).
+ * Older payloads may only send `column_number`; those without
+ * `fingerprint_version` are treated as 1-based.
+ */
+function startColumn0(m: VulnerabilityMetadata): number {
+	if (m.start_column !== undefined) {
+		return m.start_column;
+	}
+	if (m.column_number === undefined) {
+		return 0;
+	}
+	if (m.fingerprint_version !== undefined) {
+		return m.column_number;
+	}
+	return Math.max(0, m.column_number - 1);
+}
+
+/**
+ * Group tracker instances by durable identity so inserting blank lines
+ * does not split one finding into a new instance.
+ */
+function instanceGroupKey(item: VulnerabilityMetadata): string {
+	if (item.instance_fingerprint) {
+		return item.instance_fingerprint;
+	}
+	if (item.logical_fingerprint && item.scope_fingerprint && item.content_fingerprint) {
+		return `${item.logical_fingerprint}:${item.scope_fingerprint}:${item.content_fingerprint}`;
+	}
+	return item.logical_fingerprint
+		?? item.enclosing_symbol_path
+		?? item.instance_name
+		?? `${item.file_path}:${item.line_number}`;
+}
 
 function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);

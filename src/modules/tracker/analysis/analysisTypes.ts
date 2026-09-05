@@ -75,9 +75,9 @@ export interface SessionAnalysis {
 	deltas: VulnerabilityDelta[];
 	/** Severity breakdown of active findings */
 	severityCounts: SeverityCounts;
-	/** Count of vulnerabilities whose instances stayed the same or increased */
+	/** Unique instances seen earlier in the session that are still present */
 	persistingPatterns: number;
-	/** Count of vulnerabilities whose instances decreased but are still > 0 */
+	/** Unique instances seen earlier in the session that are now gone */
 	improvingTrends: number;
 	/** Count of vulnerabilities with durable confirmed resolution */
 	resolvedThisSession: number;

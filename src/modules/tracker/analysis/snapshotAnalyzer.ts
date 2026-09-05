@@ -16,7 +16,10 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import type { Vulnerability, ScanSnapshot } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type {
+	Vulnerability,
+	ScanSnapshot,
+} from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
 import type {
 	SessionAnalysis,
 	VulnerabilityDelta,
