@@ -41,11 +41,11 @@ export interface Vulnerability {
  * across the current session.
  */
 export interface TrendData {
-	/** Vulnerabilities that have appeared in multiple consecutive scans. */
+	/** Unique instances still present after being seen in this session. */
 	persistingPatterns: number;
-	/** Vulnerability categories that are trending toward resolution. */
+	/** Unique instances seen earlier that are currently gone. */
 	improvingTrends: number;
-	/** Vulnerabilities fully resolved during this session. */
+	/** Unique instances fully resolved during this session. */
 	resolvedThisSession: number;
 }
 

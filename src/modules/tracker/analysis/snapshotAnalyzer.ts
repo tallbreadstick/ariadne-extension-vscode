@@ -4,15 +4,14 @@
  * This module diffs consecutive ScanSnapshots to derive:
  *
  * - **Active findings** — vulnerabilities in the latest scan
- * - **Improving trends** — instance count decreased since previous scan
- * - **Persisting patterns** — instance count stayed same or increased
- * - **Resolved** — present in a prior scan, absent in the current scan
- * - **New** — present in current scan, absent in the previous scan
+ * - **Persisting patterns** — unique instances still present after being seen
+ * - **Improving trends** — unique instances seen before that are now gone
+ * - **Resolved** — same as improving at instance granularity
+ * - **New** — unique instances never seen earlier in the session
  *
- * Resolution follows the project's definition: a vulnerability is
- * resolved when a fresh, complete analysis run can no longer reproduce
- * the same instance. It is NOT "it was fixed before" but "it is not
- * currently reproducible under the engine's rules."
+ * Identity is `instance_fingerprint` (or composed logical/scope/content
+ * hashes). Line shifts of the same sink stay one instance. Reappearing
+ * after a fix is persisting again, not a new improvement.
  *
  * ─────────────────────────────────────────────────────────────────────
  * EXPORTS:
@@ -21,7 +20,12 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import type { Vulnerability, ScanSnapshot } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type {
+	Vulnerability,
+	ScanSnapshot,
+	Instance,
+	Occurrence,
+} from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
 import type {
 	SessionAnalysis,
 	VulnerabilityDelta,
@@ -44,6 +48,60 @@ import type {
  */
 function vulnKey(v: Vulnerability): string {
 	return `${v.cwe_id}::${v.type}`;
+}
+
+type InstanceRef = {
+	key: string;
+	vulnerability: Vulnerability;
+};
+
+/**
+ * Durable identity for one sink. Prefers the engine's instance hash so
+ * two sinks of the same rule in the same method stay distinct.
+ */
+function instanceIdentity(occ: Occurrence, inst: Instance, v: Vulnerability): string {
+	if (occ.instance_fingerprint) {
+		return occ.instance_fingerprint;
+	}
+	if (occ.logical_fingerprint && occ.scope_fingerprint && occ.content_fingerprint) {
+		return `${occ.logical_fingerprint}:${occ.scope_fingerprint}:${occ.content_fingerprint}`;
+	}
+	if (occ.logical_fingerprint) {
+		return occ.logical_fingerprint;
+	}
+	return [
+		v.cwe_id,
+		v.type,
+		occ.file_path,
+		inst.name,
+		occ.enclosing_symbol_path ?? '',
+		String(occ.line_number),
+	].join('::');
+}
+
+function collectInstanceKeys(vulnerabilities: Vulnerability[]): Map<string, InstanceRef> {
+	const map = new Map<string, InstanceRef>();
+	for (const vulnerability of vulnerabilities) {
+		for (const inst of vulnerability.instances) {
+			for (const occ of inst.occurrences) {
+				const key = instanceIdentity(occ, inst, vulnerability);
+				if (!map.has(key)) {
+					map.set(key, { key, vulnerability });
+				}
+			}
+		}
+	}
+	return map;
+}
+
+function instanceKeysFor(v: Vulnerability): Set<string> {
+	const keys = new Set<string>();
+	for (const inst of v.instances) {
+		for (const occ of inst.occurrences) {
+			keys.add(instanceIdentity(occ, inst, v));
+		}
+	}
+	return keys;
 }
 
 /**
@@ -113,44 +171,52 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 		? buildVulnMap(previousScan.vulnerabilities)
 		: new Map<string, Vulnerability>();
 
-	// ── Collect all vulnerability keys that ever appeared ──────────
-	// Used for resolution detection across the entire session.
-	const allPriorKeys = new Set<string>();
+	const currentInstances = collectInstanceKeys(activeFindings);
+	const allPriorInstances = new Map<string, InstanceRef>();
 	for (let i = 0; i < snapshots.length - 1; i++) {
-		for (const v of snapshots[i].vulnerabilities) {
-			allPriorKeys.add(vulnKey(v));
+		for (const [key, ref] of collectInstanceKeys(snapshots[i].vulnerabilities)) {
+			allPriorInstances.set(key, ref);
 		}
 	}
 
-	const deltas: VulnerabilityDelta[] = [];
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
 	let resolvedThisSession = 0;
 	let newVulnerabilities = 0;
 
-	// ── Classify active findings ──────────────────────────────────
-	for (const [key, vuln] of currentMap) {
-		const prev = previousMap.get(key);
-		const currentCount = vuln.instances.length;
+	for (const key of currentInstances.keys()) {
+		if (allPriorInstances.has(key)) {
+			// Seen before and still present — including a reintroduced sink.
+			persistingPatterns++;
+		} else {
+			newVulnerabilities++;
+		}
+	}
+
+	for (const key of allPriorInstances.keys()) {
+		if (!currentInstances.has(key)) {
+			// Unique instance that disappeared. Reappearing later removes
+			// it from this set, so the same sink is not a second improvement.
+			improvingTrends++;
+			resolvedThisSession++;
+		}
+	}
+
+	const deltas: VulnerabilityDelta[] = [];
+
+	// Type-level deltas feed notifications; counters above are per instance.
+	for (const vuln of currentMap.values()) {
+		const prev = previousMap.get(vulnKey(vuln));
+		const currentCount = instanceKeysFor(vuln).size;
+		const previousCount = prev ? instanceKeysFor(prev).size : 0;
 
 		let status: VulnerabilityStatus;
-		let previousCount: number;
-
 		if (!prev) {
-			// Not in the immediately previous scan → new
 			status = 'new';
-			previousCount = 0;
-			newVulnerabilities++;
+		} else if (currentCount < previousCount) {
+			status = 'improving';
 		} else {
-			previousCount = prev.instances.length;
-			if (currentCount < previousCount) {
-				status = 'improving';
-				improvingTrends++;
-			} else {
-				// currentCount >= previousCount → persisting
-				status = 'persisting';
-				persistingPatterns++;
-			}
+			status = 'persisting';
 		}
 
 		deltas.push({
@@ -161,16 +227,15 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 		});
 	}
 
-	// ── Detect resolved vulnerabilities ───────────────────────────
-	// A vulnerability is resolved if it appeared in ANY prior scan
-	// but is absent from the current scan.
-	//
-	// If it was also present in the IMMEDIATELY PREVIOUS scan, it
-	// counts as improving too (N instances → 0 is the final improvement).
-	for (const priorKey of allPriorKeys) {
+	const allPriorTypeKeys = new Set<string>();
+	for (let i = 0; i < snapshots.length - 1; i++) {
+		for (const v of snapshots[i].vulnerabilities) {
+			allPriorTypeKeys.add(vulnKey(v));
+		}
+	}
+
+	for (const priorKey of allPriorTypeKeys) {
 		if (!currentMap.has(priorKey)) {
-			// Find the last known state of this vulnerability
-			// (scan backwards from the second-to-last snapshot)
 			let lastKnown: Vulnerability | undefined;
 			for (let i = snapshots.length - 2; i >= 0; i--) {
 				lastKnown = snapshots[i].vulnerabilities.find(
@@ -183,16 +248,9 @@ export function analyzeSession(snapshots: ScanSnapshot[]): SessionAnalysis {
 				deltas.push({
 					vulnerability: lastKnown,
 					status: 'resolved',
-					previousInstanceCount: lastKnown.instances.length,
+					previousInstanceCount: instanceKeysFor(lastKnown).size,
 					currentInstanceCount: 0,
 				});
-				resolvedThisSession++;
-
-				// If the vulnerability was in the immediately previous scan,
-				// going from N → 0 is also an improvement.
-				if (previousMap.has(priorKey)) {
-					improvingTrends++;
-				}
 			}
 		}
 	}
