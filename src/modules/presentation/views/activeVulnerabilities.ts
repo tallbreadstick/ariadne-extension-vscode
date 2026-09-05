@@ -71,6 +71,12 @@ const CHEVRON_SVG =
 			stroke-linecap="round" stroke-linejoin="round" />
 	</svg>`;
 
+const FILTER_SVG =
+	`<svg class="filter-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2"
+			stroke-linecap="round" />
+	</svg>`;
+
 // ── Card builder ──────────────────────────────────────────────────────
 
 function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
@@ -191,7 +197,7 @@ const CSS = /* css */ `
     .toolbar-row {
         display: grid;
         gap: 8px;
-        grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr) auto;
     }
 
     .search-input,
@@ -212,11 +218,40 @@ const CSS = /* css */ `
         outline-offset: -1px;
     }
 
+	.filter-toggle {
+		display: inline-grid;
+		place-items: center;
+		width: 30px;
+		min-width: 30px;
+		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--vscode-button-secondaryBackground, var(--card));
+		color: var(--vscode-button-secondaryForeground, var(--text));
+		cursor: pointer;
+	}
+
+	.filter-toggle:hover {
+		background: var(--vscode-button-secondaryHoverBackground, var(--panel));
+	}
+
+	.filter-toggle:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder, var(--file));
+		outline-offset: 1px;
+	}
+
+	.filter-icon {
+		width: 16px;
+		height: 16px;
+	}
+
     .filter-row {
-        display: grid;
+		display: none;
         gap: 8px;
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+	.filter-row.visible { display: grid; }
 
     .results-meta {
         font-size: 11px;
@@ -525,8 +560,19 @@ function buildToolbar(vulns: Vulnerability[]): string {
 					placeholder="Search title, CWE, file, OWASP…"
 					aria-label="Search vulnerabilities"
 				/>
+				<button
+					class="filter-toggle"
+					type="button"
+					id="filter-toggle"
+					aria-controls="filter-row"
+					aria-expanded="false"
+					title="Show filters"
+					aria-label="Show filters"
+				>
+					${FILTER_SVG}
+				</button>
 			</div>
-			<div class="filter-row">
+			<div class="filter-row" id="filter-row" aria-hidden="true">
 				<select class="filter-select" id="severity-filter" aria-label="Filter by severity">
 					<option value="">All severities</option>
 					${buildSeverityOptions()}
@@ -588,6 +634,8 @@ export function buildActiveVulnerabilitiesHtml(
 				const vscode = acquireVsCodeApi();
 				const cards = Array.from(document.querySelectorAll('.vuln-card'));
 				const searchInput = document.getElementById('vuln-search');
+				const filterToggle = document.getElementById('filter-toggle');
+				const filterRow = document.getElementById('filter-row');
 				const severityFilter = document.getElementById('severity-filter');
 				const cweFilter = document.getElementById('cwe-filter');
 				const resultsMeta = document.getElementById('results-meta');
@@ -606,6 +654,17 @@ export function buildActiveVulnerabilitiesHtml(
 				function persistExpandedKey(key) {
 					persistUiState({ expandedKey: key ?? null });
 					vscode.postMessage({ type: 'vuln-expanded', key: key ?? null });
+				}
+
+				function setFilterVisibility(visible, persist = true) {
+					filterRow?.classList.toggle('visible', visible);
+					filterRow?.setAttribute('aria-hidden', String(!visible));
+					filterToggle?.setAttribute('aria-expanded', String(visible));
+					filterToggle?.setAttribute('title', visible ? 'Hide filters' : 'Show filters');
+					filterToggle?.setAttribute('aria-label', visible ? 'Hide filters' : 'Show filters');
+					if (persist) {
+						persistUiState({ filterPanelOpen: visible });
+					}
 				}
 
 				function applyAccordion(openedEl) {
@@ -657,6 +716,7 @@ export function buildActiveVulnerabilitiesHtml(
 
 				function restoreUiState() {
 					const state = readUiState();
+					setFilterVisibility(state.filterPanelOpen === true, false);
 
 					if (searchInput && typeof state.searchQuery === 'string') {
 						searchInput.value = state.searchQuery;
@@ -693,6 +753,10 @@ export function buildActiveVulnerabilitiesHtml(
 					},
 					{ passive: true },
 				);
+
+				filterToggle?.addEventListener('click', () => {
+					setFilterVisibility(!filterRow?.classList.contains('visible'));
+				});
 
 				cards.forEach((el) => {
 					el.addEventListener('toggle', () => {

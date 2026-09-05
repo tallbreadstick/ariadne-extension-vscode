@@ -7,3 +7,4 @@ node_modules
 iterations/
 .impeccable/config.local.json
 .cursor/ecc-install-state.json
+docs-walkthrough/

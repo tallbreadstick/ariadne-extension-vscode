@@ -13,10 +13,11 @@ import type { Severity } from '../../presentation/panelTypes.js';
 // ── SVGs ─────────────────────────────────────────────────────────────
 
 const TREND_CHART_SVG =
-	`<svg class="trend-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<path d="M4 16l5-5 4 3 6-7" stroke="currentColor" stroke-width="2"
-			stroke-linecap="round" stroke-linejoin="round" />
-		<path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+	`<svg class="trend-icon severity-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<rect x="3" y="15" width="3" height="6" rx="1" fill="currentColor" />
+		<rect x="8" y="11" width="3" height="10" rx="1" fill="currentColor" />
+		<rect x="18" y="7" width="3" height="14" rx="1" fill="currentColor" />
+		<rect x="13" y="3" width="3" height="18" rx="1" fill="currentColor" />
 	</svg>`;
 
 const TRENDS_HEADER_SVG =
@@ -40,10 +41,14 @@ const IMPROVING_SVG =
 	</svg>`;
 
 const RECURRING_SVG =
-	`<svg class="trend-icon trend-red" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<path d="M4 8l6 6 4-4 6 6" stroke="currentColor" stroke-width="2"
-			stroke-linecap="round" stroke-linejoin="round" />
-	</svg>`;
+    `<svg class="trend-icon trend-red" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>`;
+
+
+
+
 
 const RESOLVED_SVG =
 	`<svg class="trend-icon trend-blue" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -78,12 +83,9 @@ function buildMetricCard(title: string, value: number, severity: Severity): stri
 	return /* html */ `
 		<div class="metric-card" style="border-left: 3px solid ${accent};">
 			<div class="metric-title">${title}</div>
-			<div class="metric-row">
-				<div class="metric-value" style="color: ${accent};">${value}</div>
-				<div class="metric-trend">
-					${TREND_CHART_SVG}
-					<span>${value}</span>
-				</div>
+			<div class="metric-trend" style="color: ${accent};">
+				${TREND_CHART_SVG}
+				<span>${value}</span>
 			</div>
 		</div>`;
 }
@@ -259,9 +261,10 @@ const CSS = /* css */ `
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		padding: 12px 14px;
-		display: grid;
-		gap: 8px;
-		min-height: 90px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		transition: border-color 0.2s ease, box-shadow 0.2s ease;
 	}
 
@@ -275,15 +278,6 @@ const CSS = /* css */ `
 		font-size: 13px;
 		text-transform: uppercase;
 		color: var(--muted);
-	}
-
-	.metric-value { font-size: 28px; font-weight: 600; color: #f1f1f1; }
-
-	.metric-row {
-		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
-		gap: 8px;
 	}
 
 	.metric-trend {
@@ -591,7 +585,14 @@ const CSS = /* css */ `
 
 	@media (max-width: 520px) {
 		body { padding: 12px; }
-		.metrics-grid { grid-template-columns: 1fr; }
+		.metrics-grid { grid-template-columns: 1fr; gap: 8px; }
+		.metric-title {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.metric-trend { flex-shrink: 0; }
 		.split-section { grid-template-columns: 1fr; }
 	}
 `;
