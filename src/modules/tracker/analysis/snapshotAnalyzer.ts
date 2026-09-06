@@ -88,8 +88,8 @@ export function buildSessionAnalysis(
 	const deltas: VulnerabilityDelta[] = [];
 
 	for (const classification of classifications) {
-		// Skip candidates — they are not shown on the Trends card
-		if (classification.status === 'candidate') {
+		// Skip candidates and active findings — they are not shown on the Trends card
+		if (classification.status === 'candidate' || classification.status === 'active') {
 			continue;
 		}
 
