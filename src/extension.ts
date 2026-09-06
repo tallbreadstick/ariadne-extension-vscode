@@ -52,6 +52,7 @@ import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
 import type { Vulnerability } from './modules/presentation/panelTypes.js';
+import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -180,11 +181,20 @@ export function activate(context: vscode.ExtensionContext) {
 	// ── Initialize lifecycle state ─────────────────────────────────────
 	let lifecycles: FindingLifecycleRecord[] = store.loadFindingLifecycles();
 
-	// Load persisted save-scan state (first-checkpoint tracking)
+	// ── Save-scan settlement state ─────────────────────────────────────
+	// Load persisted state (first-checkpoint tracking + cancellation count)
 	let saveScanState: SaveScanState = store.loadSaveScanState();
-	// In-memory flag: set to true just before we send the Analyze IPC on save,
-	// cleared once the corresponding findings result has been processed.
-	let saveScanPending = false;
+
+	// The workspace revision recorded at the moment the save scan Analyze
+	// IPC was sent. Null when no save scan is in flight.
+	let pendingSaveRevision: number | null = null;
+
+	// Active 2-second settlement timer handle. Non-null while waiting.
+	let settlementTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// The findings received from a valid (but not yet settled) save scan.
+	// Held until the timer expires or is cancelled.
+	let pendingSettlementFindings: import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').VulnerabilityMetadata[] | null = null;
 
 	// If a previous active session exists (e.g. VS Code reloaded before
 	// deactivation could persist), finalize it now and start fresh.
@@ -351,9 +361,44 @@ export function activate(context: vscode.ExtensionContext) {
 	const diagnosticManager = new DiagnosticManager(context);
 	registerHoverProvider(context, diagnosticManager);
 
+	// ── Settlement helpers ──────────────────────────────────────────────
+
+	/**
+	 * Cancels any active settlement timer and discards the pending
+	 * findings. Called when a tracked-file change invalidates the
+	 * save scan result before the 2-second window expires.
+	 */
+	function cancelSettlement(reason: string): void {
+		if (settlementTimer !== null) {
+			clearTimeout(settlementTimer);
+			settlementTimer = null;
+			pendingSettlementFindings = null;
+			pendingSaveRevision = null;
+			saveScanState.totalSettledCancellations += 1;
+			void store.saveSaveScanState(saveScanState);
+			console.log(`[Ariadne] Settlement cancelled (${reason}). Trends not updated.`);
+		}
+	}
+
 	// ── Ariadne engine session ───────────────────────────────────────────
 	const session = runSession();
-	registerDocumentEvents(context, session, () => { saveScanPending = true; });
+	registerDocumentEvents(
+		context,
+		session,
+		// onSaveTrigger: record the revision at the moment of save
+		(revision: number) => {
+			// If a previous settlement timer is still running, cancel it:
+			// the new save supersedes the old pending result.
+			cancelSettlement('superseded by a new save');
+			pendingSaveRevision = revision;
+		},
+		// onRevisionChange: any tracked-file mutation cancels settlement
+		(revision: number) => {
+			if (settlementTimer !== null) {
+				cancelSettlement(`workspace revision changed to ${revision}`);
+			}
+		},
+	);
 	registerRuleLanguage(context);
 
 	// ── Wire findings from the engine to every UI surface ───────────────
@@ -368,89 +413,119 @@ export function activate(context: vscode.ExtensionContext) {
 		const byFile = groupFindingsByFile(findings);
 		diagnosticManager.publishAllDiagnostics(byFile);
 
-		// ── 3. Save-measurement path ────────────────────────────────────
-		// Only save-triggered scans drive lifecycle engine updates,
-		// session baseline, Session Metrics panel, and notifications.
-		if (!saveScanPending) {
-			// Live-edit result — diagnostics already updated above, done.
+		// ── 3. Valid-gate ────────────────────────────────────────────────
+		// Only results from a pending save scan are candidates for Trends.
+		if (pendingSaveRevision === null) {
+			// Live-edit result — UI already updated above, done.
 			return;
 		}
 
-		// Consume the pending flag before any async work
-		saveScanPending = false;
-
-		// ── 3a. Build scan snapshot ──────────────────────────────────────
-		const scanId = await store.nextScanId();
-		const currentSnapshot = metadataToScanSnapshot(findings, scanId);
-
-		// ── 3b. Lifecycle engine ─────────────────────────────────────────
-		const observedFindings = metadataToObservedFindings(findings);
-		const timestamp = Date.now();
-
-		// Initial-checkpoint condition: set session baseline only on the
-		// first save-triggered result (baselineCheckpoint starts null).
-		setSessionBaseline(activeSession, observedFindings, timestamp);
-		updateSessionLatest(activeSession, observedFindings, timestamp);
-
-		const result = processObservation(
-			observedFindings,
-			lifecycles,
-			timestamp,
-		);
-		lifecycles = result.lifecycles;
-
-		// Persist updated lifecycles (serialized via write queue)
-		void store.saveFindingLifecycles(lifecycles);
-
-		// ── 3c. Update and persist save-scan state ───────────────────────
-		const isFirstSaveScan = saveScanState.initialCheckpointDoneAt === null;
-		if (isFirstSaveScan) {
-			saveScanState.initialCheckpointDoneAt = timestamp;
+		// Check whether the workspace revision is still the same as when
+		// the save scan was sent. If not, the result is stale.
+		const currentRev = getCurrentRevision();
+		if (currentRev !== pendingSaveRevision) {
 			console.log(
-				`[Ariadne] Initial checkpoint set at ${new Date(timestamp).toISOString()}` +
-				` (${findings.length} finding(s))`,
+				`[Ariadne] Stale save result discarded ` +
+				`(scan rev=${pendingSaveRevision}, current rev=${currentRev}).`,
 			);
+			pendingSaveRevision = null;
+			return;
 		}
-		saveScanState.totalSaveScansThisSession += 1;
-		void store.saveSaveScanState(saveScanState);
 
-		// ── 3d. Session Metrics panel ────────────────────────────────────
-		try {
-			const sessionAnalysis = buildSessionAnalysis(
-				result.classifications,
-				currentSnapshot,
-				previousScanSnapshot,
-			);
+		// Result is valid. Consume the pending revision.
+		pendingSaveRevision = null;
 
-			const sessionMetrics = toSessionMetrics(sessionAnalysis);
-			const dismissed = new Set(store.loadDismissedNotifications());
-			if (sessionMetrics.notifications) {
-				sessionMetrics.notifications = sessionMetrics.notifications
-					.filter(n => !dismissed.has(n.id));
+		// Store findings for the settlement callback and start the timer.
+		pendingSettlementFindings = findings;
+
+		// ── 4. Settlement timer — 2-second idle window ──────────────────
+		// We wait 2 seconds with no tracked-file change. If any change
+		// arrives, cancelSettlement() fires and discards these findings.
+		// If the timer expires cleanly, the result is settled.
+		settlementTimer = setTimeout(async () => {
+			settlementTimer = null;
+			const settledFindings = pendingSettlementFindings;
+			pendingSettlementFindings = null;
+
+			if (!settledFindings) {
+				return; // Defensive guard — shouldn't happen.
 			}
 
-			sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
-			updateStatusBar(sessionAnalysis);
+			console.log('[Ariadne] Save scan settled — updating lifecycle and Session Metrics.');
 
-			// ── 3e. VS Code toast notifications ──────────────────────────
-			showSessionToasts(sessionAnalysis);
+			// ── 4a. Build scan snapshot ─────────────────────────────────
+			const scanId = await store.nextScanId();
+			const currentSnapshot = metadataToScanSnapshot(settledFindings, scanId);
 
-			// Debug: log analysis results
-			const sc = sessionAnalysis.severityCounts;
-			console.log(
-				`[Ariadne Analysis] Severities: ` +
-				`${sc.critical}C ${sc.high}H ${sc.medium}M ${sc.low}L | ` +
-				`Persisting: ${sessionAnalysis.persistingPatterns}, ` +
-				`Improving: ${sessionAnalysis.improvingTrends}, ` +
-				`Resolved: ${sessionAnalysis.resolvedThisSession}, ` +
-				`Recurring: ${sessionAnalysis.recurringPatterns}`,
+			// ── 4b. Lifecycle engine ─────────────────────────────────────
+			const observedFindings = metadataToObservedFindings(settledFindings);
+			const timestamp = Date.now();
+
+			// Initial-checkpoint condition: baseline is set only on the
+			// first settled save scan (baselineCheckpoint starts null).
+			setSessionBaseline(activeSession, observedFindings, timestamp);
+			updateSessionLatest(activeSession, observedFindings, timestamp);
+
+			const result = processObservation(
+				observedFindings,
+				lifecycles,
+				timestamp,
 			);
-		} catch {
-			// buildSessionAnalysis guards are in place, but be safe
-		}
+			lifecycles = result.lifecycles;
 
-		// Track previous snapshot for the next save cycle
-		previousScanSnapshot = currentSnapshot;
+			// Persist updated lifecycles (serialized via write queue)
+			void store.saveFindingLifecycles(lifecycles);
+
+			// ── 4c. Update and persist save-scan state ───────────────────
+			const isFirstSaveScan = saveScanState.initialCheckpointDoneAt === null;
+			if (isFirstSaveScan) {
+				saveScanState.initialCheckpointDoneAt = timestamp;
+				console.log(
+					`[Ariadne] Initial checkpoint set at ${new Date(timestamp).toISOString()}` +
+					` (${settledFindings.length} finding(s))`,
+				);
+			}
+			saveScanState.totalSaveScansThisSession += 1;
+			void store.saveSaveScanState(saveScanState);
+
+			// ── 4d. Session Metrics panel ────────────────────────────────
+			try {
+				const sessionAnalysis = buildSessionAnalysis(
+					result.classifications,
+					currentSnapshot,
+					previousScanSnapshot,
+				);
+
+				const sessionMetrics = toSessionMetrics(sessionAnalysis);
+				const dismissed = new Set(store.loadDismissedNotifications());
+				if (sessionMetrics.notifications) {
+					sessionMetrics.notifications = sessionMetrics.notifications
+						.filter(n => !dismissed.has(n.id));
+				}
+
+				sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
+				updateStatusBar(sessionAnalysis);
+
+				// ── 4e. VS Code toast notifications ──────────────────────
+				showSessionToasts(sessionAnalysis);
+
+				// Debug: log analysis results
+				const sc = sessionAnalysis.severityCounts;
+				console.log(
+					`[Ariadne Analysis] Severities: ` +
+					`${sc.critical}C ${sc.high}H ${sc.medium}M ${sc.low}L | ` +
+					`Persisting: ${sessionAnalysis.persistingPatterns}, ` +
+					`Improving: ${sessionAnalysis.improvingTrends}, ` +
+					`Resolved: ${sessionAnalysis.resolvedThisSession}, ` +
+					`Recurring: ${sessionAnalysis.recurringPatterns}`,
+				);
+			} catch {
+				// buildSessionAnalysis guards are in place, but be safe
+			}
+
+			// Track previous snapshot for the next save cycle
+			previousScanSnapshot = currentSnapshot;
+		}, 2000);
 	});
 
 	// ── Finalize session on deactivation ─────────────────────────────────
@@ -638,17 +713,23 @@ export function activate(context: vscode.ExtensionContext) {
 		'ariadne-extension-vscode.debugShowSaveScanState',
 		() => {
 			const state = store.loadSaveScanState();
+			const currentRev = getCurrentRevision();
 
 			console.log('╔══════════════════════════════════════════════════════════╗');
 			console.log('║        ARIADNE — SAVE SCAN STATE DEBUG DUMP             ║');
 			console.log('╚══════════════════════════════════════════════════════════╝');
-			console.log(`  Initial Checkpoint : ${
+			console.log(`  Initial Checkpoint      : ${
 				state.initialCheckpointDoneAt
 					? new Date(state.initialCheckpointDoneAt).toISOString()
-					: '(not yet set — no save scan has been processed)'
+					: '(not yet set — no settled scan has been processed)'
 			}`);
-			console.log(`  Save Scans (session): ${state.totalSaveScansThisSession}`);
-			console.log(`  Save Scan Pending   : ${saveScanPending}`);
+			console.log(`  Settled Scans (session) : ${state.totalSaveScansThisSession}`);
+			console.log(`  Settlement Cancellations: ${state.totalSettledCancellations}`);
+			console.log(`  Workspace Revision      : ${currentRev}`);
+			console.log(`  Pending Save Revision   : ${
+				pendingSaveRevision !== null ? pendingSaveRevision : '(none)'
+			}`);
+			console.log(`  Settlement Timer Active : ${settlementTimer !== null}`);
 			console.log('═══════════════════════════════════════════════════════════');
 
 			const checkpointStr = state.initialCheckpointDoneAt
@@ -656,7 +737,9 @@ export function activate(context: vscode.ExtensionContext) {
 				: 'not yet set';
 			vscode.window.showInformationMessage(
 				`Ariadne Debug: Initial checkpoint ${checkpointStr}. ` +
-				`Save scans this session: ${state.totalSaveScansThisSession}. ` +
+				`Settled scans: ${state.totalSaveScansThisSession}. ` +
+				`Cancellations: ${state.totalSettledCancellations}. ` +
+				`Workspace rev: ${currentRev}. ` +
 				`See Developer Console for details.`,
 			);
 		},
@@ -666,12 +749,18 @@ export function activate(context: vscode.ExtensionContext) {
 	const debugResetSaveScanState = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.debugResetSaveScanState',
 		async () => {
+			// Cancel any active settlement before clearing state
+			if (settlementTimer !== null) {
+				clearTimeout(settlementTimer);
+				settlementTimer = null;
+				pendingSettlementFindings = null;
+			}
+			pendingSaveRevision = null;
 			await store.clearSaveScanState();
 			saveScanState = store.loadSaveScanState();
-			saveScanPending = false;
-			console.log('[Ariadne Debug] Save scan state reset. Next save will re-trigger the initial checkpoint.');
+			console.log('[Ariadne Debug] Save scan state reset. Next settled save will re-trigger the initial checkpoint.');
 			vscode.window.showInformationMessage(
-				'Ariadne Debug: Save scan state reset. Next save will re-trigger the initial checkpoint.',
+				'Ariadne Debug: Save scan state reset. Next settled save will re-trigger the initial checkpoint.',
 			);
 		},
 	);

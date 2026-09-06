@@ -61,17 +61,21 @@ const DEFAULT_USER_CONFIG: UserConfig = {
  *
  * - `initialCheckpointDoneAt` — epoch ms when the first save-triggered
  *   scan result was processed. Null until that result arrives.
- * - `totalSaveScansThisSession` — count of save-triggered scan results
- *   processed in the current activation.
+ * - `totalSaveScansThisSession` — count of settled save scans processed
+ *   in the current activation.
+ * - `totalSettledCancellations` — count of times the 2-second settlement
+ *   window was cancelled by a tracked-file change during this activation.
  */
 export interface SaveScanState {
 	initialCheckpointDoneAt: number | null;
 	totalSaveScansThisSession: number;
+	totalSettledCancellations: number;
 }
 
 const DEFAULT_SAVE_SCAN_STATE: SaveScanState = {
 	initialCheckpointDoneAt: null,
 	totalSaveScansThisSession: 0,
+	totalSettledCancellations: 0,
 };
 
 // ══════════════════════════════════════════════════════════════════════
