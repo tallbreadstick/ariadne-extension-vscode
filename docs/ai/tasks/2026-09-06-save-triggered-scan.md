@@ -1,10 +1,14 @@
 # Task Brief: Save-Triggered Scan with Initial Checkpoint Condition
 
-- **slug**: save-triggered-scan
-- **created**: 2026-09-06
-- **status**: complete
-- **branch**: feature/save-triggered-scan
-- **assignee**: Rence
+- slug: save-triggered-scan
+- created: 2026-09-06
+- status: completed
+- next action: none
+- blockers: none
+- spec: none
+- plan: none
+- branch: feature/save-triggered-scan
+- assignee: Rence
 
 ## Summary
 

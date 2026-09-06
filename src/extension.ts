@@ -206,9 +206,19 @@ export function activate(context: vscode.ExtensionContext) {
 		console.log(`[Ariadne] Finalized stale session ${staleSession.sessionId} from previous activation.`);
 	}
 
-	// Start a new active session
-	let activeSession = startSession(store.nextSessionId(), Date.now());
-	void store.saveActiveSession(activeSession);
+	// Save-scan settlement state is session-scoped. Since we start with no
+	// active session, ensure initialCheckpointDoneAt is reset so the first
+	// settled save triggers session start + initial checkpoint together.
+	if (saveScanState.initialCheckpointDoneAt !== null) {
+		saveScanState.initialCheckpointDoneAt = null;
+		saveScanState.totalSaveScansThisSession = 0;
+		void store.saveSaveScanState(saveScanState);
+	}
+
+	// Session is created lazily on the first settled save scan, so that
+	// SessionRecord.startedAt matches the initial checkpoint timestamp exactly.
+	// Until then, activeSession is null and no lifecycle or Trends writes occur.
+	let activeSession: ReturnType<typeof startSession> | null = null;
 
 	let latestVulnerabilities: Vulnerability[] = [];
 	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
@@ -461,11 +471,27 @@ export function activate(context: vscode.ExtensionContext) {
 			const observedFindings = metadataToObservedFindings(settledFindings);
 			const timestamp = Date.now();
 
-			// Initial-checkpoint condition: baseline is set only on the
-			// first settled save scan (baselineCheckpoint starts null).
-			setSessionBaseline(activeSession, observedFindings, timestamp);
-			updateSessionLatest(activeSession, observedFindings, timestamp);
+			// ── 4c. Session record — create or update ───────────────────
+			if (!activeSession) {
+				// First settlement: create the session NOW, using the
+				// settlement timestamp so startedAt === initialCheckpointDoneAt.
+				activeSession = startSession(store.nextSessionId(), timestamp);
+				setSessionBaseline(activeSession, observedFindings, timestamp);
+				updateSessionLatest(activeSession, observedFindings, timestamp);
+				saveScanState.initialCheckpointDoneAt = timestamp;
+				console.log(
+					`[Ariadne] Initial checkpoint + session ${activeSession.sessionId} ` +
+					`started at ${new Date(timestamp).toISOString()} ` +
+					`(${settledFindings.length} finding(s))`,
+				);
+			} else {
+				// Subsequent settlements: just update the existing session.
+				updateSessionLatest(activeSession, observedFindings, timestamp);
+			}
+			// Persist the updated session so debug dumps reflect current state.
+			void store.saveActiveSession(activeSession);
 
+			// ── 4d. Lifecycle engine ──────────────────────────────────────
 			const result = processObservation(
 				observedFindings,
 				lifecycles,
@@ -476,19 +502,10 @@ export function activate(context: vscode.ExtensionContext) {
 			// Persist updated lifecycles (serialized via write queue)
 			void store.saveFindingLifecycles(lifecycles);
 
-			// ── 4c. Update and persist save-scan state ───────────────────
-			const isFirstSaveScan = saveScanState.initialCheckpointDoneAt === null;
-			if (isFirstSaveScan) {
-				saveScanState.initialCheckpointDoneAt = timestamp;
-				console.log(
-					`[Ariadne] Initial checkpoint set at ${new Date(timestamp).toISOString()}` +
-					` (${settledFindings.length} finding(s))`,
-				);
-			}
 			saveScanState.totalSaveScansThisSession += 1;
 			void store.saveSaveScanState(saveScanState);
 
-			// ── 4d. Session Metrics panel ────────────────────────────────
+			// ── 4e. Session Metrics panel ─────────────────────────────────
 			try {
 				const sessionAnalysis = buildSessionAnalysis(
 					result.classifications,
@@ -531,10 +548,15 @@ export function activate(context: vscode.ExtensionContext) {
 	// ── Finalize session on deactivation ─────────────────────────────────
 	context.subscriptions.push({
 		dispose: () => {
-			const finalized = finalizeSession(activeSession, lifecycles, Date.now());
-			// Best-effort persist — VS Code may not await this
-			void store.appendCompletedSession(finalized);
-			void store.clearActiveSession();
+			if (activeSession !== null) {
+				const finalized = finalizeSession(activeSession, lifecycles, Date.now());
+				// Best-effort persist — VS Code may not await this
+				void store.appendCompletedSession(finalized);
+				void store.clearActiveSession();
+			}
+			saveScanState.initialCheckpointDoneAt = null;
+			saveScanState.totalSaveScansThisSession = 0;
+			void store.saveSaveScanState(saveScanState);
 			session.kill();
 		},
 	});
@@ -699,11 +721,12 @@ export function activate(context: vscode.ExtensionContext) {
 		async () => {
 			await store.clearAllLifecycleData();
 			lifecycles = [];
-			activeSession = startSession(store.nextSessionId(), Date.now());
-			void store.saveActiveSession(activeSession);
-			console.log('[Ariadne Debug] All lifecycle data cleared. Fresh session started.');
+			activeSession = null;
+			await store.clearSaveScanState();
+			saveScanState = store.loadSaveScanState();
+			console.log('[Ariadne Debug] All lifecycle data cleared. Session will start on next settled save.');
 			vscode.window.showInformationMessage(
-				`Ariadne Debug: All data cleared. New session: ${activeSession.sessionId}`,
+				'Ariadne Debug: All data cleared. Next settled save will start a fresh session and initial checkpoint.',
 			);
 		},
 	);
@@ -758,6 +781,12 @@ export function activate(context: vscode.ExtensionContext) {
 			pendingSaveRevision = null;
 			await store.clearSaveScanState();
 			saveScanState = store.loadSaveScanState();
+			if (activeSession !== null) {
+				const finalized = finalizeSession(activeSession, lifecycles, Date.now());
+				void store.appendCompletedSession(finalized);
+				void store.clearActiveSession();
+				activeSession = null;
+			}
 			console.log('[Ariadne Debug] Save scan state reset. Next settled save will re-trigger the initial checkpoint.');
 			vscode.window.showInformationMessage(
 				'Ariadne Debug: Save scan state reset. Next settled save will re-trigger the initial checkpoint.',
