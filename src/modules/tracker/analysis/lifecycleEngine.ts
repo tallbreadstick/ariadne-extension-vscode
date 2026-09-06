@@ -59,8 +59,20 @@ export function processObservation(
 	observedFindings: ObservedFinding[],
 	existingLifecycles: FindingLifecycleRecord[],
 	timestamp: number,
-	policy: LifecyclePolicy = LIFECYCLE_POLICY,
+	isSettledOrPolicy: boolean | LifecyclePolicy = true,
+	maybePolicy?: LifecyclePolicy,
 ): ObservationResult {
+	let isSettled = true;
+	let policy: LifecyclePolicy = LIFECYCLE_POLICY;
+
+	if (typeof isSettledOrPolicy === 'boolean') {
+		isSettled = isSettledOrPolicy;
+		if (maybePolicy) {
+			policy = maybePolicy;
+		}
+	} else if (typeof isSettledOrPolicy === 'object' && isSettledOrPolicy !== null) {
+		policy = isSettledOrPolicy;
+	}
 
 	// Index observed findings by logical fingerprint for O(1) lookup
 	const observedMap = new Map<string, ObservedFinding>();
@@ -77,9 +89,9 @@ export function processObservation(
 
 		if (observed) {
 			matchedFingerprints.add(lifecycle.logicalFingerprint);
-			updateActiveLifecycle(lifecycle, observed, timestamp);
+			updateActiveLifecycle(lifecycle, observed, timestamp, isSettled);
 		} else {
-			updateAbsentLifecycle(lifecycle, timestamp, policy);
+			updateAbsentLifecycle(lifecycle, timestamp, policy, isSettled);
 		}
 	}
 
@@ -113,44 +125,56 @@ function updateActiveLifecycle(
 	lifecycle: FindingLifecycleRecord,
 	observed: ObservedFinding,
 	timestamp: number,
+	isSettled: boolean,
 ): void {
 	const previousCount = lifecycle.currentOccurrenceCount;
 
-	// ── Reappearance after provisional resolution ───────────────
-	if (lifecycle.provisionalResolutionAt !== null && lifecycle.durableResolutionAt === null) {
-		// Finding came back before durable resolution was confirmed
-		checkIdenticalRestoration(lifecycle, observed);
-		lifecycle.provisionalResolutionAt = null;
+	// Update live occurrence and path
+	lifecycle.currentOccurrenceCount = observed.occurrenceCount;
+	lifecycle.filePath = observed.filePath;
+
+	// Live scan (unsettled) updates presence for UI, but does not commit confirmations or state transitions
+	if (!isSettled) {
+		if (observed.contentFingerprint) {
+			lifecycle.contentFingerprint = observed.contentFingerprint;
+		}
+		if (observed.scopeFingerprint) {
+			lifecycle.scopeFingerprint = observed.scopeFingerprint;
+		}
+		return;
 	}
 
 	// ── Recurrence after durable resolution ─────────────────────
 	if (lifecycle.durableResolutionAt !== null) {
+		checkIdenticalRestoration(lifecycle, observed);
 		lifecycle.recurrenceCount += 1;
-		// Reset resolution state — finding is active again
 		lifecycle.durableResolutionAt = null;
 		lifecycle.provisionalResolutionAt = null;
-		// Start a new baseline for this recurrence cycle
+		lifecycle.missingSince = null;
 		lifecycle.baselineOccurrenceCount = observed.occurrenceCount;
 		console.log(
 			`[Ariadne Lifecycle] Recurrence #${lifecycle.recurrenceCount} ` +
 			`for ${lifecycle.type} (${lifecycle.logicalFingerprint.slice(0, 16)})`,
 		);
+	} else if (lifecycle.missingSince !== null || lifecycle.provisionalResolutionAt !== null) {
+		// ── Reappearance after absence / provisional resolution ─────
+		checkIdenticalRestoration(lifecycle, observed);
+		lifecycle.missingSince = null;
+		lifecycle.provisionalResolutionAt = null;
 	}
 
-	// ── Standard confirmation update ────────────────────────────
-	lifecycle.confirmationCount += 1;
-	lifecycle.lastConfirmedAt = timestamp;
-	lifecycle.currentOccurrenceCount = observed.occurrenceCount;
-	lifecycle.missingSince = null;
-	lifecycle.filePath = observed.filePath;
-
-	// Update content/scope fingerprints if the scanner provides them
+	// Update content/scope fingerprints to latest observation after restoration check
 	if (observed.contentFingerprint) {
 		lifecycle.contentFingerprint = observed.contentFingerprint;
 	}
 	if (observed.scopeFingerprint) {
 		lifecycle.scopeFingerprint = observed.scopeFingerprint;
 	}
+
+	// ── Settled confirmation update ─────────────────────────────
+	lifecycle.confirmationCount += 1;
+	lifecycle.lastConfirmedAt = timestamp;
+	lifecycle.missingSince = null;
 
 	// Track previous count for delta reporting
 	// (stored transiently — the classification step reads it from the lifecycle)
@@ -170,9 +194,15 @@ function updateAbsentLifecycle(
 	lifecycle: FindingLifecycleRecord,
 	timestamp: number,
 	policy: LifecyclePolicy,
+	isSettled: boolean,
 ): void {
 	// Already durably resolved — nothing to do
 	if (lifecycle.durableResolutionAt !== null) {
+		return;
+	}
+
+	// Unsettled observations (live typing) do not advance absence or resolution
+	if (!isSettled) {
 		return;
 	}
 
@@ -219,9 +249,11 @@ function checkIdenticalRestoration(
 	lifecycle: FindingLifecycleRecord,
 	observed: ObservedFinding,
 ): void {
-	// Content/scope fingerprints are empty until the scanner provides them.
-	// When empty, we cannot determine identical restoration — skip.
+	// Content/scope fingerprints are required to determine identical restoration.
 	if (!lifecycle.contentFingerprint || !observed.contentFingerprint) {
+		return;
+	}
+	if (!lifecycle.scopeFingerprint || !observed.scopeFingerprint) {
 		return;
 	}
 
@@ -264,10 +296,11 @@ function createLifecycleRecord(
 		durableResolutionAt: null,
 		baselineOccurrenceCount: finding.occurrenceCount,
 		currentOccurrenceCount: finding.occurrenceCount,
-		confirmationCount: 1,
+		confirmationCount: 0,
 		recurrenceCount: 0,
 		inSessionToggleCount: 0,
 		identicalRestorationCount: 0,
+		lifecycleState: 'candidate',
 	};
 }
 
@@ -283,7 +316,8 @@ function createLifecycleRecord(
  * 2. Resolved  — durably resolved AND NOT currently active
  * 3. Improving — active AND occurrence count < baseline
  * 4. Persisting — active AND met duration/confirmation thresholds
- * 5. Candidate — not yet eligible (internal only)
+ * 5. Active     — active AND confirmed by at least 1 settled scan
+ * 6. Candidate  — not yet eligible (internal only)
  */
 function classifyLifecycle(
 	lifecycle: FindingLifecycleRecord,
@@ -291,6 +325,7 @@ function classifyLifecycle(
 	policy: LifecyclePolicy,
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
+	lifecycle.lifecycleState = status;
 
 	return {
 		lifecycle,
@@ -340,7 +375,12 @@ export function classifyFinding(
 		return 'persisting';
 	}
 
-	// 5. Candidate: not yet eligible for public classification
+	// 5. Active: confirmed by at least 1 settled scan, currently active
+	if (isCurrentlyActive && lifecycle.confirmationCount >= 1) {
+		return 'active';
+	}
+
+	// 6. Candidate: not yet confirmed by a settled scan (newly observed or unsettled)
 	return 'candidate';
 }
 
