@@ -497,6 +497,7 @@ export function activate(context: vscode.ExtensionContext) {
 				observedFindings,
 				lifecycles,
 				timestamp,
+				true,
 			);
 			lifecycles = result.lifecycles;
 
@@ -648,11 +649,7 @@ export function activate(context: vscode.ExtensionContext) {
 					`\n  │ Lifecycles      : ${s.lifecycleSummaries.length}`,
 				);
 				for (const lc of s.lifecycleSummaries) {
-					const lcStatus = lc.durableResolutionAt
-						? 'RESOLVED'
-						: lc.missingSince
-							? 'ABSENT'
-							: 'ACTIVE';
+					const lcStatus = (lc.lifecycleState ?? classifyFinding(lc, s.endedAt ?? Date.now())).toUpperCase();
 					console.log(
 						`  │   [${lcStatus}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
 						`\n  │     Severity      : ${lc.severity}` +
