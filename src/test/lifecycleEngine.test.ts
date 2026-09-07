@@ -8,6 +8,8 @@ import type {
 	ObservedFinding,
 } from '../modules/tracker/analysis/lifecycleTypes.js';
 import { LIFECYCLE_POLICY } from '../modules/tracker/analysis/lifecycleTypes.js';
+import { metadataToObservedFindings } from '../modules/detection/bridge/convert.js';
+import type { VulnerabilityMetadata } from '../modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 
 function createMockFinding(overrides: Partial<ObservedFinding> = {}): ObservedFinding {
 	return {
@@ -404,6 +406,131 @@ describe('Lifecycle Engine Test Suite', () => {
 			// Recurring: recurrenceCount >= 1 and active
 			const recurringRecord = { ...baseRecord, confirmationCount: 1, recurrenceCount: 1 };
 			assert.strictEqual(classifyFinding(recurringRecord, 2000), 'recurring');
+		});
+	});
+
+	describe('10. Strict 1-to-1 Instance Mapping (Parity)', () => {
+		it('maps scanner findings 1-to-1 to ObservedFindings without collapsing identical logical_fingerprints', () => {
+			const rawFindings: VulnerabilityMetadata[] = [
+				{
+					type: 'Path Traversal',
+					cwe_id: 'CWE-22',
+					owasp_category: 'A01:2021',
+					severity: 'high',
+					file_path: '/src/ReviewController.java',
+					line_number: 85,
+					rule_id: 'taint.path.fileApi',
+					instance_name: 'submitReview',
+					logical_fingerprint: 'sha256:logical_method_scope',
+					instance_fingerprint: 'sha256:sink_line_85',
+					content_fingerprint: 'sha256:content_line_85',
+					scope_fingerprint: 'sha256:scope_review_controller',
+				},
+				{
+					type: 'Path Traversal',
+					cwe_id: 'CWE-22',
+					owasp_category: 'A01:2021',
+					severity: 'high',
+					file_path: '/src/ReviewController.java',
+					line_number: 92,
+					rule_id: 'taint.path.fileApi',
+					instance_name: 'submitReview',
+					logical_fingerprint: 'sha256:logical_method_scope', // Same method scope!
+					instance_fingerprint: 'sha256:sink_line_92',        // Distinct sink identity!
+					content_fingerprint: 'sha256:content_line_92',
+					scope_fingerprint: 'sha256:scope_review_controller',
+				},
+			];
+
+			const observed = metadataToObservedFindings(rawFindings);
+
+			// Must NOT be collapsed into 1 finding with count 2
+			assert.strictEqual(observed.length, 2, 'Must produce exactly 2 ObservedFindings');
+			assert.strictEqual(observed[0].occurrenceCount, 1);
+			assert.strictEqual(observed[1].occurrenceCount, 1);
+			assert.strictEqual(observed[0].logicalFingerprint, 'sha256:sink_line_85');
+			assert.strictEqual(observed[1].logicalFingerprint, 'sha256:sink_line_92');
+		});
+
+		it('resolves the fixed sink independently while the second sink stays persisting', () => {
+			const rawFindings: VulnerabilityMetadata[] = [
+				{
+					type: 'Path Traversal',
+					cwe_id: 'CWE-22',
+					owasp_category: 'A01:2021',
+					severity: 'high',
+					file_path: '/src/ReviewController.java',
+					line_number: 85,
+					rule_id: 'taint.path.fileApi',
+					instance_fingerprint: 'sha256:sink_line_85',
+					content_fingerprint: 'sha256:content_line_85',
+					scope_fingerprint: 'sha256:scope_review_controller',
+				},
+				{
+					type: 'Path Traversal',
+					cwe_id: 'CWE-22',
+					owasp_category: 'A01:2021',
+					severity: 'high',
+					file_path: '/src/ReviewController.java',
+					line_number: 92,
+					rule_id: 'taint.path.fileApi',
+					instance_fingerprint: 'sha256:sink_line_92',
+					content_fingerprint: 'sha256:content_line_92',
+					scope_fingerprint: 'sha256:scope_review_controller',
+				},
+			];
+
+			// Step 1: Baseline observation with both sinks present (confirmationCount = 0)
+			const t0 = 1_000_000;
+			const observed0 = metadataToObservedFindings(rawFindings);
+			const step1 = processObservation(observed0, [], t0, true);
+
+			// Step 2: First settled confirmation at t0 + 10s (confirmationCount = 1)
+			const step2 = processObservation(observed0, step1.lifecycles, t0 + 10_000, true);
+			assert.strictEqual(step2.classifications[0].status, 'active');
+
+			// Step 3: Second settled confirmation at t0 + 35s (confirmationCount = 2, age >= 30s) -> persisting!
+			const t1 = t0 + 35_000;
+			const step3 = processObservation(observed0, step2.lifecycles, t1, true);
+
+			assert.strictEqual(step3.lifecycles.length, 2);
+			assert.strictEqual(step3.classifications[0].status, 'persisting');
+			assert.strictEqual(step3.classifications[1].status, 'persisting');
+
+			// Step 4: Student fixes Line 85! Only Line 92 is present in the scan
+			const rawFindingsAfterFix: VulnerabilityMetadata[] = [rawFindings[1]];
+			const observedFixed = metadataToObservedFindings(rawFindingsAfterFix);
+
+			const tFix = t1 + 5_000;
+			const stepFix1 = processObservation(observedFixed, step3.lifecycles, tFix, true);
+
+			// Line 85 is now missing (first absence)
+			const lc85_step1 = stepFix1.lifecycles.find(l => l.logicalFingerprint === 'sha256:sink_line_85')!;
+			const lc92_step1 = stepFix1.lifecycles.find(l => l.logicalFingerprint === 'sha256:sink_line_92')!;
+
+			assert.strictEqual(lc85_step1.missingSince, tFix);
+			assert.strictEqual(lc92_step1.missingSince, null);
+			assert.strictEqual(lc92_step1.lifecycleState, 'persisting');
+
+			// Step 5: After grace period (6s later), Line 85 is confirmed absent -> durable resolution!
+			const tFixDurable = tFix + 6_000;
+			// Pass 1 after grace period: provisional resolution
+			const stepFix2 = processObservation(observedFixed, stepFix1.lifecycles, tFixDurable, true);
+			// Pass 2: durable resolution confirmed
+			const stepFix3 = processObservation(observedFixed, stepFix2.lifecycles, tFixDurable + 1000, true);
+
+			const lc85_final = stepFix3.lifecycles.find(l => l.logicalFingerprint === 'sha256:sink_line_85')!;
+			const lc92_final = stepFix3.lifecycles.find(l => l.logicalFingerprint === 'sha256:sink_line_92')!;
+
+			assert.strictEqual(lc85_final.lifecycleState, 'resolved');
+			assert.strictEqual(lc92_final.lifecycleState, 'persisting');
+
+			// Exactly 1 resolved, 1 persisting!
+			const resolvedCount = stepFix3.classifications.filter(c => c.status === 'resolved').length;
+			const persistingCount = stepFix3.classifications.filter(c => c.status === 'persisting').length;
+
+			assert.strictEqual(resolvedCount, 1, 'Exactly 1 finding must be classified as resolved');
+			assert.strictEqual(persistingCount, 1, 'Exactly 1 finding must remain persisting');
 		});
 	});
 });

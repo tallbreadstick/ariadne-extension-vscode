@@ -154,4 +154,14 @@ Within each section, newest decision at the top.
   latest save gets the next chance to settle.
 - task: docs/ai/tasks/2026-09-06-save-triggered-scan.md
 
+### Strict 1-to-1 finding lifecycle record (FLC) mapping
+
+- date: 2026-09-07
+- status: accepted
+- context: In `metadataToObservedFindings()`, findings emitted by the scanner were previously grouped by `deriveLogicalFingerprint()`, collapsing multiple sink occurrences in the same method into a single `ObservedFinding` with `occurrenceCount > 1`. On `arinda-backend-trend-test`, this caused a discrepancy where the Active Vulnerabilities UI showed 20 items while the lifecycle debug dump showed 18 FLCs. Furthermore, when a student fixed one sink in a multi-sink method, the FLC entered `improving` instead of awarding immediate `resolved` credit, producing $F = 0.00$ because the $F = (R / B) \times 10$ formula counts durably resolved FLC members.
+- decision: Adopt a strict 1-to-1 mapping where every scanner-reported `VulnerabilityMetadata` item produces exactly one `ObservedFinding` and one FLC with `occurrenceCount = 1`. The primary identity key uses the scanner's `instance_fingerprint` (which incorporates rule, CWE, scope, and normalized sink slice), with fallback to `${logical_fingerprint}:${content_fingerprint}`.
+- consequences: Perfect 1-to-1 parity between the Active Vulnerabilities UI (20 items) and lifecycle records (20 FLCs). Fixing an individual sink removes that specific FLC, transitioning it to `resolved` and immediately increasing the student's Fixing Rate ($F$) and reducing Persistence Pressure ($P$). Category-level improvement is reported in Trends rather than on a single collapsed FLC.
+- task: docs/ai/tasks/2026-09-07-1-to-1-flc-mapping.md
+
 <!-- Add new post-MVP decisions above this line -->
+
