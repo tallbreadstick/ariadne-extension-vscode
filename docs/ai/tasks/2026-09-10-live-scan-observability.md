@@ -21,11 +21,11 @@
 
 ## Current state
 
-- status: in progress
+- status: completed
 - current owner: Antigravity
-- next action: test in extension development host with test project
+- next action: ready for team review and merge into feature/1-to-1-flc-mapping or master
 - blockers: none
-- last checked: 2026-09-10T21:18:00+08:00
+- last checked: 2026-09-10T22:34:00+08:00
 
 ## Progress checklist
 
