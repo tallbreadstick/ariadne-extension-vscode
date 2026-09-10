@@ -428,6 +428,10 @@ export function activate(context: vscode.ExtensionContext) {
 		// Only results from a pending save scan are candidates for Trends.
 		if (pendingSaveRevision === null) {
 			// Live-edit result — UI already updated above, done.
+			console.log(
+				`[Ariadne Live Scan] Evaluated ${findings.length} findings ` +
+				`(${vulns.length} active vulnerabilities displayed).`,
+			);
 			return;
 		}
 

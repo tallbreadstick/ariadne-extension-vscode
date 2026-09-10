@@ -20,8 +20,8 @@ export function resolveAriadneExecutable(): string {
 
 	for (const folder of vscode.workspace.workspaceFolders ?? []) {
 		for (const candidate of [
-			join(folder.uri.fsPath, 'target', 'debug', 'ariadne'),
 			join(folder.uri.fsPath, 'target', 'release', 'ariadne'),
+			join(folder.uri.fsPath, 'target', 'debug', 'ariadne'),
 		]) {
 			if (existsSync(candidate)) {
 				return candidate;
