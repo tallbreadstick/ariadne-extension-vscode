@@ -186,6 +186,14 @@ function createResolvedPlaceholder(
  * Notifications are auto-generated from the vulnerability deltas.
  */
 export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
+	// Build per-type sub-items for recurring findings
+	const recurringItems = analysis.deltas
+		.filter(d => d.status === 'recurring')
+		.map(d => ({
+			type: d.vulnerability.type,
+			instances: d.currentInstanceCount,
+		}));
+
 	return {
 		critical: analysis.severityCounts.critical,
 		high: analysis.severityCounts.high,
@@ -195,6 +203,8 @@ export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
 			persistingPatterns: analysis.persistingPatterns,
 			improvingTrends: analysis.improvingTrends,
 			resolvedThisSession: analysis.resolvedThisSession,
+			recurringPatterns: analysis.recurringPatterns,
+			recurringItems: recurringItems.length > 0 ? recurringItems : undefined,
 		},
 		notifications: generateNotifications(analysis),
 	};

@@ -227,7 +227,7 @@ export function activate(context: vscode.ExtensionContext) {
 	let initialVulnsHtml = buildVulnsHtml([], store);
 	let initialMetricsHtml = buildSessionMetricsHtml({
 		critical: 0, high: 0, medium: 0, low: 0,
-		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 },
+		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0, recurringPatterns: 0 },
 	});
 
 	// Restore UI from lifecycle data if available

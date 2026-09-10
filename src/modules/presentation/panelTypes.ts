@@ -67,6 +67,11 @@ export interface TrendData {
 	/** Unique instances fully resolved during this session. */
 	resolvedThisSession: number;
 	/**
+	 * Count of vulnerabilities that have recurred after durable resolution
+	 * and met the recurrence threshold.
+	 */
+	recurringPatterns: number;
+	/**
 	 * Per-vulnerability detail for the Persisting Patterns collapsible row.
 	 * Optional — placeholder rows are shown when absent.
 	 */
