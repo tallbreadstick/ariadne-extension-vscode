@@ -558,21 +558,6 @@ export function activate(context: vscode.ExtensionContext) {
 		}, 2000);
 	});
 
-	// ── Finalize session on deactivation ─────────────────────────────────
-	context.subscriptions.push({
-		dispose: () => {
-			if (activeSession !== null) {
-				const finalized = finalizeSession(activeSession, lifecycles, Date.now());
-				// Best-effort persist — VS Code may not await this
-				void store.appendCompletedSession(finalized);
-				void store.clearActiveSession();
-			}
-			saveScanState.initialCheckpointDoneAt = null;
-			saveScanState.totalSaveScansThisSession = 0;
-			void store.saveSaveScanState(saveScanState);
-			session.kill();
-		},
-	});
 
 	// Re-apply decorations whenever the user switches to a different tab
 	// (decorations are editor-bound, not document-bound, in VS Code).
@@ -924,10 +909,14 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Case A: Clean workspace — no modifications since last settled save
 		if (lastSettledRevision !== null && currentRev === lastSettledRevision && !hasDirtyTrackedDocs) {
+			console.log(`[Ariadne] Clean deactivation: finalizing session ${activeSession.sessionId} as 'completed'...`);
 			const timestamp = Date.now();
 			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
 			await store.appendCompletedSession(finalized);
 			await store.clearActiveSession();
+			saveScanState.initialCheckpointDoneAt = null;
+			saveScanState.totalSaveScansThisSession = 0;
+			await store.saveSaveScanState(saveScanState);
 			console.log(`[Ariadne] Session ${activeSession.sessionId} finalized cleanly as 'completed'.`);
 			session.kill();
 			return;
@@ -979,6 +968,9 @@ export function activate(context: vscode.ExtensionContext) {
 			await store.appendCompletedSession(incomplete);
 			await store.clearActiveSession();
 		} finally {
+			saveScanState.initialCheckpointDoneAt = null;
+			saveScanState.totalSaveScansThisSession = 0;
+			await store.saveSaveScanState(saveScanState);
 			session.kill();
 		}
 	};

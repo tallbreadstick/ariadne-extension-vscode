@@ -11,7 +11,7 @@
 			"request": "launch",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}",
-				"/home/tallbreadstick/Projects/Rust/Clap/ariadne-core"
+				"/home/zdrco/Projects/School/arinda-housing/back/arinda-backend"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"
