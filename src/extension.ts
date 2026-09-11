@@ -202,14 +202,15 @@ export function activate(context: vscode.ExtensionContext) {
 	// Held until the timer expires or is cancelled.
 	let pendingSettlementFindings: import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').VulnerabilityMetadata[] | null = null;
 
-	// If a previous active session exists (e.g. VS Code reloaded before
-	// deactivation could persist), finalize it now and start fresh.
+	// If a previous active session exists (e.g. VS Code crashed or closed
+	// abruptly before deactivation could persist), recover it as incomplete.
+	// Reference: Section 9 of ariadne-trends-framework-lead-review-answers.md
 	const staleSession = store.loadActiveSession();
 	if (staleSession) {
-		const finalized = finalizeSession(staleSession, lifecycles, Date.now());
-		void store.appendCompletedSession(finalized);
+		const recovered = finalizeSession(staleSession, lifecycles, Date.now(), 'incomplete');
+		void store.appendCompletedSession(recovered);
 		void store.clearActiveSession();
-		console.log(`[Ariadne] Finalized stale session ${staleSession.sessionId} from previous activation.`);
+		console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
 	}
 
 	// Save-scan settlement state is session-scoped. Since we start with no
