@@ -934,8 +934,8 @@ export function activate(context: vscode.ExtensionContext) {
 		try {
 			const finalFindings = await new Promise<VulnerabilityMetadata[]>((resolve, reject) => {
 				const timeout = setTimeout(() => {
-					reject(new Error('Final session scan timed out (3000ms)'));
-				}, 3000);
+					reject(new Error('Final session scan timed out (4000ms)'));
+				}, 4000);
 
 				const sub = session.onFindings((findings) => {
 					clearTimeout(timeout);
