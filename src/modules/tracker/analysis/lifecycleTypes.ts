@@ -177,6 +177,16 @@ export interface FindingLifecycleRecord {
 	recurrenceCount: number;
 
 	/**
+	 * Epoch ms when the most recent recurrence was recorded
+	 * (durable-resolved → active). Null if never recurred.
+	 *
+	 * Used as the reference point for persisting thresholds after
+	 * recurrence — the 30s clock and confirmation counter restart
+	 * from this timestamp, not from firstConfirmedAt.
+	 */
+	lastRecurredAt: number | null;
+
+	/**
 	 * Within-session active → absent → active cycles with identical
 	 * content/scope fingerprints. Measurement-integrity counter.
 	 */
