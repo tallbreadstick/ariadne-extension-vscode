@@ -652,6 +652,7 @@ export function activate(context: vscode.ExtensionContext) {
 				const finalCount = s.finalCheckpoint?.findings.length ?? 0;
 				console.log(
 					`\n  ┌─ ${s.sessionId} ──────────────────────────────` +
+					`\n  │ Status          : ${(s.status ?? (s.endedAt ? 'completed' : 'active')).toUpperCase()}` +
 					`\n  │ Started At      : ${new Date(s.startedAt).toISOString()}` +
 					`\n  │ Ended At        : ${s.endedAt ? new Date(s.endedAt).toISOString() : '(not finalized)'}` +
 					`\n  │ Duration        : ${duration}` +
