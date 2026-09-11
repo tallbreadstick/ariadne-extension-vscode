@@ -21,9 +21,9 @@
 
 ## Current state
 
-- status: in progress
+- status: completed
 - current owner: Abel (Antigravity)
-- next action: implement models and deactivation handler
+- next action: ready for integration with previous session recovery task
 - blockers: none
 - last checked: 2026-09-11
 
