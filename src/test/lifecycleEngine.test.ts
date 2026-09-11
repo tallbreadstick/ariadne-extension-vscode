@@ -2,6 +2,10 @@ import * as assert from 'assert';
 import {
 	processObservation,
 	classifyFinding,
+	startSession,
+	setSessionBaseline,
+	updateSessionLatest,
+	finalizeSession,
 } from '../modules/tracker/analysis/lifecycleEngine.js';
 import type {
 	FindingLifecycleRecord,
@@ -531,6 +535,79 @@ describe('Lifecycle Engine Test Suite', () => {
 
 			assert.strictEqual(resolvedCount, 1, 'Exactly 1 finding must be classified as resolved');
 			assert.strictEqual(persistingCount, 1, 'Exactly 1 finding must remain persisting');
+		});
+	});
+
+	describe('11. Session Lifecycle & Deactivation Finalization', () => {
+		it('starts session with status active and null endedAt', () => {
+			const tStart = 10000;
+			const session = startSession('session-001', tStart);
+
+			assert.strictEqual(session.sessionId, 'session-001');
+			assert.strictEqual(session.startedAt, tStart);
+			assert.strictEqual(session.endedAt, null);
+			assert.strictEqual(session.status, 'active');
+			assert.strictEqual(session.baselineCheckpoint, null);
+			assert.strictEqual(session.finalCheckpoint, null);
+			assert.deepStrictEqual(session.lifecycleSummaries, []);
+		});
+
+		it('captures baseline and latest checkpoints on observations', () => {
+			const tStart = 10000;
+			const session = startSession('session-001', tStart);
+			const mockFindings = [createMockFinding({ instanceName: 'f1' })];
+
+			setSessionBaseline(session, mockFindings, tStart);
+			updateSessionLatest(session, mockFindings, tStart);
+
+			assert.notStrictEqual(session.baselineCheckpoint, null);
+			assert.strictEqual(session.baselineCheckpoint?.timestamp, tStart);
+			assert.strictEqual(session.baselineCheckpoint?.findings.length, 1);
+			assert.strictEqual(session.finalCheckpoint?.timestamp, tStart);
+
+			// Subsequent baseline call does NOT overwrite baseline
+			const mockFindings2 = [createMockFinding({ instanceName: 'f1' }), createMockFinding({ instanceName: 'f2' })];
+			setSessionBaseline(session, mockFindings2, tStart + 5000);
+			assert.strictEqual(session.baselineCheckpoint?.findings.length, 1);
+
+			// But updateSessionLatest DOES update final checkpoint
+			updateSessionLatest(session, mockFindings2, tStart + 5000);
+			assert.strictEqual(session.finalCheckpoint?.timestamp, tStart + 5000);
+			assert.strictEqual(session.finalCheckpoint?.findings.length, 2);
+		});
+
+		it('finalizes session cleanly with status completed', () => {
+			const tStart = 10000;
+			const tEnd = 25000;
+			const session = startSession('session-001', tStart);
+			const mockFinding = createMockFinding();
+			setSessionBaseline(session, [mockFinding], tStart);
+			updateSessionLatest(session, [mockFinding], tStart);
+
+			const step = processObservation([mockFinding], [], tStart, true);
+			const finalized = finalizeSession(session, step.lifecycles, tEnd, 'completed');
+
+			assert.strictEqual(finalized.sessionId, 'session-001');
+			assert.strictEqual(finalized.startedAt, tStart);
+			assert.strictEqual(finalized.endedAt, tEnd);
+			assert.strictEqual(finalized.status, 'completed');
+			assert.strictEqual(finalized.lifecycleSummaries.length, 1);
+		});
+
+		it('finalizes session with status incomplete on failure or timeout fallback', () => {
+			const tStart = 10000;
+			const tEnd = 20000;
+			const session = startSession('session-002', tStart);
+			const mockFinding = createMockFinding();
+			setSessionBaseline(session, [mockFinding], tStart);
+
+			const step = processObservation([mockFinding], [], tStart, true);
+			const finalized = finalizeSession(session, step.lifecycles, tEnd, 'incomplete');
+
+			assert.strictEqual(finalized.sessionId, 'session-002');
+			assert.strictEqual(finalized.endedAt, tEnd);
+			assert.strictEqual(finalized.status, 'incomplete');
+			assert.strictEqual(finalized.lifecycleSummaries.length, 1);
 		});
 	});
 });

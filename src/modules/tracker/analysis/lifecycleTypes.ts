@@ -283,10 +283,20 @@ export interface SessionCheckpoint {
 // ══════════════════════════════════════════════════════════════════════
 
 /**
- * Record for a completed or active observation session.
+ * Completion status of an observation session.
  *
- * Stores the session boundaries, baseline/final checkpoints, and
- * per-finding lifecycle summaries at session end.
+ * - `active` — Session is currently in progress.
+ * - `completed` — Session finalized cleanly with a valid final checkpoint.
+ * - `incomplete` — Session terminated abruptly or final scan failed/timed out on a dirty workspace.
+ */
+export type SessionStatus = 'active' | 'completed' | 'incomplete';
+
+/**
+ * Persisted record of an entire observation session.
+ *
+ * Stored in workspaceState:
+ * - `ariadne.activeSession` (current session, while active)
+ * - `ariadne.completedSessions` (appended on session finalization)
  *
  * Reference: Section 6.2 — SessionRecord
  */
@@ -299,6 +309,12 @@ export interface SessionRecord {
 
 	/** Epoch ms when the session ended. Null while the session is active. */
 	endedAt: number | null;
+
+	/**
+	 * Completion status of the session.
+	 * 'active' while running, 'completed' or 'incomplete' when ended.
+	 */
+	status?: SessionStatus;
 
 	/**
 	 * Snapshot of findings at the first settled observation.

@@ -41,7 +41,7 @@ function isTrackedFilePath(fsPath: string): boolean {
 	return base === 'application.properties' || base === '.gitignore' || base === '.env';
 }
 
-function isTrackedDocument(doc: vscode.TextDocument): boolean {
+export function isTrackedDocument(doc: vscode.TextDocument): boolean {
 	return isTrackedFilePath(doc.uri.fsPath);
 }
 
@@ -179,6 +179,36 @@ function cancelPendingUpdate(filePath: string): void {
 	}
 	clearTimers(state);
 	fileUpdateState.delete(filePath);
+}
+
+/**
+ * Flushes all pending in-memory buffer edits to the engine immediately.
+ * Called during deactivation so the engine's forest is fully synced before
+ * a final scan or shutdown.
+ */
+export function flushAllPendingUpdates(session: AriadneSession): void {
+	for (const [filePath, state] of fileUpdateState.entries()) {
+		if (state.pending) {
+			const doc = resolveDocument(filePath);
+			if (doc) {
+				console.log(`[Ariadne TS] Shutdown flush: syncing ${filePath}`);
+				sendFullDocumentUpdate(session, doc);
+			}
+			state.pending = false;
+		}
+		clearTimers(state);
+	}
+	fileUpdateState.clear();
+}
+
+/**
+ * Cancels all pending debounce and max-wait timers across all files.
+ */
+export function cancelAllPendingUpdates(): void {
+	for (const state of fileUpdateState.values()) {
+		clearTimers(state);
+	}
+	fileUpdateState.clear();
 }
 
 /**

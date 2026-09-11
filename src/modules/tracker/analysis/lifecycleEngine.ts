@@ -396,6 +396,7 @@ export function startSession(sessionId: string, timestamp: number): SessionRecor
 		sessionId,
 		startedAt: timestamp,
 		endedAt: null,
+		status: 'active',
 		baselineCheckpoint: null,
 		finalCheckpoint: null,
 		lifecycleSummaries: [],
@@ -440,17 +441,20 @@ export function updateSessionLatest(
 }
 
 /**
- * Finalizes an active session by capturing lifecycle summaries
+ * Finalizes an active session by capturing lifecycle summaries,
+ * recording completion status ('completed' or 'incomplete'),
  * and setting the end timestamp.
  */
 export function finalizeSession(
 	session: SessionRecord,
 	lifecycles: FindingLifecycleRecord[],
 	timestamp: number,
+	status: 'completed' | 'incomplete' = 'completed',
 ): SessionRecord {
 	return {
 		...session,
 		endedAt: timestamp,
+		status,
 		lifecycleSummaries: lifecycles.map(lc => ({ ...lc })),
 	};
 }
