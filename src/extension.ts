@@ -133,7 +133,7 @@ function buildVulnsHtml(vulns: Vulnerability[], store: SessionStore): string {
 // ─────────────────────────────────────────────────────────────────────
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
@@ -202,15 +202,20 @@ export function activate(context: vscode.ExtensionContext) {
 	// Held until the timer expires or is cancelled.
 	let pendingSettlementFindings: import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').VulnerabilityMetadata[] | null = null;
 
-	// If a previous active session exists (e.g. VS Code crashed or closed
-	// abruptly before deactivation could persist), recover it as incomplete.
-	// Reference: Section 9 of ariadne-trends-framework-lead-review-answers.md
-	const staleSession = store.loadActiveSession();
-	if (staleSession) {
-		const recovered = finalizeSession(staleSession, lifecycles, Date.now(), 'incomplete');
-		void store.appendCompletedSession(recovered);
-		void store.clearActiveSession();
-		console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
+	// 1. Recover any cleanly finalized session persisted synchronously to disk during deactivation
+	const pendingFinalized = await store.recoverPendingFinalizedSession();
+
+	// 2. If no pending finalized session was recovered, check if an unfinalized session exists
+	// (e.g. VS Code crashed or closed abruptly before deactivation could run).
+	// In that case, recover it as incomplete per Section 9 of the trends framework.
+	if (!pendingFinalized) {
+		const staleSession = store.loadActiveSession();
+		if (staleSession) {
+			const recovered = finalizeSession(staleSession, lifecycles, Date.now(), 'incomplete');
+			void store.appendCompletedSession(recovered);
+			void store.clearActiveSession();
+			console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
+		}
 	}
 
 	// Save-scan settlement state is session-scoped. Since we start with no
@@ -913,11 +918,12 @@ export function activate(context: vscode.ExtensionContext) {
 			console.log(`[Ariadne] Clean deactivation: finalizing session ${activeSession.sessionId} as 'completed'...`);
 			const timestamp = Date.now();
 			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
-			await store.appendCompletedSession(finalized);
-			await store.clearActiveSession();
+			store.saveFinalizedSessionSync(finalized);
+			void store.appendCompletedSession(finalized);
+			void store.clearActiveSession();
 			saveScanState.initialCheckpointDoneAt = null;
 			saveScanState.totalSaveScansThisSession = 0;
-			await store.saveSaveScanState(saveScanState);
+			void store.saveSaveScanState(saveScanState);
 			console.log(`[Ariadne] Session ${activeSession.sessionId} finalized cleanly as 'completed'.`);
 			session.kill();
 			return;
@@ -953,11 +959,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 			const result = processObservation(observed, lifecycles, timestamp, true);
 			lifecycles = result.lifecycles;
-			await store.saveFindingLifecycles(lifecycles);
+			void store.saveFindingLifecycles(lifecycles);
 
 			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
-			await store.appendCompletedSession(finalized);
-			await store.clearActiveSession();
+			store.saveFinalizedSessionSync(finalized);
+			void store.appendCompletedSession(finalized);
+			void store.clearActiveSession();
 			console.log(`[Ariadne] Final scan completed. Session ${activeSession.sessionId} finalized as 'completed'.`);
 		} catch (err) {
 			console.warn(
@@ -966,12 +973,13 @@ export function activate(context: vscode.ExtensionContext) {
 			);
 			const timestamp = Date.now();
 			const incomplete = finalizeSession(activeSession, lifecycles, timestamp, 'incomplete');
-			await store.appendCompletedSession(incomplete);
-			await store.clearActiveSession();
+			store.saveFinalizedSessionSync(incomplete);
+			void store.appendCompletedSession(incomplete);
+			void store.clearActiveSession();
 		} finally {
 			saveScanState.initialCheckpointDoneAt = null;
 			saveScanState.totalSaveScansThisSession = 0;
-			await store.saveSaveScanState(saveScanState);
+			void store.saveSaveScanState(saveScanState);
 			session.kill();
 		}
 	};

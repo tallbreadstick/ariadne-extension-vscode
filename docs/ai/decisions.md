@@ -163,5 +163,14 @@ Within each section, newest decision at the top.
 - consequences: Perfect 1-to-1 parity between the Active Vulnerabilities UI (20 items) and lifecycle records (20 FLCs). Fixing an individual sink removes that specific FLC, transitioning it to `resolved` and immediately increasing the student's Fixing Rate ($F$) and reducing Persistence Pressure ($P$). Category-level improvement is reported in Trends rather than on a single collapsed FLC.
 - task: docs/ai/tasks/2026-09-07-1-to-1-flc-mapping.md
 
+### Synchronous Shutdown Persistence for Session Finalization
+
+- date: 2026-09-12
+- status: accepted
+- context: In VS Code, `context.workspaceState.update()` communicates over an internal RPC channel from the Extension Host process to the main window process. During extension deactivation (window closing), VS Code tears down the main-thread RPC listeners, immediately cancelling or failing to resolve outbound `workspaceState.update()` promises. In the previous implementation, `await store.appendCompletedSession()` and `await store.clearActiveSession()` inside `deactivate()` hung indefinitely until the extension host was force-killed by the OS/watchdog. On next activation, startup recovery found the abandoned active session and unconditionally marked it `incomplete`. This broke the research framework because Trend ($T = F_{\text{current}} - F_{\text{prev\_completed}}$) requires comparing against a prior `completed` session; with all sessions becoming `incomplete`, $T$ could never be calculated.
+- decision: Implement a synchronous local flush pattern via Node.js native `fs.writeFileSync`. Inside `deactivate()`, when a session is finalized (either clean as `'completed'` or timed-out/failed as `'incomplete'`), `SessionStore.saveFinalizedSessionSync()` writes a local JSON file (`pending-finalized-session.json`) in `context.storageUri` in <1ms without using VS Code's IPC. On next activation, `SessionStore.recoverPendingFinalizedSession()` checks for this file, safely loads it into `completedSessions` in `workspaceState` (while IPC is 100% healthy), and unlinks the file. Only if no pending finalized file exists is an abandoned active session recovered as `incomplete` (handling abrupt power cuts or SIGKILL).
+- consequences: Clean shutdowns reliably persist as `completed`, restoring the Trend ($T$) calculation baseline across student sessions. Zero changes to the Rust scanner core or live scan debouncing. Zero background file overhead during normal typing.
+- task: docs/ai/tasks/2026-09-12-eager-settled-persistence.md
+
 <!-- Add new post-MVP decisions above this line -->
 

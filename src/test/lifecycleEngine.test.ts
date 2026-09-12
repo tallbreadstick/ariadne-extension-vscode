@@ -1,4 +1,9 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import * as vscode from 'vscode';
+import { SessionStore } from '../modules/tracker/storage/sessionStore.js';
 import {
 	processObservation,
 	classifyFinding,
@@ -608,6 +613,87 @@ describe('Lifecycle Engine Test Suite', () => {
 			assert.strictEqual(finalized.endedAt, tEnd);
 			assert.strictEqual(finalized.status, 'incomplete');
 			assert.strictEqual(finalized.lifecycleSummaries.length, 1);
+		});
+	});
+
+	// ── 12. Synchronous Shutdown Persistence & Recovery ───────────────
+	describe('12. Synchronous Shutdown Persistence & Recovery', () => {
+		let tempDir: string;
+		let mockContext: vscode.ExtensionContext;
+		let memento: Map<string, any>;
+
+		beforeEach(() => {
+			tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ariadne-test-store-'));
+			memento = new Map<string, any>();
+			mockContext = {
+				storageUri: { fsPath: tempDir },
+				globalStorageUri: { fsPath: tempDir },
+				workspaceState: {
+					get: (key: string, defaultValue?: any) => memento.has(key) ? memento.get(key) : defaultValue,
+					update: async (key: string, value: any) => {
+						if (value === undefined) {
+							memento.delete(key);
+						} else {
+							memento.set(key, value);
+						}
+					},
+				},
+			} as unknown as vscode.ExtensionContext;
+		});
+
+		afterEach(() => {
+			if (fs.existsSync(tempDir)) {
+				fs.rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		it('synchronously persists finalized session to local disk in <1ms', () => {
+			const store = new SessionStore(mockContext);
+			const session = startSession('session-001', 1000);
+			const finalized = finalizeSession(session, [], 2000, 'completed');
+
+			store.saveFinalizedSessionSync(finalized);
+
+			const filePath = store.getFinalizedSessionFilePath();
+			assert.strictEqual(fs.existsSync(filePath), true);
+
+			const raw = fs.readFileSync(filePath, 'utf8');
+			const parsed = JSON.parse(raw);
+			assert.strictEqual(parsed.sessionId, 'session-001');
+			assert.strictEqual(parsed.status, 'completed');
+			assert.strictEqual(parsed.endedAt, 2000);
+		});
+
+		it('recovers pending finalized session, writes to completedSessions, and cleans up file', async () => {
+			const store = new SessionStore(mockContext);
+			const session = startSession('session-001', 1000);
+			const finalized = finalizeSession(session, [], 2000, 'completed');
+
+			// Persist synchronously as if during deactivation
+			store.saveFinalizedSessionSync(finalized);
+			const filePath = store.getFinalizedSessionFilePath();
+			assert.strictEqual(fs.existsSync(filePath), true);
+
+			// Recover as if during next activation
+			const recovered = await store.recoverPendingFinalizedSession();
+			assert.notStrictEqual(recovered, null);
+			assert.strictEqual(recovered!.sessionId, 'session-001');
+			assert.strictEqual(recovered!.status, 'completed');
+
+			// Temporary file must be unlinked/deleted
+			assert.strictEqual(fs.existsSync(filePath), false);
+
+			// Check completed sessions
+			const completed = store.loadCompletedSessions();
+			assert.strictEqual(completed.length, 1);
+			assert.strictEqual(completed[0].sessionId, 'session-001');
+			assert.strictEqual(completed[0].status, 'completed');
+		});
+
+		it('returns null and does not fail if no pending file exists', async () => {
+			const store = new SessionStore(mockContext);
+			const recovered = await store.recoverPendingFinalizedSession();
+			assert.strictEqual(recovered, null);
 		});
 	});
 });

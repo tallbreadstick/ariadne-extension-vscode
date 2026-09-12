@@ -28,6 +28,8 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import type { FindingLifecycleRecord, SessionRecord } from '../analysis/lifecycleTypes.js';
 import type { SessionMeta, UserConfig } from './storageTypes.js';
@@ -173,6 +175,69 @@ export class SessionStore {
 				`Total completed: ${sessions.length}`,
 			);
 		});
+	}
+
+	// ── Synchronous Shutdown Persistence ──────────────────────────
+
+	/** Returns the absolute file path used for synchronous shutdown snapshots. */
+	getFinalizedSessionFilePath(): string {
+		const dir = this.context.storageUri?.fsPath ?? this.context.globalStorageUri.fsPath;
+		return path.join(dir, 'pending-finalized-session.json');
+	}
+
+	/**
+	 * Synchronously persists a finalized session record to local disk.
+	 *
+	 * During deactivation, VS Code tears down internal IPC channels and
+	 * cancels asynchronous workspaceState.update() promises. This method
+	 * uses Node's native fs.writeFileSync to bypass IPC, completing in <1ms
+	 * directly against the OS filesystem.
+	 */
+	saveFinalizedSessionSync(session: SessionRecord): void {
+		try {
+			const filePath = this.getFinalizedSessionFilePath();
+			const dir = path.dirname(filePath);
+			if (!fs.existsSync(dir)) {
+				fs.mkdirSync(dir, { recursive: true });
+			}
+			fs.writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf8');
+			console.log(
+				`[Ariadne Store] Synchronously persisted finalized session ` +
+				`${session.sessionId} (${session.status}) to ${filePath}`,
+			);
+		} catch (err) {
+			console.error('[Ariadne Store] Failed to synchronously persist finalized session:', err);
+		}
+	}
+
+	/**
+	 * Recovers any pending finalized session from the shutdown file.
+	 *
+	 * Called during extension activation. If a pending file exists from a
+	 * clean (or timed-out) deactivation, its contents are loaded into
+	 * workspaceState (completedSessions) and the file is deleted.
+	 */
+	async recoverPendingFinalizedSession(): Promise<SessionRecord | null> {
+		try {
+			const filePath = this.getFinalizedSessionFilePath();
+			if (!fs.existsSync(filePath)) {
+				return null;
+			}
+			const raw = fs.readFileSync(filePath, 'utf8');
+			const session = JSON.parse(raw) as SessionRecord;
+			fs.unlinkSync(filePath);
+
+			await this.appendCompletedSession(session);
+			await this.clearActiveSession();
+			console.log(
+				`[Ariadne Store] Recovered pending finalized session ${session.sessionId} ` +
+				`as '${session.status ?? 'completed'}'.`,
+			);
+			return session;
+		} catch (err) {
+			console.error('[Ariadne Store] Failed to recover pending finalized session:', err);
+			return null;
+		}
 	}
 
 	// ── Finding Lifecycles (workspaceState — per project) ─────────
