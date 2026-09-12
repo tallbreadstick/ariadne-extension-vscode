@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
@@ -70,6 +71,25 @@ function toVulnerabilityMetadata(vuln: Vulnerability): VulnerabilityMetadata {
 		file_path: vuln.filePath,
 		line_number: vuln.line,
 	};
+}
+
+function getWorkspaceFileContent(filePath: string): string | undefined {
+	const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+	const openDoc = vscode.workspace.textDocuments.find(doc => {
+		return doc.uri.fsPath.replace(/\\/g, '/').toLowerCase() === normalized ||
+			doc.fileName.replace(/\\/g, '/').toLowerCase() === normalized;
+	});
+	if (openDoc) {
+		return openDoc.getText();
+	}
+	if (fs.existsSync(filePath)) {
+		try {
+			return fs.readFileSync(filePath, 'utf-8');
+		} catch {
+			return undefined;
+		}
+	}
+	return undefined;
 }
 
 async function focusSignInSidebar(): Promise<void> {
@@ -498,6 +518,7 @@ export function activate(context: vscode.ExtensionContext) {
 				lifecycles,
 				timestamp,
 				true,
+				getWorkspaceFileContent,
 			);
 			lifecycles = result.lifecycles;
 
@@ -733,17 +754,15 @@ export function activate(context: vscode.ExtensionContext) {
 			console.log('╔══════════════════════════════════════════════════════════╗');
 			console.log('║        ARIADNE — SAVE SCAN STATE DEBUG DUMP             ║');
 			console.log('╚══════════════════════════════════════════════════════════╝');
-			console.log(`  Initial Checkpoint      : ${
-				state.initialCheckpointDoneAt
+			console.log(`  Initial Checkpoint      : ${state.initialCheckpointDoneAt
 					? new Date(state.initialCheckpointDoneAt).toISOString()
 					: '(not yet set — no settled scan has been processed)'
-			}`);
+				}`);
 			console.log(`  Settled Scans (session) : ${state.totalSaveScansThisSession}`);
 			console.log(`  Settlement Cancellations: ${state.totalSettledCancellations}`);
 			console.log(`  Workspace Revision      : ${currentRev}`);
-			console.log(`  Pending Save Revision   : ${
-				pendingSaveRevision !== null ? pendingSaveRevision : '(none)'
-			}`);
+			console.log(`  Pending Save Revision   : ${pendingSaveRevision !== null ? pendingSaveRevision : '(none)'
+				}`);
 			console.log(`  Settlement Timer Active : ${settlementTimer !== null}`);
 			console.log('═══════════════════════════════════════════════════════════');
 

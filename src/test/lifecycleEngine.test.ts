@@ -9,7 +9,11 @@ import type {
 } from '../modules/tracker/analysis/lifecycleTypes.js';
 import { LIFECYCLE_POLICY } from '../modules/tracker/analysis/lifecycleTypes.js';
 import { metadataToObservedFindings } from '../modules/detection/bridge/convert.js';
-import type { VulnerabilityMetadata } from '../modules/feedback/vulnerability_results/vulnerabilityTypes.js';
+import type {
+	VulnerabilityMetadata,
+	ScanSnapshot,
+} from '../modules/feedback/vulnerability_results/vulnerabilityTypes.js';
+import { buildSessionAnalysis } from '../modules/tracker/analysis/snapshotAnalyzer.js';
 
 function createMockFinding(overrides: Partial<ObservedFinding> = {}): ObservedFinding {
 	return {
@@ -267,12 +271,13 @@ describe('Lifecycle Engine Test Suite', () => {
 				scopeFingerprint: 'sha256:same_scope_222',
 			});
 
-			processObservation([identicalFinding], lifecycles, t0 + 30_000, true);
+			const stepReappear = processObservation([identicalFinding], lifecycles, t0 + 30_000, true);
 
 			const lc = lifecycles[0];
 			assert.strictEqual(lc.identicalRestorationCount, 1);
 			assert.strictEqual(lc.inSessionToggleCount, 1);
 			assert.strictEqual(lc.provisionalResolutionAt, null);
+			assert.strictEqual(stepReappear.classifications[0].isIdenticalRestoration, true);
 		});
 
 		it('increments identicalRestorationCount, inSessionToggleCount, and recurrenceCount on identical return after durable resolution', () => {
@@ -297,13 +302,14 @@ describe('Lifecycle Engine Test Suite', () => {
 				scopeFingerprint: 'sha256:same_scope_222',
 			});
 
-			processObservation([identicalFinding], lifecycles, t0 + 35_000, true);
+			const stepReappear = processObservation([identicalFinding], lifecycles, t0 + 35_000, true);
 
 			const lc = lifecycles[0];
 			assert.strictEqual(lc.identicalRestorationCount, 1);
 			assert.strictEqual(lc.inSessionToggleCount, 1);
 			assert.strictEqual(lc.recurrenceCount, 1);
 			assert.strictEqual(lc.durableResolutionAt, null);
+			assert.strictEqual(stepReappear.classifications[0].isIdenticalRestoration, true);
 		});
 
 		it('does NOT increment identical restoration counts when content fingerprint changed', () => {
@@ -324,11 +330,68 @@ describe('Lifecycle Engine Test Suite', () => {
 				scopeFingerprint: 'sha256:original_scope',
 			});
 
-			processObservation([modifiedFinding], lifecycles, t0 + 30_000, true);
+			const stepReappear = processObservation([modifiedFinding], lifecycles, t0 + 30_000, true);
 
 			const lc = lifecycles[0];
 			assert.strictEqual(lc.identicalRestorationCount, 0);
 			assert.strictEqual(lc.inSessionToggleCount, 0);
+			assert.strictEqual(stepReappear.classifications[0].isIdenticalRestoration, undefined);
+		});
+
+		it('tracks multiple in-session toggle cycles correctly', () => {
+			const finding = createMockFinding({
+				contentFingerprint: 'sha256:same_content_toggle',
+				scopeFingerprint: 'sha256:same_scope_toggle',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			// Observation 1: Active
+			processObservation([finding], lifecycles, t0, true);
+			assert.strictEqual(lifecycles[0].identicalRestorationCount, 0);
+
+			// Toggle 1: Absent then restored
+			processObservation([], lifecycles, t0 + 5_000, true); // absent
+			const step1 = processObservation([finding], lifecycles, t0 + 8_000, true); // restored
+			assert.strictEqual(lifecycles[0].identicalRestorationCount, 1);
+			assert.strictEqual(lifecycles[0].inSessionToggleCount, 1);
+			assert.strictEqual(step1.classifications[0].isIdenticalRestoration, true);
+
+			// Ongoing active observation (no absence): does not increment toggle count
+			const stepOngoing = processObservation([finding], lifecycles, t0 + 12_000, true);
+			assert.strictEqual(lifecycles[0].identicalRestorationCount, 1);
+			assert.strictEqual(lifecycles[0].inSessionToggleCount, 1);
+			assert.strictEqual(stepOngoing.classifications[0].isIdenticalRestoration, undefined);
+
+			// Toggle 2: Absent then restored again
+			processObservation([], lifecycles, t0 + 15_000, true); // absent
+			const step2 = processObservation([finding], lifecycles, t0 + 20_000, true); // restored
+			assert.strictEqual(lifecycles[0].identicalRestorationCount, 2);
+			assert.strictEqual(lifecycles[0].inSessionToggleCount, 2);
+			assert.strictEqual(step2.classifications[0].isIdenticalRestoration, true);
+		});
+
+		it('grace period interaction: absent within 5s grace period is restored before provisional resolution', () => {
+			const finding = createMockFinding({
+				contentFingerprint: 'sha256:content_quick_comment',
+				scopeFingerprint: 'sha256:scope_quick_comment',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			processObservation([finding], lifecycles, t0, true);
+
+			// Temporarily commented out: absent at t0 + 2_000
+			processObservation([], lifecycles, t0 + 2_000, true);
+			assert.strictEqual(lifecycles[0].missingSince, t0 + 2_000);
+			assert.strictEqual(lifecycles[0].provisionalResolutionAt, null, 'Within grace period, not provisional');
+
+			// Uncommented at t0 + 4_000 (still within 5s grace period)
+			const stepRestore = processObservation([finding], lifecycles, t0 + 4_000, true);
+			const lc = lifecycles[0];
+			assert.strictEqual(lc.missingSince, null);
+			assert.strictEqual(lc.provisionalResolutionAt, null);
+			assert.strictEqual(lc.identicalRestorationCount, 1);
+			assert.strictEqual(lc.inSessionToggleCount, 1);
+			assert.strictEqual(stepRestore.classifications[0].isIdenticalRestoration, true);
 		});
 	});
 
@@ -613,6 +676,172 @@ describe('Lifecycle Engine Test Suite', () => {
 			const status = classifyFinding(record, 41_000);
 			assert.strictEqual(status, 'persisting');
 			assert.strictEqual(record.recurrenceCount, 2, 'recurrenceCount must not be cleared');
+		});
+	});
+
+	describe('12. Session Analysis Integration (Integrity Metrics)', () => {
+		it('computes totalIdenticalRestorations and totalInSessionToggles from classifications', () => {
+			const finding = createMockFinding({
+				contentFingerprint: 'sha256:same_content_111',
+				scopeFingerprint: 'sha256:same_scope_222',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			// Active -> absent -> restored
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([], lifecycles, t0 + 10_000, true);
+			const step = processObservation([finding], lifecycles, t0 + 20_000, true);
+
+			const mockScan: ScanSnapshot = {
+				scan_id: 'scan-1',
+				timestamp: t0 + 20_000,
+				vulnerabilities: [
+					{
+						type: finding.type,
+						cwe_id: finding.cweId,
+						owasp_category: '',
+						severity: finding.severity,
+						instances: [
+							{
+								name: finding.instanceName,
+								kind: 'variable',
+								occurrences: [],
+							},
+						],
+					},
+				],
+			};
+
+			const analysis = buildSessionAnalysis(step.classifications, mockScan, null);
+			assert.strictEqual(analysis.totalIdenticalRestorations, 1);
+			assert.strictEqual(analysis.totalInSessionToggles, 1);
+		});
+	});
+
+	describe('13. Commented-Out Vulnerability Handling (Option 1: Retained as Persisting)', () => {
+		it('retains commented-out vulnerability as persisting and suppresses resolution', () => {
+			const finding = createMockFinding({
+				filePath: '/workspace/src/db.ts',
+				lineNumber: 3,
+				instanceName: 'executeQuery',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			// Observation 1 & 2: Active and confirmed
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([finding], lifecycles, t0 + 10_000, true);
+
+			// Mock file provider returning file content where the vulnerability line is commented out
+			const commentedFile = [
+				'import db from "db";',
+				'function run() {',
+				'  // const res = executeQuery(userInput);',
+				'  return null;',
+				'}',
+			].join('\n');
+
+			const mockProvider = (path: string) => path === '/workspace/src/db.ts' ? commentedFile : undefined;
+
+			// Observation 3: Finding absent, 25 seconds later (past 20s durable threshold)
+			const absentResult = processObservation([], lifecycles, t0 + 35_000, true, mockProvider);
+
+			const lc = lifecycles[0];
+			assert.strictEqual(lc.isCommentedOut, true, 'isCommentedOut flag must be true');
+			assert.strictEqual(lc.provisionalResolutionAt, null, 'provisional resolution must be cleared/suppressed');
+			assert.strictEqual(lc.durableResolutionAt, null, 'durable resolution must be cleared/suppressed');
+
+			const classification = absentResult.classifications[0];
+			assert.strictEqual(classification.status, 'persisting', 'Commented-out vulnerability must be classified as persisting');
+		});
+
+		it('retains block-commented (/* ... */) vulnerability as persisting', () => {
+			const finding = createMockFinding({
+				filePath: '/workspace/src/db.ts',
+				lineNumber: 3,
+				instanceName: 'executeQuery',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([finding], lifecycles, t0 + 10_000, true);
+
+			const blockCommentedFile = [
+				'import db from "db";',
+				'function run() {',
+				'  /* const res = executeQuery(userInput); */',
+				'  return null;',
+				'}',
+			].join('\n');
+
+			const mockProvider = () => blockCommentedFile;
+			const absentResult = processObservation([], lifecycles, t0 + 35_000, true, mockProvider);
+
+			assert.strictEqual(lifecycles[0].isCommentedOut, true);
+			assert.strictEqual(absentResult.classifications[0].status, 'persisting');
+		});
+
+		it('resets isCommentedOut to false and restores finding when code is uncommented', () => {
+			const finding = createMockFinding({
+				filePath: '/workspace/src/db.ts',
+				lineNumber: 3,
+				instanceName: 'executeQuery',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([finding], lifecycles, t0 + 10_000, true);
+
+			const commentedFile = '// executeQuery(input);';
+			processObservation([], lifecycles, t0 + 20_000, true, () => commentedFile);
+			assert.strictEqual(lifecycles[0].isCommentedOut, true);
+
+			// Uncommented and observed again at t0 + 25_000 (age 25s -> active)
+			const restoredResult = processObservation([finding], lifecycles, t0 + 25_000, true);
+			assert.strictEqual(lifecycles[0].isCommentedOut, false, 'isCommentedOut must reset to false');
+			assert.strictEqual(lifecycles[0].identicalRestorationCount, 1);
+			assert.strictEqual(restoredResult.classifications[0].status, 'active');
+
+			// Observed again at t0 + 35_000 (age 35s >= 30s -> persisting)
+			const persistingResult = processObservation([finding], lifecycles, t0 + 35_000, true);
+			assert.strictEqual(persistingResult.classifications[0].status, 'persisting');
+		});
+
+		it('resolves normally when code is genuinely deleted instead of commented out', () => {
+			const finding = createMockFinding({
+				filePath: '/workspace/src/db.ts',
+				lineNumber: 3,
+				instanceName: 'executeQuery',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([finding], lifecycles, t0 + 10_000, true);
+
+			// Truly deleted: clean code without comment
+			const cleanFile = [
+				'import db from "db";',
+				'function run() {',
+				'  return safeExecute(userInput);',
+				'}',
+			].join('\n');
+
+			const mockProvider = () => cleanFile;
+
+			// Absent observation 1: sets missingSince
+			processObservation([], lifecycles, t0 + 15_000, true, mockProvider);
+			assert.strictEqual(lifecycles[0].isCommentedOut, false);
+			assert.strictEqual(lifecycles[0].missingSince, t0 + 15_000);
+
+			// Absent observation 2: past grace period (5s) -> provisional resolution
+			processObservation([], lifecycles, t0 + 22_000, true, mockProvider);
+			assert.strictEqual(lifecycles[0].isCommentedOut, false);
+			assert.notStrictEqual(lifecycles[0].provisionalResolutionAt, null);
+
+			// Absent observation 3: past durable resolution delay (5s from provisional) -> durable resolution
+			const resolvedResult = processObservation([], lifecycles, t0 + 28_000, true, mockProvider);
+			assert.strictEqual(lifecycles[0].isCommentedOut, false);
+			assert.notStrictEqual(lifecycles[0].durableResolutionAt, null);
+			assert.strictEqual(resolvedResult.classifications[0].status, 'resolved');
 		});
 	});
 });
