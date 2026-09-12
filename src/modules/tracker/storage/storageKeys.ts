@@ -28,6 +28,9 @@ export const WS_COMPLETED_SESSIONS = 'ariadne.completedSessions';
 /** Key for the persisted FindingLifecycleRecord[] array. */
 export const WS_FINDING_LIFECYCLES = 'ariadne.findingLifecycles';
 
+/** Key for the persisted SaveScanState object (first-checkpoint tracking). */
+export const WS_SAVE_SCAN_STATE = 'ariadne.saveScanState';
+
 /** Key for the persisted set of dismissed notification IDs. */
 export const WS_DISMISSED_NOTIFICATIONS = 'ariadne.dismissedNotifications';
 

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { join, relative } from 'node:path';
 import { AriadneSession } from './iostream';
+import { incrementRevision } from './revisionTracker.js';
 
 /**
  * Debounced scan interval (ms) for live edits.
@@ -217,10 +218,22 @@ function cancelPendingUpdate(filePath: string): void {
  *
  * File mutation events automatically trigger re-analysis in the
  * session after each UpdateFile / Create / Delete / Rename.
+ *
+ * @param onSaveTrigger - Optional callback fired immediately before
+ *   the Analyze IPC message is sent on a tracked-file save. Receives
+ *   the workspace revision at the moment of the save so the caller
+ *   can record it for settlement validation.
+ *
+ * @param onRevisionChange - Optional callback fired whenever a
+ *   tracked-file mutation increments the workspace revision. The new
+ *   revision number is passed as the argument. Use this to cancel any
+ *   active settlement timer.
  */
 export function registerDocumentEvents(
 	context: vscode.ExtensionContext,
 	session: AriadneSession,
+	onSaveTrigger?: (revision: number) => void,
+	onRevisionChange?: (revision: number) => void,
 ): void {
 
 	// ============================================================
@@ -253,17 +266,38 @@ export function registerDocumentEvents(
 				scheduleRulesReload(session);
 			}
 		}),
+
 		vscode.workspace.onDidSaveTextDocument((doc) => {
 			if (isAriadnePath(doc.uri.fsPath)) {
 				scheduleRulesReload(session);
 			}
+			if (isTrackedDocument(doc)) {
+				// Cancel any pending live debounce so the save scan is the
+				// authoritative full-workspace analysis, not a reuse of an
+				// in-flight live result.
+				cancelPendingUpdate(doc.uri.fsPath);
+
+				// Record current revision before sending so the caller can
+				// validate the result when it arrives.
+				const revision = incrementRevision();
+				console.log(`[Ariadne TS] Save-triggered scan rev=${revision}: ${doc.uri.fsPath}`);
+				onSaveTrigger?.(revision);
+				session.send({ type: 'Analyze', path: null });
+			}
 		}),
+
 		vscode.workspace.onDidChangeTextDocument((event) => {
 			if (event.contentChanges.length === 0) {
 				return;
 			}
-			if (isAriadnePath(event.document.uri.fsPath)) {
+			const fsPath = event.document.uri.fsPath;
+			if (isAriadnePath(fsPath)) {
 				scheduleRulesReload(session);
+			}
+			if (isTrackedFilePath(fsPath)) {
+				// Increment revision: any tracked edit cancels active settlement.
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			}
 		}),
 	);
@@ -298,6 +332,8 @@ export function registerDocumentEvents(
 				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] CreateFile ${file.fsPath}`);
 				session.send({ type: 'CreateFile', path: file.fsPath, content: '' });
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			});
 		}),
 	);
@@ -311,6 +347,8 @@ export function registerDocumentEvents(
 				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] DeleteFile ${file.fsPath}`);
 				session.send({ type: 'DeleteFile', path: file.fsPath });
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			});
 		}),
 	);
@@ -332,6 +370,8 @@ export function registerDocumentEvents(
 					old_path: file.oldUri.fsPath,
 					new_path: file.newUri.fsPath,
 				});
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			});
 		}),
 	);

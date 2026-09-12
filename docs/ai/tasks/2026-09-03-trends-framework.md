@@ -21,10 +21,10 @@
 docs/plans/2026-09-03-trends-framework.md
 ## Current state
 
-- status:
-- current owner:
-- next action:
-- blockers:
+- status: in progress
+- current owner: team
+- next action: continue overhaul tasks
+- blockers: none
 - last checked:
 
 ## Progress checklist

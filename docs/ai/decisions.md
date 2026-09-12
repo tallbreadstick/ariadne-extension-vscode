@@ -126,4 +126,32 @@ Within each section, newest decision at the top.
 - consequences: Breaking storage migration — old `ariadne.scanSnapshots` data is discarded. The lifecycle engine is a pure logic module with no vscode dependency, enabling unit testing. Cross-repo dependency: the scanner team needs to emit `logicalFingerprint` / `contentFingerprint` / `scopeFingerprint` fields for faithful scope-aware matching. Observation classification (live vs full scan) is deferred to a teammate's separate task.
 - task: docs/ai/tasks/2026-09-03-trends-framework.md
 
+### Save-triggered scan as the lifecycle engine gate (with valid + settled)
+
+- date: 2026-09-06
+- status: accepted
+- context: The MVP's `onFindings` callback fed every engine result into `processObservation`,
+  `setSessionBaseline`, and the Session Metrics panel without any quality gate.
+  The overhaul framework (`ariadne-trends-framework-realtime-stability-and-cohort-clarification.md`,
+  Section 2) requires a two-gate check before any lifecycle or Trends update:
+  (1) **valid** — the result belongs to the correct pending save revision; and
+  (2) **settled** — no tracked-file change for two seconds after the valid result arrives.
+- decision: All gate logic is in the TypeScript extension; no Rust scanner changes required.
+  A `workspaceRevision` counter in `revisionTracker.ts` increments on every tracked-file
+  mutation (change, create, delete, rename). `documentEvents.ts` increments the revision at
+  save-time and passes it to `extension.ts` via `onSaveTrigger(revision)`. Any mutation fires
+  `onRevisionChange(revision)`. In `extension.ts`, `pendingSaveRevision` records which revision
+  the scan was for. When `onFindings` arrives: if `pendingSaveRevision` is null → live result,
+  update UI only. If revision mismatches → stale, discard for Trends. If revision matches →
+  valid, start a 2-second `setTimeout`. If any tracked file changes during those 2 seconds,
+  `cancelSettlement()` fires via `onRevisionChange`. If the timer expires cleanly → settled,
+  run `processObservation`, set session baseline (initial checkpoint condition), update Session
+  Metrics panel. `SaveScanState` tracks `totalSettledCancellations` for debugging.
+- consequences: Trends and lifecycle records now only update on a settled save. Save-and-
+  immediately-type does not falsely update FLCs. The initial-checkpoint condition (session
+  baseline) is now correctly gated: only the first settled save creates the baseline.
+  Rapid saves within 2 seconds of each other cancel each other's settlement windows — the
+  latest save gets the next chance to settle.
+- task: docs/ai/tasks/2026-09-06-save-triggered-scan.md
+
 <!-- Add new post-MVP decisions above this line -->
