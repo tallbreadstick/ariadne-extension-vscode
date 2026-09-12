@@ -84,10 +84,15 @@ export function buildSessionAnalysis(
 	let improvingTrends = 0;
 	let resolvedThisSession = 0;
 	let recurringPatterns = 0;
+	let totalIdenticalRestorations = 0;
+	let totalInSessionToggles = 0;
 
 	const deltas: VulnerabilityDelta[] = [];
 
 	for (const classification of classifications) {
+		totalIdenticalRestorations += classification.lifecycle.identicalRestorationCount ?? 0;
+		totalInSessionToggles += classification.lifecycle.inSessionToggleCount ?? 0;
+
 		// Skip candidates and active findings — they are not shown on the Trends card
 		if (classification.status === 'candidate' || classification.status === 'active') {
 			continue;
@@ -137,6 +142,8 @@ export function buildSessionAnalysis(
 		improvingTrends,
 		resolvedThisSession,
 		recurringPatterns,
+		totalIdenticalRestorations,
+		totalInSessionToggles,
 	};
 }
 

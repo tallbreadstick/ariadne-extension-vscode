@@ -204,6 +204,8 @@ export function metadataToObservedFindings(
 		instanceName: finding.instance_name ?? '',
 		filePath: finding.file_path,
 		occurrenceCount: 1,
+		lineNumber: finding.line_number,
+		endLine: finding.end_line ?? finding.line_number,
 	}));
 }
 
