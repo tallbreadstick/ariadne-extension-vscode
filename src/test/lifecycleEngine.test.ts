@@ -210,7 +210,7 @@ describe('Lifecycle Engine Test Suite', () => {
 	});
 
 	describe('6. Reappearance and Recurrence', () => {
-		it('transitions to recurring when a durably resolved finding reappears', () => {
+		it('classifies as recurring after reappearance (thresholds restart from recurrence)', () => {
 			const finding = createMockFinding();
 			const lifecycles: FindingLifecycleRecord[] = [];
 
@@ -222,7 +222,7 @@ describe('Lifecycle Engine Test Suite', () => {
 			processObservation([], lifecycles, t0 + 27_000, true); // durable resolved
 			assert.strictEqual(lifecycles[0].durableResolutionAt, t0 + 27_000);
 
-			// Now finding returns at t0 + 40_000 with changed content (genuine edit)
+			// Finding returns at t0 + 40_000
 			const returningFinding = createMockFinding({
 				contentFingerprint: 'sha256:content_modified_999',
 				occurrenceCount: 3,
@@ -232,10 +232,14 @@ describe('Lifecycle Engine Test Suite', () => {
 
 			const lc = stepReappear.lifecycles[0];
 			assert.strictEqual(lc.recurrenceCount, 1);
+			assert.strictEqual(lc.lastRecurredAt, t0 + 40_000);
 			assert.strictEqual(lc.durableResolutionAt, null);
 			assert.strictEqual(lc.provisionalResolutionAt, null);
 			assert.strictEqual(lc.missingSince, null);
 			assert.strictEqual(lc.baselineOccurrenceCount, 3);
+			// confirmationCount resets on recurrence, then +1 from this observation
+			assert.strictEqual(lc.confirmationCount, 1);
+			// Thresholds restart from lastRecurredAt — age=0, confirmations=1
 			assert.strictEqual(stepReappear.classifications[0].status, 'recurring');
 			assert.strictEqual(lc.lifecycleState, 'recurring');
 		});
@@ -380,6 +384,7 @@ describe('Lifecycle Engine Test Suite', () => {
 				currentOccurrenceCount: 2,
 				confirmationCount: 0,
 				recurrenceCount: 0,
+				lastRecurredAt: null,
 				inSessionToggleCount: 0,
 				identicalRestorationCount: 0,
 			};
@@ -403,9 +408,22 @@ describe('Lifecycle Engine Test Suite', () => {
 			const resolvedRecord = { ...baseRecord, durableResolutionAt: 5000, missingSince: 3000 };
 			assert.strictEqual(classifyFinding(resolvedRecord, 6000), 'resolved');
 
-			// Recurring: recurrenceCount >= 1 and active
-			const recurringRecord = { ...baseRecord, confirmationCount: 1, recurrenceCount: 1 };
+			// Recurring: recurrenceCount >= 1 and active, thresholds not met since recurrence
+			const recurringRecord = {
+				...baseRecord, confirmationCount: 1, recurrenceCount: 1,
+				lastRecurredAt: 1500,
+			};
 			assert.strictEqual(classifyFinding(recurringRecord, 2000), 'recurring');
+
+			// Recurring → Persisting: recurrenceCount >= 1 AND thresholds met since lastRecurredAt
+			const recurringPersistingRecord = {
+				...baseRecord, confirmationCount: 2, recurrenceCount: 1,
+				lastRecurredAt: 1500,
+			};
+			assert.strictEqual(
+				classifyFinding(recurringPersistingRecord, 1500 + 30_000),
+				'persisting',
+			);
 		});
 	});
 
@@ -531,6 +549,70 @@ describe('Lifecycle Engine Test Suite', () => {
 
 			assert.strictEqual(resolvedCount, 1, 'Exactly 1 finding must be classified as resolved');
 			assert.strictEqual(persistingCount, 1, 'Exactly 1 finding must remain persisting');
+		});
+	});
+
+	describe('11. Transition: Recurring → Persisting', () => {
+		it('recurring finding graduates to persisting after 30s and 2 confirmations since recurrence', () => {
+			const finding = createMockFinding();
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			// Detect, confirm, resolve quickly
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([], lifecycles, t0 + 1_000, true);
+			processObservation([], lifecycles, t0 + 7_000, true); // provisional
+			processObservation([], lifecycles, t0 + 13_000, true); // durable
+
+			// Recurrence at t0 + 20_000 — confirmationCount resets to 0, then +1
+			const recurringFinding = createMockFinding({
+				contentFingerprint: 'sha256:content_changed',
+			});
+			const stepRecur = processObservation([recurringFinding], lifecycles, t0 + 20_000, true);
+			assert.strictEqual(stepRecur.classifications[0].status, 'recurring');
+			assert.strictEqual(lifecycles[0].recurrenceCount, 1);
+			assert.strictEqual(lifecycles[0].lastRecurredAt, t0 + 20_000);
+			assert.strictEqual(lifecycles[0].confirmationCount, 1);
+
+			// Confirm at t0 + 40_000 — age since recurrence = 20s < 30s, confirmations = 2
+			const stepConfirm = processObservation([recurringFinding], lifecycles, t0 + 40_000, true);
+			assert.strictEqual(stepConfirm.classifications[0].status, 'recurring');
+
+			// Confirm at t0 + 55_000 — age since recurrence = 35s >= 30s, confirmations = 3 >= 2
+			const stepPersist = processObservation([recurringFinding], lifecycles, t0 + 55_000, true);
+			assert.strictEqual(stepPersist.classifications[0].status, 'persisting');
+			// recurrenceCount is preserved
+			assert.strictEqual(lifecycles[0].recurrenceCount, 1);
+		});
+
+		it('preserves recurrenceCount after graduating to persisting', () => {
+			const record: FindingLifecycleRecord = {
+				logicalFingerprint: 'fp1',
+				contentFingerprint: 'cp1',
+				scopeFingerprint: 'sp1',
+				ruleId: 'r1',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				severity: 'high',
+				instanceName: 'query',
+				filePath: 'a.ts',
+				firstConfirmedAt: 1000,
+				lastConfirmedAt: 40_000,
+				missingSince: null,
+				provisionalResolutionAt: null,
+				durableResolutionAt: null,
+				baselineOccurrenceCount: 2,
+				currentOccurrenceCount: 2,
+				confirmationCount: 3,
+				recurrenceCount: 2,
+				lastRecurredAt: 5_000,
+				inSessionToggleCount: 0,
+				identicalRestorationCount: 0,
+			};
+
+			// Age since recurrence = 41_000 - 5_000 = 36s >= 30s, confirmations = 3 >= 2
+			const status = classifyFinding(record, 41_000);
+			assert.strictEqual(status, 'persisting');
+			assert.strictEqual(record.recurrenceCount, 2, 'recurrenceCount must not be cleared');
 		});
 	});
 });

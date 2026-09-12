@@ -148,10 +148,13 @@ function updateActiveLifecycle(
 	if (lifecycle.durableResolutionAt !== null) {
 		checkIdenticalRestoration(lifecycle, observed);
 		lifecycle.recurrenceCount += 1;
+		lifecycle.lastRecurredAt = timestamp;
 		lifecycle.durableResolutionAt = null;
 		lifecycle.provisionalResolutionAt = null;
 		lifecycle.missingSince = null;
 		lifecycle.baselineOccurrenceCount = observed.occurrenceCount;
+		// Reset confirmations so the finding must re-prove persistence
+		lifecycle.confirmationCount = 0;
 		console.log(
 			`[Ariadne Lifecycle] Recurrence #${lifecycle.recurrenceCount} ` +
 			`for ${lifecycle.type} (${lifecycle.logicalFingerprint.slice(0, 16)})`,
@@ -300,6 +303,7 @@ function createLifecycleRecord(
 		recurrenceCount: 0,
 		inSessionToggleCount: 0,
 		identicalRestorationCount: 0,
+		lastRecurredAt: null,
 		lifecycleState: 'candidate',
 	};
 }
@@ -349,12 +353,20 @@ export function classifyFinding(
 	const meetsThresholds = observedAge >= policy.MINIMUM_DURATION_MS
 		&& lifecycle.confirmationCount >= policy.MINIMUM_SETTLED_CONFIRMATIONS;
 
-	// 1. Recurring: previously resolved, now active, met recurrence threshold
+	// 1. Recurring: previously resolved, now active, met recurrence threshold.
+	//    Thresholds are measured from lastRecurredAt (not firstConfirmedAt)
+	//    so the finding must re-prove persistence after each recurrence.
+	//    Once it re-establishes itself, it graduates to 'persisting'.
 	if (
 		isCurrentlyActive
 		&& lifecycle.recurrenceCount >= policy.RECURRENCE_THRESHOLD
 	) {
-		return 'recurring';
+		const ageSinceRecurrence = lifecycle.lastRecurredAt !== null
+			? timestamp - lifecycle.lastRecurredAt
+			: observedAge;
+		const reestablished = ageSinceRecurrence >= policy.MINIMUM_DURATION_MS
+			&& lifecycle.confirmationCount >= policy.MINIMUM_SETTLED_CONFIRMATIONS;
+		return reestablished ? 'persisting' : 'recurring';
 	}
 
 	// 2. Resolved: durably resolved and NOT currently active
