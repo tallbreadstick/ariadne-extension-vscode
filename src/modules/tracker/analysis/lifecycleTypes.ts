@@ -39,15 +39,15 @@ export const LIFECYCLE_POLICY = {
 
 	/**
 	 * Number of durable-resolved → active reappearances required before
-	 * showing "Recurring Pattern" in the public Trends card.
+	 * classifying as Recurring.
 	 */
-	RECURRENCE_THRESHOLD: 2,
+	RECURRENCE_THRESHOLD: 1,
 } as const;
 
 export type LifecyclePolicy = typeof LIFECYCLE_POLICY;
 
 // ══════════════════════════════════════════════════════════════════════
-// FINDING STATUS
+// FINDING STATUS & LIFECYCLE STATES
 // ══════════════════════════════════════════════════════════════════════
 
 /**
@@ -58,11 +58,27 @@ export type LifecyclePolicy = typeof LIFECYCLE_POLICY;
 export type FindingStatus = 'recurring' | 'resolved' | 'improving' | 'persisting';
 
 /**
- * Internal state that includes `candidate` — findings that have not yet
- * met the minimum duration/confirmation thresholds. Candidates are
- * omitted from the public Trends card (Section 7.1).
+ * Complete internal finding lifecycle states.
+ *
+ * - `candidate`: Newly detected finding awaiting settled confirmation, or provisionally absent.
+ * - `active`: Confirmed by at least 1 settled observation, currently present, but has not yet met persisting thresholds.
+ * - `persisting`: Active finding that has persisted across observations (observed age >= 30s and confirmations >= 2).
+ * - `improving`: Active finding whose occurrences have decreased from baseline.
+ * - `resolved`: Durably resolved finding confirmed absent across settled observations.
+ * - `recurring`: Active finding that has reappeared after being durably resolved.
  */
-export type InternalFindingState = 'candidate' | FindingStatus;
+export type FindingLifecycleState =
+	| 'candidate'
+	| 'active'
+	| 'persisting'
+	| 'improving'
+	| 'resolved'
+	| 'recurring';
+
+/**
+ * Internal state returned by the lifecycle engine.
+ */
+export type InternalFindingState = FindingLifecycleState;
 
 // ══════════════════════════════════════════════════════════════════════
 // FINDING LIFECYCLE RECORD
@@ -78,6 +94,10 @@ export type InternalFindingState = 'candidate' | FindingStatus;
  * Reference: Section 6.2 — FindingLifecycleRecord
  */
 export interface FindingLifecycleRecord {
+	/**
+	 * Current internal lifecycle state of this finding.
+	 */
+	lifecycleState?: FindingLifecycleState;
 	/**
 	 * Stable identity for matching the same logical finding through
 	 * line movement and minor edits. From scanner SHA256 or derived fallback.

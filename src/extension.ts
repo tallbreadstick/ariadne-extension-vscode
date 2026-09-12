@@ -47,6 +47,7 @@ import {
 	setSessionBaseline,
 	updateSessionLatest,
 	finalizeSession,
+	classifyFinding,
 } from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
@@ -496,6 +497,7 @@ export function activate(context: vscode.ExtensionContext) {
 				observedFindings,
 				lifecycles,
 				timestamp,
+				true,
 			);
 			lifecycles = result.lifecycles;
 
@@ -647,11 +649,7 @@ export function activate(context: vscode.ExtensionContext) {
 					`\n  │ Lifecycles      : ${s.lifecycleSummaries.length}`,
 				);
 				for (const lc of s.lifecycleSummaries) {
-					const lcStatus = lc.durableResolutionAt
-						? 'RESOLVED'
-						: lc.missingSince
-							? 'ABSENT'
-							: 'ACTIVE';
+					const lcStatus = (lc.lifecycleState ?? classifyFinding(lc, s.endedAt ?? Date.now())).toUpperCase();
 					console.log(
 						`  │   [${lcStatus}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
 						`\n  │     Severity      : ${lc.severity}` +
@@ -674,13 +672,7 @@ export function activate(context: vscode.ExtensionContext) {
 					? `${Math.round(age / 1000)}s`
 					: `${Math.round(age / 60_000)}m`;
 
-				const status = lc.durableResolutionAt
-					? 'RESOLVED'
-					: lc.missingSince
-						? 'ABSENT'
-						: lc.confirmationCount >= 2 && age >= 30_000
-							? 'PERSISTING'
-							: 'CANDIDATE';
+				const status = (lc.lifecycleState ?? classifyFinding(lc, Date.now())).toUpperCase();
 
 				console.log(
 					`  [${status}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
