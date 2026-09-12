@@ -185,45 +185,30 @@ export function metadataToScanSnapshot(
  * Converts flat VulnerabilityMetadata[] into ObservedFinding[] for
  * the lifecycle engine.
  *
- * Groups findings by a derived logical fingerprint and counts
- * occurrences per instance. The fingerprint is a temporary derived
- * key from available fields — it will be replaced by the scanner's
- * SHA256 hash once the fingerprinting teammate's work is integrated.
+ * Implements a strict 1-to-1 instance mapping where every scanner finding
+ * is its own ObservedFinding with occurrenceCount = 1, keyed by
+ * the scanner's unique `instance_fingerprint` (with fallback to composite
+ * logical/scope/content identity via instanceGroupKey).
  */
 export function metadataToObservedFindings(
 	findings: VulnerabilityMetadata[],
 ): ObservedFinding[] {
-	// Group by logical fingerprint → count occurrences
-	const grouped = new Map<string, { finding: VulnerabilityMetadata; count: number }>();
-
-	for (const f of findings) {
-		const fp = deriveLogicalFingerprint(f);
-		const existing = grouped.get(fp);
-		if (existing) {
-			existing.count += 1;
-		} else {
-			grouped.set(fp, { finding: f, count: 1 });
-		}
-	}
-
-	const observed: ObservedFinding[] = [];
-	for (const [fp, { finding, count }] of grouped) {
-		observed.push({
-			logicalFingerprint: fp,
-			contentFingerprint: finding.content_fingerprint ?? '',
-			scopeFingerprint: finding.scope_fingerprint ?? '',
-			ruleId: finding.rule_id ?? '',
-			cweId: finding.cwe_id,
-			type: finding.type,
-			severity: finding.severity,
-			instanceName: finding.instance_name ?? '',
-			filePath: finding.file_path,
-			occurrenceCount: count,
-		});
-	}
-
-	return observed;
+	return findings.map((finding) => ({
+		logicalFingerprint: instanceGroupKey(finding),
+		contentFingerprint: finding.content_fingerprint ?? '',
+		scopeFingerprint: finding.scope_fingerprint ?? '',
+		ruleId: finding.rule_id ?? '',
+		cweId: finding.cwe_id,
+		type: finding.type,
+		severity: finding.severity,
+		instanceName: finding.instance_name ?? '',
+		filePath: finding.file_path,
+		occurrenceCount: 1,
+		lineNumber: finding.line_number,
+		endLine: finding.end_line ?? finding.line_number,
+	}));
 }
+
 
 /**
  * Returns the logical fingerprint for a finding.

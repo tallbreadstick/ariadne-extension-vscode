@@ -1,4 +1,4 @@
-﻿/**
+/**
  * View builder for the Session Metrics panel.
  *
  * This is a pure function: given a SessionMetrics object it returns a
@@ -610,9 +610,7 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 
 	const persistingSubItems = buildBasicSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
-	// recurringPatterns is not yet in TrendData — placeholder count until the overhaul task is implemented
-	const recurringCount = 0;
-	const recurringSubItems = buildBasicSubItems(trends.recurringItems, recurringCount);
+	const recurringSubItems = buildBasicSubItems(trends.recurringItems, trends.recurringPatterns);
 	const resolvedSubItems = buildBasicSubItems(trends.resolvedItems, trends.resolvedThisSession);
 
 	return /* html */ `<!DOCTYPE html>
@@ -660,7 +658,7 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 					'recurring',
 					RECURRING_SVG,
 					'Recurring Patterns',
-					recurringCount,
+					trends.recurringPatterns,
 					recurringSubItems,
 				)}
 

@@ -86,4 +86,14 @@ export interface SessionAnalysis {
 	 * and met the recurrence threshold.
 	 */
 	recurringPatterns: number;
+	/**
+	 * Total identical restoration count across all findings in the session (Section 11.3).
+	 * Measurement-integrity counter.
+	 */
+	totalIdenticalRestorations?: number;
+	/**
+	 * Total in-session toggle count across all findings in the session (Section 11.3).
+	 * Measurement-integrity counter.
+	 */
+	totalInSessionToggles?: number;
 }
