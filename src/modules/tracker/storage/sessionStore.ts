@@ -177,6 +177,48 @@ export class SessionStore {
 		});
 	}
 
+	/**
+	 * Loads the most recent COMPLETED session record, gracefully skipping
+	 * any sessions marked 'incomplete' (e.g. from power outages, crashes, or timeouts).
+	 *
+	 * Reference: Section 6.3 & 7, Step 7 — Ariadne Trends Framework
+	 *
+	 * @returns The latest completed SessionRecord, or null if no completed session exists.
+	 */
+	loadPriorCompletedSession(): SessionRecord | null {
+		const sessions = this.loadCompletedSessions();
+		for (let i = sessions.length - 1; i >= 0; i--) {
+			if (sessions[i].status === 'completed') {
+				return sessions[i];
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Loads the prior completed session before a given session ID.
+	 * Useful for reproducible auditing, metrics verification, and testing.
+	 *
+	 * @param sessionId The reference session ID to search backwards from.
+	 * @returns The preceding completed SessionRecord, or null if none exists.
+	 */
+	loadPriorCompletedSessionBefore(sessionId: string): SessionRecord | null {
+		const sessions = this.loadCompletedSessions();
+		const idx = sessions.findIndex(s => s.sessionId === sessionId);
+		const endIndex = idx === -1 ? sessions.length - 1 : idx - 1;
+		for (let i = endIndex; i >= 0; i--) {
+			if (sessions[i].status === 'completed') {
+				return sessions[i];
+			}
+		}
+		return null;
+	}
+
+	/** Async wrapper for loadPriorCompletedSession(). */
+	async getPriorCompletedSession(): Promise<SessionRecord | null> {
+		return this.loadPriorCompletedSession();
+	}
+
 	// ── Synchronous Shutdown Persistence ──────────────────────────
 
 	/** Returns the absolute file path used for synchronous shutdown snapshots. */

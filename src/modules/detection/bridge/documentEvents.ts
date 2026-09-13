@@ -283,7 +283,7 @@ export function registerDocumentEvents(
 				// Record current revision before sending so the caller can
 				// validate the result when it arrives.
 				const revision = incrementRevision();
-				console.log(`[Ariadne TS] Save-triggered scan rev=${revision}: ${doc.uri.fsPath}`);
+				console.log(`[Ariadne TS] Save-triggered scan revision=${revision}: ${doc.uri.fsPath}`);
 				onSaveTrigger?.(revision);
 				session.send({ type: 'Analyze', path: null });
 			}

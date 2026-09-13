@@ -172,5 +172,14 @@ Within each section, newest decision at the top.
 - consequences: Clean shutdowns reliably persist as `completed`, restoring the Trend ($T$) calculation baseline across student sessions. Zero changes to the Rust scanner core or live scan debouncing. Zero background file overhead during normal typing.
 - task: docs/ai/tasks/2026-09-12-eager-settled-persistence.md
 
+### Prior Completed Session Baseline & Incomplete Skip Rule
+
+- date: 2026-09-13
+- status: accepted
+- context: Calculating the user-facing pairwise Trend ($T$) metric requires comparing the current session's findings against the reference set ($C$) of findings known at the end of the prior completed session. However, when a session ends abnormally (e.g. power cuts, brownouts, SIGKILL, or deactivation scan timeouts), it is stamped as `incomplete`. Using an incomplete session's unfinalized state would corrupt the Trend calculation and penalize students for unobserved code changes.
+- decision: Implement a backward-searching "Skip Rule" in `SessionStore.loadPriorCompletedSession()`. When a new session initializes its baseline, the store traverses `completedSessions` in reverse chronological order, skipping any session where `status !== 'completed'`. The first session with `status === 'completed'` is returned. Its final checkpoint findings and lifecycle summaries are frozen into `activeSession.trendComparisonByKey` via `extractTrendComparisonBaseline()`. If no completed session exists in storage (e.g., Session 1 or all prior sessions were incomplete), `null` is returned and $T$ gracefully evaluates to `N/A`.
+- consequences: Incomplete sessions remain preserved for auditing and debugging, but never corrupt cross-session metrics. When Ervin and Kenn implement the $T$ formula, they receive a clean, pre-calculated, frozen comparison baseline ($C$) and denominator without having to navigate storage, handle incomplete edge cases, or risk runtime division-by-zero errors.
+- task: docs/ai/tasks/2026-09-12-pull-previous-completed-session.md
+
 <!-- Add new post-MVP decisions above this line -->
 

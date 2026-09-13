@@ -453,8 +453,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (currentRev !== pendingSaveRevision) {
 			console.log(
 				`[Ariadne] Stale save result discarded ` +
-				`(scan rev=${pendingSaveRevision}, current rev=${currentRev}).`,
+				`(scan revision=${pendingSaveRevision}, current revision=${currentRev}).`,
 			);
+
 			pendingSaveRevision = null;
 			return;
 		}
@@ -493,13 +494,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (!activeSession) {
 				// First settlement: create the session NOW, using the
 				// settlement timestamp so startedAt === initialCheckpointDoneAt.
-				activeSession = startSession(store.nextSessionId(), timestamp);
+				const priorCompletedSession = store.loadPriorCompletedSession();
+				activeSession = startSession(store.nextSessionId(), timestamp, priorCompletedSession);
 				setSessionBaseline(activeSession, observedFindings, timestamp);
 				updateSessionLatest(activeSession, observedFindings, timestamp);
 				saveScanState.initialCheckpointDoneAt = timestamp;
+				const priorInfo = priorCompletedSession
+					? ` (prior completed baseline: ${priorCompletedSession.sessionId})`
+					: ' (no prior completed baseline; T=N/A)';
 				console.log(
 					`[Ariadne] Initial checkpoint + session ${activeSession.sessionId} ` +
-					`started at ${new Date(timestamp).toISOString()} ` +
+					`started at ${new Date(timestamp).toISOString()}${priorInfo} ` +
 					`(${settledFindings.length} finding(s))`,
 				);
 			} else {
@@ -619,6 +624,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				console.log(`  Session ID : ${sessionData.sessionId}`);
 				console.log(`  Started At : ${new Date(sessionData.startedAt).toISOString()}`);
 				console.log(`  Ended At   : ${sessionData.endedAt ? new Date(sessionData.endedAt).toISOString() : '(active)'}`);
+				if (sessionData.priorCompletedSessionId) {
+					console.log(`  Prior Baseline: ${sessionData.priorCompletedSessionId}`);
+				}
 				if (sessionData.baselineCheckpoint) {
 					console.log(`  Baseline   : ${sessionData.baselineCheckpoint.findings.length} finding(s) at ${new Date(sessionData.baselineCheckpoint.timestamp).toISOString()}`);
 				} else {
@@ -641,9 +649,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					: '?';
 				const baselineCount = s.baselineCheckpoint?.findings.length ?? 0;
 				const finalCount = s.finalCheckpoint?.findings.length ?? 0;
+				const priorBaselineLine = s.priorCompletedSessionId
+					? `\n  │ Prior Baseline  : ${s.priorCompletedSessionId}`
+					: '';
 				console.log(
 					`\n  ┌─ ${s.sessionId} ──────────────────────────────` +
 					`\n  │ Status          : ${(s.status ?? (s.endedAt ? 'completed' : 'active')).toUpperCase()}` +
+					priorBaselineLine +
 					`\n  │ Started At      : ${new Date(s.startedAt).toISOString()}` +
 					`\n  │ Ended At        : ${s.endedAt ? new Date(s.endedAt).toISOString() : '(not finalized)'}` +
 					`\n  │ Duration        : ${duration}` +
@@ -736,17 +748,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			console.log('╔══════════════════════════════════════════════════════════╗');
 			console.log('║        ARIADNE — SAVE SCAN STATE DEBUG DUMP             ║');
 			console.log('╚══════════════════════════════════════════════════════════╝');
-			console.log(`  Initial Checkpoint      : ${
-				state.initialCheckpointDoneAt
-					? new Date(state.initialCheckpointDoneAt).toISOString()
-					: '(not yet set — no settled scan has been processed)'
-			}`);
+			console.log(`  Initial Checkpoint      : ${state.initialCheckpointDoneAt
+				? new Date(state.initialCheckpointDoneAt).toISOString()
+				: '(not yet set — no settled scan has been processed)'
+				}`);
 			console.log(`  Settled Scans (session) : ${state.totalSaveScansThisSession}`);
 			console.log(`  Settlement Cancellations: ${state.totalSettledCancellations}`);
 			console.log(`  Workspace Revision      : ${currentRev}`);
-			console.log(`  Pending Save Revision   : ${
-				pendingSaveRevision !== null ? pendingSaveRevision : '(none)'
-			}`);
+			console.log(`  Pending Save Revision   : ${pendingSaveRevision !== null ? pendingSaveRevision : '(none)'
+				}`);
 			console.log(`  Settlement Timer Active : ${settlementTimer !== null}`);
 			console.log('═══════════════════════════════════════════════════════════');
 
@@ -757,7 +767,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				`Ariadne Debug: Initial checkpoint ${checkpointStr}. ` +
 				`Settled scans: ${state.totalSaveScansThisSession}. ` +
 				`Cancellations: ${state.totalSettledCancellations}. ` +
-				`Workspace rev: ${currentRev}. ` +
+				`Workspace revision: ${currentRev}. ` +
 				`See Developer Console for details.`,
 			);
 		},
@@ -933,7 +943,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		// Flush pending editor buffers to Rust engine and attempt final scan
 		console.log(
 			`[Ariadne] Workspace has un-settled edits ` +
-			`(rev=${currentRev}, lastSettled=${lastSettledRevision}, dirty=${hasDirtyTrackedDocs}). ` +
+			`(revision=${currentRev}, lastSettled=${lastSettledRevision}, dirty=${hasDirtyTrackedDocs}). ` +
 			`Requesting final session scan...`,
 		);
 		flushAllPendingUpdates(session);
