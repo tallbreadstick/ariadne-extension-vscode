@@ -84,10 +84,15 @@ export function buildSessionAnalysis(
 	let improvingTrends = 0;
 	let resolvedThisSession = 0;
 	let recurringPatterns = 0;
+	let totalIdenticalRestorations = 0;
+	let totalInSessionToggles = 0;
 
 	const deltas: VulnerabilityDelta[] = [];
 
 	for (const classification of classifications) {
+		totalIdenticalRestorations += classification.lifecycle.identicalRestorationCount ?? 0;
+		totalInSessionToggles += classification.lifecycle.inSessionToggleCount ?? 0;
+
 		// Skip candidates and active findings — they are not shown on the Trends card
 		if (classification.status === 'candidate' || classification.status === 'active') {
 			continue;
@@ -137,6 +142,8 @@ export function buildSessionAnalysis(
 		improvingTrends,
 		resolvedThisSession,
 		recurringPatterns,
+		totalIdenticalRestorations,
+		totalInSessionToggles,
 	};
 }
 
@@ -186,6 +193,14 @@ function createResolvedPlaceholder(
  * Notifications are auto-generated from the vulnerability deltas.
  */
 export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
+	// Build per-type sub-items for recurring findings
+	const recurringItems = analysis.deltas
+		.filter(d => d.status === 'recurring')
+		.map(d => ({
+			type: d.vulnerability.type,
+			instances: d.currentInstanceCount,
+		}));
+
 	return {
 		critical: analysis.severityCounts.critical,
 		high: analysis.severityCounts.high,
@@ -195,6 +210,8 @@ export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
 			persistingPatterns: analysis.persistingPatterns,
 			improvingTrends: analysis.improvingTrends,
 			resolvedThisSession: analysis.resolvedThisSession,
+			recurringPatterns: analysis.recurringPatterns,
+			recurringItems: recurringItems.length > 0 ? recurringItems : undefined,
 		},
 		notifications: generateNotifications(analysis),
 	};

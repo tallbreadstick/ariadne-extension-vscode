@@ -177,6 +177,16 @@ export interface FindingLifecycleRecord {
 	recurrenceCount: number;
 
 	/**
+	 * Epoch ms when the most recent recurrence was recorded
+	 * (durable-resolved → active). Null if never recurred.
+	 *
+	 * Used as the reference point for persisting thresholds after
+	 * recurrence — the 30s clock and confirmation counter restart
+	 * from this timestamp, not from firstConfirmedAt.
+	 */
+	lastRecurredAt: number | null;
+
+	/**
 	 * Within-session active → absent → active cycles with identical
 	 * content/scope fingerprints. Measurement-integrity counter.
 	 */
@@ -187,6 +197,18 @@ export interface FindingLifecycleRecord {
 	 * after an absence. These are NOT counted as durable fixes.
 	 */
 	identicalRestorationCount: number;
+
+	/** 1-based line number where the finding was last observed. */
+	lastLineNumber?: number;
+
+	/** 1-based ending line number where the finding was last observed. */
+	lastEndLine?: number;
+
+	/**
+	 * True if the finding's code is currently detected as commented out in the
+	 * source file. Prevents false transition to 'resolved' and keeps it 'persisting'.
+	 */
+	isCommentedOut?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -211,6 +233,13 @@ export interface FindingClassification {
 
 	/** Occurrence count from the current observation. */
 	currentOccurrenceCount: number;
+
+	/**
+	 * True if this observation was an identical restoration of a
+	 * previously absent finding (same logical, content, and scope fingerprints).
+	 * Measurement-integrity flag (Section 11.2).
+	 */
+	isIdenticalRestoration?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -255,6 +284,12 @@ export interface ObservedFinding {
 
 	/** Number of occurrences for this instance in this observation. */
 	occurrenceCount: number;
+
+	/** 1-based line number where the finding was observed. */
+	lineNumber?: number;
+
+	/** 1-based ending line number where the finding was observed. */
+	endLine?: number;
 }
 
 // ══════════════════════════════════════════════════════════════════════

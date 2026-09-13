@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
@@ -75,6 +76,25 @@ function toVulnerabilityMetadata(vuln: Vulnerability): VulnerabilityMetadata {
 		file_path: vuln.filePath,
 		line_number: vuln.line,
 	};
+}
+
+function getWorkspaceFileContent(filePath: string): string | undefined {
+	const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+	const openDoc = vscode.workspace.textDocuments.find(doc => {
+		return doc.uri.fsPath.replace(/\\/g, '/').toLowerCase() === normalized ||
+			doc.fileName.replace(/\\/g, '/').toLowerCase() === normalized;
+	});
+	if (openDoc) {
+		return openDoc.getText();
+	}
+	if (fs.existsSync(filePath)) {
+		try {
+			return fs.readFileSync(filePath, 'utf-8');
+		} catch {
+			return undefined;
+		}
+	}
+	return undefined;
 }
 
 async function focusSignInSidebar(): Promise<void> {
@@ -239,7 +259,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let initialVulnsHtml = buildVulnsHtml([], store);
 	let initialMetricsHtml = buildSessionMetricsHtml({
 		critical: 0, high: 0, medium: 0, low: 0,
-		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0 },
+		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0, recurringPatterns: 0 },
 	});
 
 	// Restore UI from lifecycle data if available
@@ -520,6 +540,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				lifecycles,
 				timestamp,
 				true,
+				getWorkspaceFileContent,
 			);
 			lifecycles = result.lifecycles;
 

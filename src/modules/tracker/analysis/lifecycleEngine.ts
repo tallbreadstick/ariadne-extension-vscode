@@ -25,6 +25,14 @@ import type {
 } from './lifecycleTypes.js';
 
 import { LIFECYCLE_POLICY } from './lifecycleTypes.js';
+import { isCodeCommentedOut } from './commentDetector.js';
+
+/**
+ * Provider function that returns file content by path.
+ * In the extension, this checks open VS Code documents then disk.
+ * In unit tests, this can provide mock file strings.
+ */
+export type FileContentProvider = (filePath: string) => string | undefined;
 
 // ══════════════════════════════════════════════════════════════════════
 // OBSERVATION PROCESSING
@@ -61,18 +69,26 @@ export function processObservation(
 	existingLifecycles: FindingLifecycleRecord[],
 	timestamp: number,
 	isSettledOrPolicy: boolean | LifecyclePolicy = true,
-	maybePolicy?: LifecyclePolicy,
+	maybePolicyOrProvider?: LifecyclePolicy | FileContentProvider,
+	maybeProvider?: FileContentProvider,
 ): ObservationResult {
 	let isSettled = true;
 	let policy: LifecyclePolicy = LIFECYCLE_POLICY;
+	let fileContentProvider: FileContentProvider | undefined;
 
 	if (typeof isSettledOrPolicy === 'boolean') {
 		isSettled = isSettledOrPolicy;
-		if (maybePolicy) {
-			policy = maybePolicy;
+		if (typeof maybePolicyOrProvider === 'object' && maybePolicyOrProvider !== null) {
+			policy = maybePolicyOrProvider;
+			fileContentProvider = maybeProvider;
+		} else if (typeof maybePolicyOrProvider === 'function') {
+			fileContentProvider = maybePolicyOrProvider;
 		}
 	} else if (typeof isSettledOrPolicy === 'object' && isSettledOrPolicy !== null) {
 		policy = isSettledOrPolicy;
+		if (typeof maybePolicyOrProvider === 'function') {
+			fileContentProvider = maybePolicyOrProvider;
+		}
 	}
 
 	// Index observed findings by logical fingerprint for O(1) lookup
@@ -83,6 +99,7 @@ export function processObservation(
 
 	// Track which lifecycles were matched to avoid duplicates
 	const matchedFingerprints = new Set<string>();
+	const restoredFingerprints = new Set<string>();
 
 	// ── Update existing lifecycles ──────────────────────────────────
 	for (const lifecycle of existingLifecycles) {
@@ -90,9 +107,12 @@ export function processObservation(
 
 		if (observed) {
 			matchedFingerprints.add(lifecycle.logicalFingerprint);
-			updateActiveLifecycle(lifecycle, observed, timestamp, isSettled);
+			const isRestored = updateActiveLifecycle(lifecycle, observed, timestamp, isSettled);
+			if (isRestored) {
+				restoredFingerprints.add(lifecycle.logicalFingerprint);
+			}
 		} else {
-			updateAbsentLifecycle(lifecycle, timestamp, policy, isSettled);
+			updateAbsentLifecycle(lifecycle, timestamp, policy, isSettled, fileContentProvider);
 		}
 	}
 
@@ -105,7 +125,12 @@ export function processObservation(
 
 	// ── Classify all lifecycles ─────────────────────────────────────
 	const classifications = existingLifecycles.map((lifecycle) =>
-		classifyLifecycle(lifecycle, timestamp, policy),
+		classifyLifecycle(
+			lifecycle,
+			timestamp,
+			policy,
+			restoredFingerprints.has(lifecycle.logicalFingerprint),
+		),
 	);
 
 	return { lifecycles: existingLifecycles, classifications };
@@ -127,12 +152,19 @@ function updateActiveLifecycle(
 	observed: ObservedFinding,
 	timestamp: number,
 	isSettled: boolean,
-): void {
+): boolean {
 	const previousCount = lifecycle.currentOccurrenceCount;
+	const wasCommentedOut = lifecycle.isCommentedOut;
 
 	// Update live occurrence and path
 	lifecycle.currentOccurrenceCount = observed.occurrenceCount;
 	lifecycle.filePath = observed.filePath;
+	if (typeof observed.lineNumber === 'number') {
+		lifecycle.lastLineNumber = observed.lineNumber;
+	}
+	if (typeof observed.endLine === 'number') {
+		lifecycle.lastEndLine = observed.endLine;
+	}
 
 	// Live scan (unsettled) updates presence for UI, but does not commit confirmations or state transitions
 	if (!isSettled) {
@@ -142,26 +174,35 @@ function updateActiveLifecycle(
 		if (observed.scopeFingerprint) {
 			lifecycle.scopeFingerprint = observed.scopeFingerprint;
 		}
-		return;
+		return false;
 	}
+
+	let isRestored = false;
 
 	// ── Recurrence after durable resolution ─────────────────────
 	if (lifecycle.durableResolutionAt !== null) {
-		checkIdenticalRestoration(lifecycle, observed);
+		isRestored = checkIdenticalRestoration(lifecycle, observed);
 		lifecycle.recurrenceCount += 1;
+		lifecycle.lastRecurredAt = timestamp;
 		lifecycle.durableResolutionAt = null;
 		lifecycle.provisionalResolutionAt = null;
 		lifecycle.missingSince = null;
+		lifecycle.isCommentedOut = false;
 		lifecycle.baselineOccurrenceCount = observed.occurrenceCount;
+		// Reset confirmations so the finding must re-prove persistence
+		lifecycle.confirmationCount = 0;
 		console.log(
 			`[Ariadne Lifecycle] Recurrence #${lifecycle.recurrenceCount} ` +
 			`for ${lifecycle.type} (${lifecycle.logicalFingerprint.slice(0, 16)})`,
 		);
-	} else if (lifecycle.missingSince !== null || lifecycle.provisionalResolutionAt !== null) {
-		// ── Reappearance after absence / provisional resolution ─────
-		checkIdenticalRestoration(lifecycle, observed);
+	} else if (lifecycle.missingSince !== null || lifecycle.provisionalResolutionAt !== null || wasCommentedOut) {
+		// ── Reappearance after absence / provisional resolution / commented out ─────
+		isRestored = checkIdenticalRestoration(lifecycle, observed);
 		lifecycle.missingSince = null;
 		lifecycle.provisionalResolutionAt = null;
+		lifecycle.isCommentedOut = false;
+	} else {
+		lifecycle.isCommentedOut = false;
 	}
 
 	// Update content/scope fingerprints to latest observation after restoration check
@@ -180,6 +221,8 @@ function updateActiveLifecycle(
 	// Track previous count for delta reporting
 	// (stored transiently — the classification step reads it from the lifecycle)
 	void previousCount;
+
+	return isRestored;
 }
 
 /**
@@ -196,6 +239,7 @@ function updateAbsentLifecycle(
 	timestamp: number,
 	policy: LifecyclePolicy,
 	isSettled: boolean,
+	fileContentProvider?: FileContentProvider,
 ): void {
 	// Already durably resolved — nothing to do
 	if (lifecycle.durableResolutionAt !== null) {
@@ -206,6 +250,35 @@ function updateAbsentLifecycle(
 	if (!isSettled) {
 		return;
 	}
+
+	// Check if the finding's code is commented out in the source file
+	if (fileContentProvider && lifecycle.filePath) {
+		const content = fileContentProvider(lifecycle.filePath);
+		if (content) {
+			const commentedOut = isCodeCommentedOut(
+				content,
+				lifecycle.lastLineNumber,
+				lifecycle.instanceName,
+				lifecycle.lastEndLine,
+			);
+			if (commentedOut) {
+				lifecycle.isCommentedOut = true;
+				if (lifecycle.missingSince === null) {
+					lifecycle.missingSince = timestamp;
+				}
+				// Commented-out code MUST NOT transition to provisional or durable resolution!
+				lifecycle.provisionalResolutionAt = null;
+				lifecycle.durableResolutionAt = null;
+				console.log(
+					`[Ariadne Lifecycle] Vulnerability commented out (withheld from resolution): ` +
+					`${lifecycle.type} (${lifecycle.instanceName || lifecycle.logicalFingerprint.slice(0, 16)})`,
+				);
+				return;
+			}
+		}
+	}
+
+	lifecycle.isCommentedOut = false;
 
 	// First observation of absence
 	if (lifecycle.missingSince === null) {
@@ -249,26 +322,29 @@ function updateAbsentLifecycle(
 function checkIdenticalRestoration(
 	lifecycle: FindingLifecycleRecord,
 	observed: ObservedFinding,
-): void {
+): boolean {
 	// Content/scope fingerprints are required to determine identical restoration.
 	if (!lifecycle.contentFingerprint || !observed.contentFingerprint) {
-		return;
+		return false;
 	}
 	if (!lifecycle.scopeFingerprint || !observed.scopeFingerprint) {
-		return;
+		return false;
 	}
 
 	const contentMatch = lifecycle.contentFingerprint === observed.contentFingerprint;
 	const scopeMatch = lifecycle.scopeFingerprint === observed.scopeFingerprint;
 
 	if (contentMatch && scopeMatch) {
-		lifecycle.identicalRestorationCount += 1;
-		lifecycle.inSessionToggleCount += 1;
+		lifecycle.identicalRestorationCount = (lifecycle.identicalRestorationCount ?? 0) + 1;
+		lifecycle.inSessionToggleCount = (lifecycle.inSessionToggleCount ?? 0) + 1;
 		console.log(
 			`[Ariadne Lifecycle] Identical restoration detected: ` +
 			`${lifecycle.type} (toggle #${lifecycle.inSessionToggleCount})`,
 		);
+		return true;
 	}
+
+	return false;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -301,6 +377,10 @@ function createLifecycleRecord(
 		recurrenceCount: 0,
 		inSessionToggleCount: 0,
 		identicalRestorationCount: 0,
+		lastRecurredAt: null,
+		lastLineNumber: finding.lineNumber,
+		lastEndLine: finding.endLine,
+		isCommentedOut: false,
 		lifecycleState: 'candidate',
 	};
 }
@@ -324,6 +404,7 @@ function classifyLifecycle(
 	lifecycle: FindingLifecycleRecord,
 	timestamp: number,
 	policy: LifecyclePolicy,
+	isIdenticalRestoration: boolean = false,
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
 	lifecycle.lifecycleState = status;
@@ -333,6 +414,7 @@ function classifyLifecycle(
 		status,
 		previousOccurrenceCount: lifecycle.baselineOccurrenceCount,
 		currentOccurrenceCount: lifecycle.currentOccurrenceCount,
+		...(isIdenticalRestoration ? { isIdenticalRestoration: true } : {}),
 	};
 }
 
@@ -344,18 +426,31 @@ export function classifyFinding(
 	timestamp: number,
 	policy: LifecyclePolicy = LIFECYCLE_POLICY,
 ): InternalFindingState {
+	// 0. Commented-out finding: withheld from 'resolved' and treated as 'persisting' (Option 1)
+	if (lifecycle.isCommentedOut) {
+		return 'persisting';
+	}
+
 	const isCurrentlyActive = lifecycle.missingSince === null
 		&& lifecycle.durableResolutionAt === null;
 	const observedAge = timestamp - lifecycle.firstConfirmedAt;
 	const meetsThresholds = observedAge >= policy.MINIMUM_DURATION_MS
 		&& lifecycle.confirmationCount >= policy.MINIMUM_SETTLED_CONFIRMATIONS;
 
-	// 1. Recurring: previously resolved, now active, met recurrence threshold
+	// 1. Recurring: previously resolved, now active, met recurrence threshold.
+	//    Thresholds are measured from lastRecurredAt (not firstConfirmedAt)
+	//    so the finding must re-prove persistence after each recurrence.
+	//    Once it re-establishes itself, it graduates to 'persisting'.
 	if (
 		isCurrentlyActive
 		&& lifecycle.recurrenceCount >= policy.RECURRENCE_THRESHOLD
 	) {
-		return 'recurring';
+		const ageSinceRecurrence = lifecycle.lastRecurredAt !== null
+			? timestamp - lifecycle.lastRecurredAt
+			: observedAge;
+		const reestablished = ageSinceRecurrence >= policy.MINIMUM_DURATION_MS
+			&& lifecycle.confirmationCount >= policy.MINIMUM_SETTLED_CONFIRMATIONS;
+		return reestablished ? 'persisting' : 'recurring';
 	}
 
 	// 2. Resolved: durably resolved and NOT currently active
