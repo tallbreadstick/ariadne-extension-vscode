@@ -149,4 +149,6 @@ export interface SessionMetrics {
 	notifications?: SessionNotification[];
 	/** Optional list of common vulnerability types to display in the Common Vulnerabilities panel. */
 	commonVulnerabilities?: CommonVulnerabilityItem[];
+	/** Total sessions analyzed (completed + active). */
+	totalSessionsAnalyzed?: number;
 }

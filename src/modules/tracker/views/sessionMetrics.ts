@@ -210,11 +210,14 @@ function buildNotificationsPanel(metrics: SessionMetrics): string {
 		</div>`;
 }
 
-function buildCommonVulnerabilitiesPanel(items?: CommonVulnerabilityItem[]): string {
+function buildCommonVulnerabilitiesPanel(
+	items?: CommonVulnerabilityItem[],
+	totalSessionsAnalyzed?: number,
+): string {
 	let content: string;
 
 	if (!items || items.length === 0) {
-		const totalSessions = items?.[0]?.totalSessions ?? 0;
+		const totalSessions = totalSessionsAnalyzed ?? items?.[0]?.totalSessions ?? 0;
 		const emptyMessage = totalSessions < 2
 			? 'Not enough session data yet'
 			: 'No common vulnerabilities';
@@ -778,7 +781,7 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 			<div class="divider"></div>
 			
 			<div class="split-section">
-				${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities)}
+				${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
 				${buildNotificationsPanel(metrics)}
 			</div>
 		</section>

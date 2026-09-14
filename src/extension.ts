@@ -59,7 +59,13 @@ import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
 import { computeCommonVulnerabilities } from './modules/tracker/analysis/commonVulnerabilities.js';
-import type { Vulnerability } from './modules/presentation/panelTypes.js';
+import type {
+	Vulnerability,
+	SessionMetrics,
+	CommonVulnerabilityItem,
+	ImprovingSubItem,
+} from './modules/presentation/panelTypes.js';
+import type { SessionAnalysis } from './modules/tracker/analysis/analysisTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
 import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
 
@@ -257,12 +263,165 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	let latestVulnerabilities: Vulnerability[] = [];
 	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
+	let latestSessionAnalysis: SessionAnalysis | null = null;
+
+	function buildCurrentSessionMetrics(): SessionMetrics {
+		const completedSessions = store.loadCompletedSessions();
+		const priorCompletedSession = store.loadPriorCompletedSession();
+		const graduationHistory = store.loadGraduationHistory();
+		const totalSessionsAnalyzed = completedSessions.length + (activeSession ? 1 : 0);
+
+		const commonVulns = computeCommonVulnerabilities(
+			completedSessions,
+			activeSession,
+			lifecycles,
+			graduationHistory,
+		);
+
+		if (latestSessionAnalysis) {
+			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed);
+			if (latestVulnerabilities.length > 0) {
+				metrics.critical = latestVulnerabilities.filter(v => v.severity === 'critical').length;
+				metrics.high = latestVulnerabilities.filter(v => v.severity === 'high').length;
+				metrics.medium = latestVulnerabilities.filter(v => v.severity === 'medium').length;
+				metrics.low = latestVulnerabilities.filter(v => v.severity === 'low').length;
+			}
+			const dismissed = new Set(store.loadDismissedNotifications());
+			if (metrics.notifications) {
+				metrics.notifications = metrics.notifications.filter(n => !dismissed.has(n.id));
+			}
+			return metrics;
+		}
+
+		let critical = 0;
+		let high = 0;
+		let medium = 0;
+		let low = 0;
+
+		if (latestVulnerabilities.length > 0) {
+			for (const v of latestVulnerabilities) {
+				if (v.severity === 'critical') { critical++; }
+				else if (v.severity === 'high') { high++; }
+				else if (v.severity === 'medium') { medium++; }
+				else if (v.severity === 'low') { low++; }
+			}
+		} else if (lifecycles.length > 0) {
+			for (const flc of lifecycles) {
+				if (flc.durableResolutionAt === null) {
+					if (flc.severity === 'critical') { critical++; }
+					else if (flc.severity === 'high') { high++; }
+					else if (flc.severity === 'medium') { medium++; }
+					else if (flc.severity === 'low') { low++; }
+				}
+			}
+		} else if (priorCompletedSession?.finalCheckpoint?.findings) {
+			for (const f of priorCompletedSession.finalCheckpoint.findings) {
+				if (f.severity === 'critical') { critical++; }
+				else if (f.severity === 'high') { high++; }
+				else if (f.severity === 'medium') { medium++; }
+				else if (f.severity === 'low') { low++; }
+			}
+		}
+
+		let persistingPatterns = 0;
+		let improvingTrends = 0;
+		let resolvedThisSession = 0;
+		let recurringPatterns = 0;
+
+		const persistingMap = new Map<string, number>();
+		const recurringMap = new Map<string, number>();
+		const resolvedMap = new Map<string, number>();
+		const improvingMap = new Map<string, ImprovingSubItem>();
+
+		for (const flc of lifecycles) {
+			if (flc.lifecycleState === 'recurring') {
+				recurringPatterns++;
+				recurringMap.set(flc.type, (recurringMap.get(flc.type) ?? 0) + 1);
+			} else if (flc.lifecycleState === 'resolved' || flc.durableResolutionAt !== null) {
+				resolvedThisSession++;
+				resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
+			} else if (flc.lifecycleState === 'improving') {
+				improvingTrends++;
+				const existing = improvingMap.get(flc.type);
+				if (existing) {
+					existing.instances++;
+				} else {
+					improvingMap.set(flc.type, {
+						type: flc.type,
+						instances: 1,
+						progressLabel: 'Some progress',
+						progressDelta: 'N/A',
+					});
+				}
+			} else if (flc.lifecycleState === 'persisting') {
+				persistingPatterns++;
+				persistingMap.set(flc.type, (persistingMap.get(flc.type) ?? 0) + 1);
+			}
+		}
+
+		const persistingItems = persistingMap.size > 0
+			? Array.from(persistingMap.entries()).map(([type, instances]) => ({ type, instances }))
+			: undefined;
+		const recurringItems = recurringMap.size > 0
+			? Array.from(recurringMap.entries()).map(([type, instances]) => ({ type, instances }))
+			: undefined;
+		const resolvedItems = resolvedMap.size > 0
+			? Array.from(resolvedMap.entries()).map(([type, instances]) => ({ type, instances }))
+			: undefined;
+		const improvingItems = improvingMap.size > 0
+			? Array.from(improvingMap.values())
+			: undefined;
+
+		const fixScore = priorCompletedSession?.finalScores?.f;
+		const persistenceScore = priorCompletedSession?.finalScores?.p;
+		const trendScore = priorCompletedSession?.finalScores?.t ?? null;
+		const trendLabelText = trendScore !== null && trendLabel(trendScore) !== null
+			? `${trendLabel(trendScore)} (${formatTrendDelta(trendScore)})`
+			: undefined;
+
+		const commonItems: CommonVulnerabilityItem[] = [];
+		for (const entry of commonVulns.values()) {
+			commonItems.push({
+				type: entry.type,
+				cweId: entry.cweId,
+				sessionCount: entry.sessionCount,
+				totalSessions: entry.totalSessions,
+				activeFindingCount: entry.activeFindingCount,
+			});
+		}
+
+		return {
+			critical,
+			high,
+			medium,
+			low,
+			trends: {
+				persistingPatterns,
+				improvingTrends,
+				resolvedThisSession,
+				recurringPatterns,
+				persistingItems,
+				improvingItems,
+				recurringItems,
+				resolvedItems,
+				fixScore,
+				persistenceScore,
+				trendScore,
+				trendLabel: trendLabelText,
+			},
+			notifications: undefined,
+			commonVulnerabilities: commonItems.length > 0 ? commonItems : undefined,
+			totalSessionsAnalyzed,
+		};
+	}
+
+	function refreshSessionMetricsPanel(): void {
+		const metrics = buildCurrentSessionMetrics();
+		sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(metrics));
+	}
 
 	let initialVulnsHtml = buildVulnsHtml([], store);
-	let initialMetricsHtml = buildSessionMetricsHtml({
-		critical: 0, high: 0, medium: 0, low: 0,
-		trends: { persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0, recurringPatterns: 0 },
-	});
+	let initialMetricsHtml = buildSessionMetricsHtml(buildCurrentSessionMetrics());
 
 	// Restore UI from lifecycle data if available
 	if (lifecycles.length > 0) {
@@ -292,6 +451,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				store.dismissNotification(msg.notifId);
 			}
 		},
+	);
+	sessionMetricsProvider.setResolveHtml(() =>
+		buildSessionMetricsHtml(buildCurrentSessionMetrics()),
 	);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
@@ -454,7 +616,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
-		// ── 2. Inline squiggles + diagnostics (always updated) ──────────
+		// ── 2. Session Metrics panel (always updated on live scan) ──────
+		refreshSessionMetricsPanel();
+
+		// ── 3. Inline squiggles + diagnostics (always updated) ──────────
 		const byFile = groupFindingsByFile(findings);
 		diagnosticManager.publishAllDiagnostics(byFile);
 
@@ -561,6 +726,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					lifecycles,
 					activeSession?.trendComparisonByKey,
 				);
+				latestSessionAnalysis = sessionAnalysis;
 
 				// ── 4e. Common Vulnerabilities ────────────────────────────
 				const completedSessions = store.loadCompletedSessions();
@@ -573,14 +739,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 				void store.saveGraduationHistory(graduationHistory);
 
-				const sessionMetrics = toSessionMetrics(sessionAnalysis, commonVulns);
-				const dismissed = new Set(store.loadDismissedNotifications());
-				if (sessionMetrics.notifications) {
-					sessionMetrics.notifications = sessionMetrics.notifications
-						.filter(n => !dismissed.has(n.id));
-				}
-
-				sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(sessionMetrics));
+				refreshSessionMetricsPanel();
 				updateStatusBar(sessionAnalysis);
 
 				// ── 4e. VS Code toast notifications ──────────────────────

@@ -310,6 +310,7 @@ function mapCommonVulns(
 export function toSessionMetrics(
 	analysis: SessionAnalysis,
 	commonVulns?: Map<string, CommonVulnerabilityEntry>,
+	totalSessionsAnalyzed?: number,
 ): SessionMetrics {
 	// Build per-type sub-items for recurring findings (grouped by type)
 	const recurringItems = groupByType(
@@ -357,6 +358,11 @@ export function toSessionMetrics(
 	// Build trend label string
 	const trendLabelStr = analysis.scores?.tLabel ?? undefined;
 
+	let totalSessions = totalSessionsAnalyzed;
+	if (totalSessions === undefined && commonVulns && commonVulns.size > 0) {
+		totalSessions = commonVulns.values().next().value?.totalSessions;
+	}
+
 	return {
 		critical: analysis.severityCounts.critical,
 		high: analysis.severityCounts.high,
@@ -378,6 +384,7 @@ export function toSessionMetrics(
 		},
 		notifications: generateNotifications(analysis),
 		commonVulnerabilities: mapCommonVulns(commonVulns),
+		totalSessionsAnalyzed: totalSessions,
 	};
 }
 
