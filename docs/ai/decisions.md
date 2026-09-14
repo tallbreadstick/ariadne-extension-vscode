@@ -181,5 +181,14 @@ Within each section, newest decision at the top.
 - consequences: Incomplete sessions remain preserved for auditing and debugging, but never corrupt cross-session metrics. When Ervin and Kenn implement the $T$ formula, they receive a clean, pre-calculated, frozen comparison baseline ($C$) and denominator without having to navigate storage, handle incomplete edge cases, or risk runtime division-by-zero errors.
 - task: docs/ai/tasks/2026-09-12-pull-previous-completed-session.md
 
+### Common Vulnerabilities — Cross-Session Type-Level Awareness Metric
+
+- date: 2026-09-14
+- status: accepted
+- context: The existing lifecycle engine tracks individual finding instances within and across sessions (Persisting, Improving, Resolved, Recurring). However, it does not surface which vulnerability *categories* (by CWE/type) a student encounters repeatedly across sessions. Faculty feedback and the research framework require a type-level awareness signal that tells students "you keep running into SQL Injection" rather than just "this specific finding persists." The metric must also reward students who demonstrate sustained remediation and prevention.
+- decision: Implement a Common Vulnerabilities engine as a pure computation module (`commonVulnerabilities.ts`) that aggregates `FindingLifecycleRecord[]` across `SessionRecord[]` by `cweId::type`. A type is "Common" when it appears in K ≥ 2 distinct sessions. Graduation requires all findings of that type to be durably resolved AND the type to be absent for G ≥ 2 consecutive completed sessions. If a graduated type reappears, the session counter resets (Leitner-style box reset) — the type must re-establish a pattern of K sessions before re-entering Common. Graduation history is persisted as a `Record<string, TypeGraduationState>` in a new `workspaceState` key (`ariadne.graduationHistory`). K and G are configurable policy constants. The engine is framework-free (no `vscode` imports) for testability.
+- consequences: Students see a "Common Vulnerabilities" panel in Session Metrics showing which categories they encounter repeatedly, with session frequency and active finding count. The panel dynamically reflects graduation — types drop off when students demonstrate sustained mastery. The session-count reset on re-entry prevents a single slip from immediately re-labeling a graduated type. New workspaceState key adds ~100 bytes per graduated type. Cleared alongside other lifecycle data on debug reset.
+- task: docs/ai/tasks/2026-09-14-common-vulnerabilities.md
+
 <!-- Add new post-MVP decisions above this line -->
 

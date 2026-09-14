@@ -116,6 +116,20 @@ export interface SessionNotification {
 	timestamp: string;
 }
 
+/** A single entry in the Common Vulnerabilities panel. */
+export interface CommonVulnerabilityItem {
+	/** Vulnerability type label (e.g. "SQL Injection"). */
+	type: string;
+	/** CWE identifier (e.g. "CWE-89"). */
+	cweId: string;
+	/** Number of sessions this type appeared in (post-graduation). */
+	sessionCount: number;
+	/** Total sessions analyzed. */
+	totalSessions: number;
+	/** Active findings of this type still present. */
+	activeFindingCount: number;
+}
+
 /**
  * Aggregated metrics for the current scan session,
  * displayed in the Session Metrics panel.
@@ -133,4 +147,6 @@ export interface SessionMetrics {
 	trends: TrendData;
 	/** Optional list of notifications to display in a scrollable feed at the bottom of the panel. */
 	notifications?: SessionNotification[];
+	/** Optional list of common vulnerability types to display in the Common Vulnerabilities panel. */
+	commonVulnerabilities?: CommonVulnerabilityItem[];
 }

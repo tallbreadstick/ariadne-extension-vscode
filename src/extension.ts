@@ -58,6 +58,7 @@ import {
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
+import { computeCommonVulnerabilities } from './modules/tracker/analysis/commonVulnerabilities.js';
 import type { Vulnerability } from './modules/presentation/panelTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
 import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
@@ -561,7 +562,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					activeSession?.trendComparisonByKey,
 				);
 
-				const sessionMetrics = toSessionMetrics(sessionAnalysis);
+				// ── 4e. Common Vulnerabilities ────────────────────────────
+				const completedSessions = store.loadCompletedSessions();
+				const graduationHistory = store.loadGraduationHistory();
+				const commonVulns = computeCommonVulnerabilities(
+					completedSessions,
+					activeSession,
+					lifecycles,
+					graduationHistory,
+				);
+				void store.saveGraduationHistory(graduationHistory);
+
+				const sessionMetrics = toSessionMetrics(sessionAnalysis, commonVulns);
 				const dismissed = new Set(store.loadDismissedNotifications());
 				if (sessionMetrics.notifications) {
 					sessionMetrics.notifications = sessionMetrics.notifications
@@ -588,6 +600,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					`Recurring: ${sessionAnalysis.recurringPatterns}` +
 					scoreInfo,
 				);
+
+				// Debug: log common vulnerabilities
+				const gradCount = Object.keys(graduationHistory).length;
+				if (commonVulns.size > 0) {
+					const cvEntries = [...commonVulns.values()]
+						.map(cv => `${cv.type} (${cv.cweId}): ${cv.sessionCount}/${cv.totalSessions} sessions, ${cv.activeFindingCount} active`)
+						.join('; ');
+					console.log(
+						`[Ariadne Common Vulns] ${commonVulns.size} common type(s): ${cvEntries} | ${gradCount} graduated type(s)`,
+					);
+				} else {
+					console.log(
+						`[Ariadne Common Vulns] No common types (${completedSessions.length + (activeSession ? 1 : 0)} session(s) analyzed, ${gradCount} graduated)`,
+					);
+				}
 			} catch {
 				// buildSessionAnalysis guards are in place, but be safe
 			}

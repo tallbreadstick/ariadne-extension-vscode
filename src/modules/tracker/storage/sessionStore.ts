@@ -32,6 +32,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type * as vscode from 'vscode';
 import type { FindingLifecycleRecord, SessionRecord } from '../analysis/lifecycleTypes.js';
+import type { TypeGraduationState } from '../analysis/commonVulnerabilities.js';
 import type { SessionMeta, UserConfig } from './storageTypes.js';
 import {
 	WS_SCAN_SNAPSHOTS,
@@ -42,6 +43,7 @@ import {
 	WS_SAVE_SCAN_STATE,
 	WS_DISMISSED_NOTIFICATIONS,
 	WS_EXPANDED_VULN_KEY,
+	WS_GRADUATION_HISTORY,
 	GL_USER_CONFIG,
 } from './storageKeys.js';
 
@@ -146,10 +148,11 @@ export class SessionStore {
 			await this.context.workspaceState.update(WS_ACTIVE_SESSION, undefined);
 			await this.context.workspaceState.update(WS_COMPLETED_SESSIONS, undefined);
 			await this.context.workspaceState.update(WS_FINDING_LIFECYCLES, undefined);
+			await this.context.workspaceState.update(WS_GRADUATION_HISTORY, undefined);
 			const meta = this.loadSessionMeta();
 			meta.sessionIdSeed = 0;
 			await this.saveSessionMeta(meta);
-			console.log('[Ariadne Store] Cleared all lifecycle data.');
+			console.log('[Ariadne Store] Cleared all lifecycle data (including graduation history).');
 		});
 	}
 
@@ -303,6 +306,30 @@ export class SessionStore {
 			await this.context.workspaceState.update(WS_FINDING_LIFECYCLES, lifecycles);
 			console.log(
 				`[Ariadne Store] Saved ${lifecycles.length} finding lifecycle(s).`,
+			);
+		});
+	}
+
+	// ── Graduation History (workspaceState — per project) ──────────
+
+	/**
+	 * Loads the per-type graduation history for Common Vulnerabilities.
+	 * Returns an empty record if nothing has been persisted yet.
+	 */
+	loadGraduationHistory(): Record<string, TypeGraduationState> {
+		return this.context.workspaceState.get<Record<string, TypeGraduationState>>(
+			WS_GRADUATION_HISTORY,
+			{},
+		);
+	}
+
+	/** Persists updated graduation history. */
+	async saveGraduationHistory(history: Record<string, TypeGraduationState>): Promise<void> {
+		return this.enqueuePersist(async () => {
+			await this.context.workspaceState.update(WS_GRADUATION_HISTORY, history);
+			const typeCount = Object.keys(history).length;
+			console.log(
+				`[Ariadne Store] Saved graduation history (${typeCount} type(s)).`,
 			);
 		});
 	}

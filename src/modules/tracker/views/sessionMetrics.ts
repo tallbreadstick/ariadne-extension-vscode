@@ -6,7 +6,7 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem } from '../../presentation/panelTypes.js';
+import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
 
@@ -41,7 +41,7 @@ const IMPROVING_SVG =
 	</svg>`;
 
 const RECURRING_SVG =
-    `<svg class="trend-icon trend-red" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+	`<svg class="trend-icon trend-red" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
     </svg>`;
@@ -67,6 +67,12 @@ const COMMON_VULN_SVG =
 		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
 		<path d="M12 8v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 		<circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+	</svg>`;
+
+const FULL_SCAN_SVG =
+	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<path d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2m-10 0H5a2 2 0 01-2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+		<line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 	</svg>`;
 
 const NOTIFICATION_ICON_SVG =
@@ -204,7 +210,31 @@ function buildNotificationsPanel(metrics: SessionMetrics): string {
 		</div>`;
 }
 
-function buildCommonVulnerabilitiesPanel(): string {
+function buildCommonVulnerabilitiesPanel(items?: CommonVulnerabilityItem[]): string {
+	let content: string;
+
+	if (!items || items.length === 0) {
+		const totalSessions = items?.[0]?.totalSessions ?? 0;
+		const emptyMessage = totalSessions < 2
+			? 'Not enough session data yet'
+			: 'No common vulnerabilities';
+		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;
+	} else {
+		content = items.map(item => {
+			const activeLabel = item.activeFindingCount > 0
+				? /* html */ `<span class="cv-active">${item.activeFindingCount} active</span>`
+				: /* html */ `<span class="cv-resolved">all resolved</span>`;
+			return /* html */ `
+				<div class="cv-card">
+					<span class="cv-type">${item.type}</span>
+					<div class="cv-card-body">
+						<span class="cv-cwe">${item.cweId}</span>
+						${activeLabel}
+					</div>
+				</div>`;
+		}).join('');
+	}
+
 	return /* html */ `
 		<div class="split-panel common-vuln-panel">
 			<div class="split-panel-header">
@@ -212,7 +242,7 @@ function buildCommonVulnerabilitiesPanel(): string {
 				<span class="split-panel-title">COMMON VULNERABILITIES</span>
 			</div>
 			<div class="common-vuln-feed">
-				<div class="panel-empty">No data yet</div>
+				${content}
 			</div>
 		</div>`;
 }
@@ -249,6 +279,24 @@ const CSS = /* css */ `
 	}
 
 	.dashboard { display: grid; gap: 16px; }
+
+	/* ── Full scan section ── */
+	.full-scan-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.full-scan-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		color: var(--muted);
+		letter-spacing: 0.04em;
+	}
 
 	.metrics-grid {
 		display: grid;
@@ -503,6 +551,56 @@ const CSS = /* css */ `
 		padding: 20px 8px;
 	}
 
+	/* ── Common vulnerability cards ── */
+	.cv-card {
+		padding: 8px 10px;
+		border-bottom: 1px solid var(--border);
+		background: var(--card);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.cv-card:last-child { border-bottom: none; }
+
+	.cv-type {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		align-self: center;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.cv-card-body {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+		flex-shrink: 0;
+	}
+
+	.cv-cwe {
+		font-size: 10px;
+		color: var(--muted);
+	}
+
+	.cv-active {
+		font-size: 11px;
+		font-weight: 600;
+		color: #E24B4A;
+	}
+
+	.cv-resolved {
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--accent);
+	}
+
 	/* ── Notification feed (scrollable) ── */
 	.notif-feed {
 		flex: 1;
@@ -623,11 +721,17 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 	</head>
 	<body>
 		<section class="dashboard">
-			<div class="metrics-grid">
-				${buildMetricCard('Critical Issues', critical, 'critical')}
-				${buildMetricCard('High Issues', high, 'high')}
-				${buildMetricCard('Medium Issues', medium, 'medium')}
-				${buildMetricCard('Low Issues', low, 'low')}
+			<div class="full-scan-section">
+				<div class="full-scan-header">
+					${FULL_SCAN_SVG}
+					<span>Full scan</span>
+				</div>
+				<div class="metrics-grid">
+					${buildMetricCard('Critical Issues', critical, 'critical')}
+					${buildMetricCard('High Issues', high, 'high')}
+					${buildMetricCard('Medium Issues', medium, 'medium')}
+					${buildMetricCard('Low Issues', low, 'low')}
+				</div>
 			</div>
 
 			<div class="divider"></div>
@@ -639,42 +743,42 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 				</div>
 
 				${buildCollapsibleTrendRow(
-					'persisting',
-					PERSISTING_SVG,
-					'Persisting Patterns',
-					trends.persistingPatterns,
-					persistingSubItems,
-				)}
+		'persisting',
+		PERSISTING_SVG,
+		'Persisting Patterns',
+		trends.persistingPatterns,
+		persistingSubItems,
+	)}
 
 				${buildCollapsibleTrendRow(
-					'improving',
-					IMPROVING_SVG,
-					'Improving Trends',
-					trends.improvingTrends,
-					improvingSubItems,
-				)}
+		'improving',
+		IMPROVING_SVG,
+		'Improving Trends',
+		trends.improvingTrends,
+		improvingSubItems,
+	)}
 
 				${buildCollapsibleTrendRow(
-					'recurring',
-					RECURRING_SVG,
-					'Recurring Patterns',
-					trends.recurringPatterns,
-					recurringSubItems,
-				)}
+		'recurring',
+		RECURRING_SVG,
+		'Recurring Patterns',
+		trends.recurringPatterns,
+		recurringSubItems,
+	)}
 
 				${buildCollapsibleTrendRow(
-					'resolved',
-					RESOLVED_SVG,
-					'Resolved This Session',
-					trends.resolvedThisSession,
-					resolvedSubItems,
-				)}
+		'resolved',
+		RESOLVED_SVG,
+		'Resolved',
+		trends.resolvedThisSession,
+		resolvedSubItems,
+	)}
 			</div>
 			
 			<div class="divider"></div>
 			
 			<div class="split-section">
-				${buildCommonVulnerabilitiesPanel()}
+				${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities)}
 				${buildNotificationsPanel(metrics)}
 			</div>
 		</section>
