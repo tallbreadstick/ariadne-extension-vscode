@@ -25,15 +25,26 @@ import type {
 	VulnerabilityDelta,
 	VulnerabilityStatus,
 	SeverityCounts,
+	TypeScoreEntry,
 } from './analysisTypes.js';
 import type {
 	SessionMetrics,
 	SessionNotification,
+	ImprovingSubItem,
+	TrendSubItem,
 } from '../../presentation/panelTypes.js';
 import type {
 	FindingClassification,
+	FindingLifecycleRecord,
 	InternalFindingState,
+	TrendComparisonBaseline,
 } from './lifecycleTypes.js';
+import {
+	computeCategoryScores,
+	computeTrendScore,
+	trendLabel,
+	formatTrendDelta,
+} from './scoreCalculator.js';
 
 // ══════════════════════════════════════════════════════════════════════
 // SEVERITY COUNTING
@@ -72,11 +83,15 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
  * @param classifications - Output from lifecycleEngine.processObservation()
  * @param currentScan - The current scan snapshot (for active findings)
  * @param previousScan - The previous scan snapshot, or null
+ * @param lifecycles - Current lifecycle records (for F/P computation)
+ * @param trendComparisonByKey - Frozen comparison set from prior session (for T computation)
  */
 export function buildSessionAnalysis(
 	classifications: FindingClassification[],
 	currentScan: ScanSnapshot,
 	previousScan: ScanSnapshot | null,
+	lifecycles?: FindingLifecycleRecord[],
+	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null,
 ): SessionAnalysis {
 	const activeFindings = currentScan.vulnerabilities;
 
@@ -132,6 +147,40 @@ export function buildSessionAnalysis(
 		}
 	}
 
+	// ── F/P/T score computation ────────────────────────────────────
+	let scores: SessionAnalysis['scores'];
+	let typeScores: TypeScoreEntry[] | undefined;
+
+	if (lifecycles && lifecycles.length > 0) {
+		const categoryResult = computeCategoryScores(lifecycles);
+		const trendResult = computeTrendScore(lifecycles, trendComparisonByKey);
+
+		scores = {
+			f: categoryResult.aggregate.f,
+			p: categoryResult.aggregate.p,
+			tLive: trendResult?.workspaceT ?? null,
+			tLabel: trendResult
+				? buildTrendLabel(trendResult.workspaceT)
+				: null,
+		};
+
+		// Build per-CWE type scores
+		typeScores = [];
+		for (const [key, ts] of categoryResult.byType) {
+			const tForKey = trendResult?.byKey[key] ?? null;
+			typeScores.push({
+				type: ts.type,
+				cweId: ts.cweId,
+				f: ts.f,
+				p: ts.p,
+				t: tForKey,
+				totalInstances: ts.totalEverObserved,
+				resolvedInstances: ts.durablyResolved,
+				openInstances: ts.currentlyOpen,
+			});
+		}
+	}
+
 	return {
 		currentScan,
 		previousScan,
@@ -144,7 +193,20 @@ export function buildSessionAnalysis(
 		recurringPatterns,
 		totalIdenticalRestorations,
 		totalInSessionToggles,
+		scores,
+		typeScores,
 	};
+}
+
+/**
+ * Builds a user-facing trend label string like "Some progress (+2.00)".
+ */
+function buildTrendLabel(t: number): string | null {
+	const label = trendLabel(t);
+	if (!label) {
+		return null;
+	}
+	return `${label} (${formatTrendDelta(t)})`;
 }
 
 /**
@@ -179,8 +241,36 @@ function createResolvedPlaceholder(
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// ADAPTER HELPERS
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * Groups vulnerability deltas by type and sums their instance counts.
+ *
+ * Instead of one row per FLC instance (e.g. "Path Traversal 1" × 8),
+ * produces one row per vulnerability type (e.g. "Path Traversal 8").
+ */
+function groupByType(
+	deltas: VulnerabilityDelta[],
+	getCount: (d: VulnerabilityDelta) => number,
+): TrendSubItem[] {
+	const map = new Map<string, TrendSubItem>();
+	for (const d of deltas) {
+		const type = d.vulnerability.type;
+		const existing = map.get(type);
+		if (existing) {
+			existing.instances += getCount(d);
+		} else {
+			map.set(type, { type, instances: getCount(d) });
+		}
+	}
+	return [...map.values()];
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // ADAPTER: SessionAnalysis → SessionMetrics
 // ══════════════════════════════════════════════════════════════════════
+
 
 /**
  * Maps the rich SessionAnalysis output to the existing
@@ -193,13 +283,51 @@ function createResolvedPlaceholder(
  * Notifications are auto-generated from the vulnerability deltas.
  */
 export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
-	// Build per-type sub-items for recurring findings
-	const recurringItems = analysis.deltas
-		.filter(d => d.status === 'recurring')
-		.map(d => ({
-			type: d.vulnerability.type,
-			instances: d.currentInstanceCount,
-		}));
+	// Build per-type sub-items for recurring findings (grouped by type)
+	const recurringItems = groupByType(
+		analysis.deltas.filter(d => d.status === 'recurring'),
+		d => d.currentInstanceCount,
+	);
+
+	// Build per-type sub-items for persisting findings (grouped by type)
+	const persistingItems: TrendSubItem[] = groupByType(
+		analysis.deltas.filter(d => d.status === 'persisting'),
+		d => d.currentInstanceCount,
+	);
+
+	// Build per-type sub-items for resolved findings (grouped by type)
+	const resolvedItems: TrendSubItem[] = groupByType(
+		analysis.deltas.filter(d => d.status === 'resolved'),
+		d => d.previousInstanceCount,
+	);
+
+	// Build per-type sub-items for improving findings with T scores (grouped by type)
+	const improvingMap = new Map<string, ImprovingSubItem>();
+	for (const d of analysis.deltas.filter(d => d.status === 'improving')) {
+		const type = d.vulnerability.type;
+		const existing = improvingMap.get(type);
+		if (existing) {
+			existing.instances += d.currentInstanceCount;
+		} else {
+			// Look up per-CWE T score from typeScores
+			const cweId = d.vulnerability.cwe_id;
+			const typeEntry = analysis.typeScores?.find(ts => ts.cweId === cweId);
+			const t = typeEntry?.t ?? null;
+			const label = t !== null ? trendLabel(t) : null;
+			const delta = t !== null ? formatTrendDelta(t) : 'N/A';
+
+			improvingMap.set(type, {
+				type,
+				instances: d.currentInstanceCount,
+				progressLabel: label ?? 'Some progress',
+				progressDelta: delta,
+			});
+		}
+	}
+	const improvingItems: ImprovingSubItem[] = [...improvingMap.values()];
+
+	// Build trend label string
+	const trendLabelStr = analysis.scores?.tLabel ?? undefined;
 
 	return {
 		critical: analysis.severityCounts.critical,
@@ -211,7 +339,14 @@ export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
 			improvingTrends: analysis.improvingTrends,
 			resolvedThisSession: analysis.resolvedThisSession,
 			recurringPatterns: analysis.recurringPatterns,
+			persistingItems: persistingItems.length > 0 ? persistingItems : undefined,
+			improvingItems: improvingItems.length > 0 ? improvingItems : undefined,
 			recurringItems: recurringItems.length > 0 ? recurringItems : undefined,
+			resolvedItems: resolvedItems.length > 0 ? resolvedItems : undefined,
+			fixScore: analysis.scores?.f,
+			persistenceScore: analysis.scores?.p,
+			trendScore: analysis.scores?.tLive,
+			trendLabel: trendLabelStr,
 		},
 		notifications: generateNotifications(analysis),
 	};
