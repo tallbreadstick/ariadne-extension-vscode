@@ -26,6 +26,7 @@ import type {
 
 import { LIFECYCLE_POLICY } from './lifecycleTypes.js';
 import { isCodeCommentedOut } from './commentDetector.js';
+import { computeCategoryScores, computeTrendScore } from './scoreCalculator.js';
 
 /**
  * Provider function that returns file content by path.
@@ -642,10 +643,28 @@ export function finalizeSession(
 	timestamp: number,
 	status: 'completed' | 'incomplete' = 'completed',
 ): SessionRecord {
+	// Compute F/P/T scores only for completed sessions
+	let finalScores: SessionRecord['finalScores'];
+	if (status === 'completed' && lifecycles.length > 0) {
+		const categoryResult = computeCategoryScores(lifecycles);
+		const trendResult = computeTrendScore(lifecycles, session.trendComparisonByKey);
+		finalScores = {
+			f: categoryResult.aggregate.f,
+			p: categoryResult.aggregate.p,
+			t: trendResult?.workspaceT ?? null,
+		};
+		console.log(
+			`[Ariadne Lifecycle] Session ${session.sessionId} finalized with scores: ` +
+			`F=${finalScores.f.toFixed(2)} P=${finalScores.p.toFixed(2)} ` +
+			`T=${finalScores.t !== null ? finalScores.t.toFixed(2) : 'N/A'}`,
+		);
+	}
+
 	return {
 		...session,
 		endedAt: timestamp,
 		status,
 		lifecycleSummaries: lifecycles.map(lc => ({ ...lc })),
+		finalScores,
 	};
 }

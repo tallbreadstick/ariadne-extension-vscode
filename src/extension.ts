@@ -60,6 +60,7 @@ import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
 import type { Vulnerability } from './modules/presentation/panelTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
+import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -556,6 +557,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					result.classifications,
 					currentSnapshot,
 					previousScanSnapshot,
+					lifecycles,
+					activeSession?.trendComparisonByKey,
 				);
 
 				const sessionMetrics = toSessionMetrics(sessionAnalysis);
@@ -573,13 +576,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				// Debug: log analysis results
 				const sc = sessionAnalysis.severityCounts;
+				const scoreInfo = sessionAnalysis.scores
+					? ` | F=${sessionAnalysis.scores.f.toFixed(2)} P=${sessionAnalysis.scores.p.toFixed(2)} T=${sessionAnalysis.scores.tLive !== null ? sessionAnalysis.scores.tLive.toFixed(2) : 'N/A'}${sessionAnalysis.scores.tLabel ? ` (${sessionAnalysis.scores.tLabel})` : ''}`
+					: '';
 				console.log(
 					`[Ariadne Analysis] Severities: ` +
 					`${sc.critical}C ${sc.high}H ${sc.medium}M ${sc.low}L | ` +
 					`Persisting: ${sessionAnalysis.persistingPatterns}, ` +
 					`Improving: ${sessionAnalysis.improvingTrends}, ` +
 					`Resolved: ${sessionAnalysis.resolvedThisSession}, ` +
-					`Recurring: ${sessionAnalysis.recurringPatterns}`,
+					`Recurring: ${sessionAnalysis.recurringPatterns}` +
+					scoreInfo,
 				);
 			} catch {
 				// buildSessionAnalysis guards are in place, but be safe
@@ -682,7 +689,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					`\n  │ Duration        : ${duration}` +
 					`\n  │ Baseline Chkpt  : ${baselineCount} finding(s)${s.baselineCheckpoint ? ` at ${new Date(s.baselineCheckpoint.timestamp).toISOString()}` : ''}` +
 					`\n  │ Final Chkpt     : ${finalCount} finding(s)${s.finalCheckpoint ? ` at ${new Date(s.finalCheckpoint.timestamp).toISOString()}` : ''}` +
-					`\n  │ Lifecycles      : ${s.lifecycleSummaries.length}`,
+				`\n  │ Lifecycles      : ${s.lifecycleSummaries.length}` +
+					(s.finalScores
+						? `\n  │ Final Scores    : F=${s.finalScores.f.toFixed(2)} P=${s.finalScores.p.toFixed(2)} T=${s.finalScores.t !== null ? s.finalScores.t.toFixed(2) : 'N/A'}`
+						: ''),
 				);
 				for (const lc of s.lifecycleSummaries) {
 					const lcStatus = (lc.lifecycleState ?? classifyFinding(lc, s.endedAt ?? Date.now())).toUpperCase();
@@ -731,6 +741,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					`\n    Toggles            : ${lc.inSessionToggleCount}` +
 					`\n    Restorations       : ${lc.identicalRestorationCount}`,
 				);
+			}
+
+			// ── Live Scores ──
+			if (lifecycles.length > 0) {
+				const catResult = computeCategoryScores(lifecycles);
+				const tResult = computeTrendScore(lifecycles, activeSession?.trendComparisonByKey);
+
+				console.log('\n── Scores ──');
+				console.log(`  Workspace F    : ${catResult.aggregate.f.toFixed(2)} / 10`);
+				console.log(`  Workspace P    : ${catResult.aggregate.p.toFixed(2)} / 10`);
+				if (tResult) {
+					const label = trendLabel(tResult.workspaceT);
+					console.log(`  Workspace T    : ${formatTrendDelta(tResult.workspaceT)}${label ? ` (${label})` : ''}`);
+					if (activeSession?.priorCompletedSessionId) {
+						console.log(`  Prior Session  : ${activeSession.priorCompletedSessionId}`);
+					}
+				} else {
+					console.log(`  Workspace T    : N/A (first session)`);
+				}
+
+				console.log('\n  By Type:');
+				for (const [key, ts] of catResult.byType) {
+					const tForKey = tResult?.byKey[key];
+					const tStr = tForKey !== undefined ? formatTrendDelta(tForKey) : 'N/A';
+					console.log(
+						`    ${ts.type} (${ts.cweId})  ` +
+						`F=${ts.f.toFixed(2)}  P=${ts.p.toFixed(2)}  T=${tStr}  ` +
+						`[${ts.durablyResolved}/${ts.totalEverObserved} resolved]`,
+					);
+				}
 			}
 
 			console.log('\n═══════════════════════════════════════════════════════════');
