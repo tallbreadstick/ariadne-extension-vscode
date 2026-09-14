@@ -9,6 +9,10 @@
  * 4. `ObservedFinding[]`  — tracker/analysis/lifecycleTypes.ts (lifecycle engine)
  */
 
+import { isAbsolute, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import * as vscode from 'vscode';
+
 import type { Vulnerability as PanelVulnerability } from '../../presentation/panelTypes.js';
 import type { AriadneFinding } from '../../presentation/diagnostics/diagnosticTypes.js';
 import type {
@@ -19,6 +23,25 @@ import type {
 	Occurrence,
 } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { ObservedFinding } from '../../tracker/analysis/lifecycleTypes.js';
+
+/** Engine may send an absolute path or a workspace-relative one. */
+export function resolveWorkspaceFsPath(filePath: string): string {
+	if (!filePath) {
+		return filePath;
+	}
+	if (isAbsolute(filePath)) {
+		return filePath;
+	}
+	const folders = vscode.workspace.workspaceFolders ?? [];
+	for (const folder of folders) {
+		const abs = join(folder.uri.fsPath, filePath);
+		if (existsSync(abs)) {
+			return abs;
+		}
+	}
+	const root = folders[0]?.uri.fsPath;
+	return root ? join(root, filePath) : filePath;
+}
 
 // ── Presentation panel ────────────────────────────────────────────────
 
@@ -39,7 +62,7 @@ export function metadataToVulnerability(
 		description:
 			m.description ??
 			`${m.type} detected in ${shortPath(m.file_path)} at line ${m.line_number}.`,
-		filePath: m.file_path,
+		filePath: resolveWorkspaceFsPath(m.file_path),
 		line: m.line_number,
 	};
 }
@@ -69,11 +92,11 @@ export function metadataToAriadneFinding(
 		cweId: m.cwe_id,
 		owaspCategory: m.owasp_category,
 		shortExplanation: m.description ?? m.type,
-		filePath: m.file_path,
+		filePath: resolveWorkspaceFsPath(m.file_path),
 		startLine: line0,
 		startColumn: startCol,
 		endLine,
-		endColumn: m.end_column ?? 999,
+		endColumn: endColumn0(m, startCol),
 		taintPath: m.taint_trace
 			? {
 				originLine: m.taint_trace.origin_line,
@@ -93,9 +116,9 @@ export function groupFindingsByFile(
 	const byFile = new Map<string, AriadneFinding[]>();
 	findings.forEach((m, idx) => {
 		const f = metadataToAriadneFinding(m, idx);
-		const existing = byFile.get(m.file_path) ?? [];
+		const existing = byFile.get(f.filePath) ?? [];
 		existing.push(f);
-		byFile.set(m.file_path, existing);
+		byFile.set(f.filePath, existing);
 	});
 	return byFile;
 }
@@ -237,6 +260,13 @@ function deriveLogicalFingerprint(m: VulnerabilityMetadata): string {
  * Older payloads may only send `column_number`; those without
  * `fingerprint_version` are treated as 1-based.
  */
+function endColumn0(m: VulnerabilityMetadata, startCol: number): number {
+	const raw = m.end_column ?? 999;
+	if (raw > startCol) {
+		return raw;
+	}
+	return 999;
+}
 function startColumn0(m: VulnerabilityMetadata): number {
 	if (m.start_column !== undefined) {
 		return m.start_column;
