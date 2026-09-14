@@ -32,6 +32,7 @@ import type {
 	SessionNotification,
 	ImprovingSubItem,
 	TrendSubItem,
+	CommonVulnerabilityItem,
 } from '../../presentation/panelTypes.js';
 import type {
 	FindingClassification,
@@ -39,6 +40,7 @@ import type {
 	InternalFindingState,
 	TrendComparisonBaseline,
 } from './lifecycleTypes.js';
+import type { CommonVulnerabilityEntry } from './commonVulnerabilities.js';
 import {
 	computeCategoryScores,
 	computeTrendScore,
@@ -267,6 +269,28 @@ function groupByType(
 	return [...map.values()];
 }
 
+/**
+ * Maps CommonVulnerabilityEntry results from the computation engine
+ * into the CommonVulnerabilityItem[] shape expected by the panel.
+ */
+function mapCommonVulns(
+	commonVulns?: Map<string, CommonVulnerabilityEntry>,
+): CommonVulnerabilityItem[] | undefined {
+	if (!commonVulns || commonVulns.size === 0) { return undefined; }
+
+	const items: CommonVulnerabilityItem[] = [];
+	for (const entry of commonVulns.values()) {
+		items.push({
+			type: entry.type,
+			cweId: entry.cweId,
+			sessionCount: entry.sessionCount,
+			totalSessions: entry.totalSessions,
+			activeFindingCount: entry.activeFindingCount,
+		});
+	}
+	return items;
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // ADAPTER: SessionAnalysis → SessionMetrics
 // ══════════════════════════════════════════════════════════════════════
@@ -281,8 +305,12 @@ function groupByType(
  * Metrics panel's HTML builder (`buildSessionMetricsHtml`).
  *
  * Notifications are auto-generated from the vulnerability deltas.
+ * Common vulnerability data is passed through from the computation engine.
  */
-export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
+export function toSessionMetrics(
+	analysis: SessionAnalysis,
+	commonVulns?: Map<string, CommonVulnerabilityEntry>,
+): SessionMetrics {
 	// Build per-type sub-items for recurring findings (grouped by type)
 	const recurringItems = groupByType(
 		analysis.deltas.filter(d => d.status === 'recurring'),
@@ -349,6 +377,7 @@ export function toSessionMetrics(analysis: SessionAnalysis): SessionMetrics {
 			trendLabel: trendLabelStr,
 		},
 		notifications: generateNotifications(analysis),
+		commonVulnerabilities: mapCommonVulns(commonVulns),
 	};
 }
 

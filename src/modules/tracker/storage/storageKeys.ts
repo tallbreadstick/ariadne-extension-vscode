@@ -37,6 +37,9 @@ export const WS_DISMISSED_NOTIFICATIONS = 'ariadne.dismissedNotifications';
 /** Key for the single expanded vulnerability card in the active-vulns panel. */
 export const WS_EXPANDED_VULN_KEY = 'ariadne.expandedVulnKey';
 
+/** Key for the persisted TypeGraduationState map (Common Vulnerabilities). */
+export const WS_GRADUATION_HISTORY = 'ariadne.graduationHistory';
+
 // ── globalState keys (cross-project) ──────────────────────────────────
 
 /** Key for the persisted UserConfig object. */
