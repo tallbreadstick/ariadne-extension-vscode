@@ -149,6 +149,15 @@ export class DiagnosticManager {
     this.diagnosticCollection.delete(document.uri);
   }
 
+  /** Clears diagnostics and decorations for every file. */
+  clearAll(): void {
+    this.findingsByFile.clear();
+    this.diagnosticCollection.clear();
+    for (const editor of vscode.window.visibleTextEditors) {
+      this._clearDecorations(editor);
+    }
+  }
+
   // ── Private helpers ─────────────────────────────────────────────────────
 
   private _applyDecorations(editor: vscode.TextEditor): void {

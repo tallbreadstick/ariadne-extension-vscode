@@ -68,6 +68,10 @@
         "title": "Ariadne: Terms of Use"
       },
       {
+        "command": "ariadne-extension-vscode.openPrivacyPolicy",
+        "title": "Ariadne: Privacy Policy"
+      },
+      {
         "command": "ariadne-extension-vscode.debugLifecycles",
         "title": "Ariadne: Debug — Show Lifecycle Data"
       },
@@ -105,7 +109,7 @@
         {
           "type": "webview",
           "id": "ariadne.sidebar.signIn",
-          "name": "Account",
+          "name": "Settings",
           "icon": "$(account)"
         }
       ],
@@ -129,18 +133,6 @@
     "configuration": {
       "title": "Ariadne",
       "properties": {
-        "ariadne.copilot.model": {
-          "type": "string",
-          "default": "gemini-3.5-flash",
-          "enum": [
-            "gpt-5-mini",
-            "claude-haiku-4.5",
-            "gemini-3.5-flash",
-            "gpt-5.4-mini",
-            "gpt-5.5"
-          ],
-          "markdownDescription": "GitHub Copilot model for vulnerability explanations. Lightweight models (gpt-5-mini, claude-haiku-4.5, gemini-3.5-flash) are fastest for plain-English feedback."
-        },
         "ariadne.executable": {
           "type": "string",
           "default": "ariadne",

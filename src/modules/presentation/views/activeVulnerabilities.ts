@@ -7,15 +7,19 @@
  */
 
 import { Vulnerability, Severity } from '../panelTypes.js';
-import { SEVERITY_COLORS, severityCssVars } from '../severityColors.js';
+import { severityCssVars } from '../severityColors.js';
+import { collectVulnFilterFacets } from './vulnFilters.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
+const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
 
 const SEVERITY_OPTIONS: Severity[] = ['critical', 'high', 'medium', 'low'];
 
 export interface ActiveVulnerabilitiesOptions {
 	/** Vulnerability key to render expanded when reopening a workspace. */
 	expandedKey?: string;
+	/** When false, the panel asks the user to sign in instead of showing findings. */
+	signedIn?: boolean;
 }
 
 /** Stable key for accordion persistence across scans and workspace reopens. */
@@ -44,10 +48,6 @@ function capitalize(s: string): string {
 
 function buildMeta(vuln: Vulnerability): string {
 	return vuln.owaspRef ? `${vuln.cwe} · ${vuln.owaspRef}` : vuln.cwe;
-}
-
-function severityColor(severity: Severity): string {
-	return SEVERITY_COLORS[severity];
 }
 
 // ── SVGs ─────────────────────────────────────────────────────────────
@@ -88,9 +88,7 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
 	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
 	const searchText = escapeAttr(
-		[vuln.title, vuln.cwe, vuln.owaspRef ?? '', vuln.filePath, vuln.description, vuln.severity]
-			.join(' ')
-			.toLowerCase(),
+		[vuln.title, vuln.filePath].join(' ').toLowerCase(),
 	);
 
 	return /* html */ `
@@ -99,6 +97,9 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 			data-vuln-key="${vulnKey}"
 			data-severity="${vuln.severity}"
 			data-cwe="${escapeAttr(vuln.cwe)}"
+			data-category="${escapeAttr(vuln.owaspRef ?? '')}"
+			data-type="${escapeAttr(vuln.title)}"
+			data-file="${escapeAttr(vuln.filePath)}"
 			data-search-text="${searchText}"${openAttr}>
 			<summary>
 				<div class="summary-row">
@@ -219,10 +220,11 @@ const CSS = /* css */ `
     }
 
 	.filter-toggle {
+		position: relative;
 		display: inline-grid;
 		place-items: center;
-		width: 30px;
-		min-width: 30px;
+		width: 32px;
+		min-width: 32px;
 		padding: 0;
 		border: 1px solid var(--border);
 		border-radius: 4px;
@@ -231,7 +233,8 @@ const CSS = /* css */ `
 		cursor: pointer;
 	}
 
-	.filter-toggle:hover {
+	.filter-toggle:hover,
+	.filter-toggle[aria-expanded="true"] {
 		background: var(--vscode-button-secondaryHoverBackground, var(--panel));
 	}
 
@@ -245,13 +248,139 @@ const CSS = /* css */ `
 		height: 16px;
 	}
 
-    .filter-row {
+	.filter-badge {
+		position: absolute;
+		top: -5px;
+		right: -5px;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: var(--button-bg);
+		color: var(--button-text);
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 16px;
+		text-align: center;
+	}
+
+	.filter-badge[hidden] {
 		display: none;
-        gap: 8px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+    .filter-menu {
+        display: none;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
     }
 
-	.filter-row.visible { display: grid; }
+	.filter-menu.open {
+		display: grid;
+	}
+
+	.filter-fieldset {
+		border: 0;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 6px;
+		min-width: 0;
+	}
+
+	.filter-legend,
+	.filter-label {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--muted);
+	}
+
+	.chip-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.severity-chip {
+		padding: 4px 10px;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		font-size: 11px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
+	}
+
+	.severity-chip:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder, var(--file));
+		outline-offset: 1px;
+	}
+
+	.severity-chip.critical[aria-pressed="true"] {
+		border-color: var(--critical);
+		background: color-mix(in srgb, var(--critical) 18%, transparent);
+		color: var(--critical);
+	}
+
+	.severity-chip.high[aria-pressed="true"] {
+		border-color: var(--high);
+		background: color-mix(in srgb, var(--high) 18%, transparent);
+		color: var(--high);
+	}
+
+	.severity-chip.medium[aria-pressed="true"] {
+		border-color: var(--medium);
+		background: color-mix(in srgb, var(--medium) 18%, transparent);
+		color: var(--medium);
+	}
+
+	.severity-chip.low[aria-pressed="true"] {
+		border-color: var(--low);
+		background: color-mix(in srgb, var(--low) 18%, transparent);
+		color: var(--low);
+	}
+
+	.filter-grid {
+		display: grid;
+		gap: 10px;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.filter-field {
+		display: grid;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.filter-menu-footer {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.reset-filters {
+		padding: 5px 10px;
+		border-radius: 4px;
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
+	}
+
+	.reset-filters:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--text) 6%, transparent);
+	}
+
+	.reset-filters:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
 
     .results-meta {
         font-size: 11px;
@@ -297,6 +426,48 @@ const CSS = /* css */ `
         font-size: 12px;
         max-width: 360px;
         line-height: 1.5;
+    }
+
+    .signin-state {
+        display: grid;
+        gap: 10px;
+        align-content: center;
+        justify-items: center;
+        min-height: 220px;
+        padding: 32px 20px;
+        text-align: center;
+    }
+
+    .signin-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    .signin-copy {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.5;
+        max-width: 340px;
+        color: var(--muted);
+    }
+
+    .signin-cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 6px;
+        padding: 7px 14px;
+        border-radius: 2px;
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+        text-decoration: none;
+        font-size: 13px;
+    }
+
+    .signin-cta:hover {
+        background: var(--vscode-button-hoverBackground);
     }
 
     details {
@@ -526,22 +697,24 @@ const CSS = /* css */ `
         body { padding: 12px; }
         .detail-grid { grid-template-columns: 1fr; }
         .cta-row { flex-direction: column; align-items: flex-start; }
+        .filter-grid { grid-template-columns: 1fr; }
         /* Removed .summary-row override so the chevron remains horizontally aligned */
     }
 `;
 
 // ── Public API ────────────────────────────────────────────────────────
 
-function buildSeverityOptions(): string {
-	return SEVERITY_OPTIONS.map((severity) =>
-		`<option value="${severity}">${capitalize(severity)}</option>`,
-	).join('');
+function buildSelectOptions(values: string[], allLabel: string): string {
+	const all = `<option value="">${escapeHtml(allLabel)}</option>`;
+	const options = values.map((value) =>
+		`<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`,
+	);
+	return [all, ...options].join('');
 }
 
-function buildCweOptions(vulns: Vulnerability[]): string {
-	const cwes = [...new Set(vulns.map((v) => v.cwe))].sort();
-	return cwes.map((cwe) =>
-		`<option value="${escapeAttr(cwe)}">${escapeHtml(cwe)}</option>`,
+function buildSeverityChips(): string {
+	return SEVERITY_OPTIONS.map((severity) =>
+		`<button type="button" class="severity-chip ${severity}" data-severity="${severity}" aria-pressed="false">${capitalize(severity)}</button>`,
 	).join('');
 }
 
@@ -550,6 +723,8 @@ function buildToolbar(vulns: Vulnerability[]): string {
 		return '';
 	}
 
+	const facets = collectVulnFilterFacets(vulns);
+
 	return /* html */ `
 		<div class="toolbar">
 			<div class="toolbar-row">
@@ -557,30 +732,60 @@ function buildToolbar(vulns: Vulnerability[]): string {
 					class="search-input"
 					id="vuln-search"
 					type="search"
-					placeholder="Search title, CWE, file, OWASP…"
-					aria-label="Search vulnerabilities"
+					placeholder="Search title or file…"
+					aria-label="Search vulnerabilities by title or file"
 				/>
 				<button
 					class="filter-toggle"
 					type="button"
 					id="filter-toggle"
-					aria-controls="filter-row"
+					aria-controls="filter-menu"
 					aria-expanded="false"
 					title="Show filters"
 					aria-label="Show filters"
 				>
 					${FILTER_SVG}
+					<span class="filter-badge" id="filter-badge" hidden>0</span>
 				</button>
 			</div>
-			<div class="filter-row" id="filter-row" aria-hidden="true">
-				<select class="filter-select" id="severity-filter" aria-label="Filter by severity">
-					<option value="">All severities</option>
-					${buildSeverityOptions()}
-				</select>
-				<select class="filter-select" id="cwe-filter" aria-label="Filter by CWE">
-					<option value="">All CWEs</option>
-					${buildCweOptions(vulns)}
-				</select>
+			<div class="filter-menu" id="filter-menu" aria-hidden="true">
+				<fieldset class="filter-fieldset">
+					<legend class="filter-legend">Severity</legend>
+					<div class="chip-row" role="group" aria-label="Filter by severity">
+						${buildSeverityChips()}
+					</div>
+				</fieldset>
+				<div class="filter-grid">
+					<label class="filter-field">
+						<span class="filter-label">Category</span>
+						<select class="filter-select" id="category-filter" aria-label="Filter by OWASP category">
+							${buildSelectOptions(facets.categories, 'All categories')}
+						</select>
+					</label>
+					<label class="filter-field">
+						<span class="filter-label">CWE</span>
+						<select class="filter-select" id="cwe-filter" aria-label="Filter by CWE">
+							${buildSelectOptions(facets.cwes, 'All CWEs')}
+						</select>
+					</label>
+					<label class="filter-field">
+						<span class="filter-label">Type</span>
+						<select class="filter-select" id="type-filter" aria-label="Filter by vulnerability type">
+							${buildSelectOptions(facets.types, 'All types')}
+						</select>
+					</label>
+					<label class="filter-field">
+						<span class="filter-label">File</span>
+						<select class="filter-select" id="file-filter" aria-label="Filter by file">
+							${buildSelectOptions(facets.files, 'All files')}
+						</select>
+					</label>
+				</div>
+				<div class="filter-menu-footer">
+					<button class="reset-filters" type="button" id="reset-filters-btn" disabled>
+						Reset filters
+					</button>
+				</div>
 			</div>
 			<div class="results-meta" id="results-meta" aria-live="polite">Live scan • ${vulns.length} vulnerabilit${vulns.length === 1 ? 'y' : 'ies'}</div>
 		</div>`;
@@ -596,6 +801,29 @@ export function buildActiveVulnerabilitiesHtml(
 	vulns: Vulnerability[],
 	options: ActiveVulnerabilitiesOptions = {},
 ): string {
+	const signedIn = options.signedIn !== false;
+	if (!signedIn) {
+		return /* html */ `<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Ariadne Active Vulnerabilities</title>
+		<style>${CSS}</style>
+	</head>
+	<body>
+		<section class="signin-state" role="status">
+			<p class="signin-title">Sign in required</p>
+			<p class="signin-copy">
+				GitHub sign-in is needed to scan this workspace and show active
+				vulnerabilities.
+			</p>
+			<a class="signin-cta" href="command:${OPEN_SIGN_IN_COMMAND}">Sign in to Ariadne</a>
+		</section>
+	</body>
+</html>`;
+	}
+
 	const expandedKey = options.expandedKey
 		? encodeURIComponent(options.expandedKey)
 		: undefined;
@@ -635,9 +863,14 @@ export function buildActiveVulnerabilitiesHtml(
 				const cards = Array.from(document.querySelectorAll('.vuln-card'));
 				const searchInput = document.getElementById('vuln-search');
 				const filterToggle = document.getElementById('filter-toggle');
-				const filterRow = document.getElementById('filter-row');
-				const severityFilter = document.getElementById('severity-filter');
+				const filterMenu = document.getElementById('filter-menu');
+				const categoryFilter = document.getElementById('category-filter');
 				const cweFilter = document.getElementById('cwe-filter');
+				const typeFilter = document.getElementById('type-filter');
+				const fileFilter = document.getElementById('file-filter');
+				const severityChips = Array.from(document.querySelectorAll('.severity-chip'));
+				const resetBtn = document.getElementById('reset-filters-btn');
+				const filterBadge = document.getElementById('filter-badge');
 				const resultsMeta = document.getElementById('results-meta');
 				const filterEmpty = document.getElementById('filter-empty');
 				const totalCount = cards.length;
@@ -656,9 +889,37 @@ export function buildActiveVulnerabilitiesHtml(
 					vscode.postMessage({ type: 'vuln-expanded', key: key ?? null });
 				}
 
+				function selectedSeverities() {
+					return severityChips
+						.filter((chip) => chip.getAttribute('aria-pressed') === 'true')
+						.map((chip) => chip.dataset.severity);
+				}
+
+				function activeFilterCount() {
+					let count = 0;
+					if ((searchInput?.value ?? '').trim()) count += 1;
+					if (selectedSeverities().length) count += 1;
+					if (categoryFilter?.value) count += 1;
+					if (cweFilter?.value) count += 1;
+					if (typeFilter?.value) count += 1;
+					if (fileFilter?.value) count += 1;
+					return count;
+				}
+
+				function syncFilterChrome() {
+					const count = activeFilterCount();
+					if (filterBadge) {
+						filterBadge.hidden = count === 0;
+						filterBadge.textContent = String(count);
+					}
+					if (resetBtn) {
+						resetBtn.disabled = count === 0;
+					}
+				}
+
 				function setFilterVisibility(visible, persist = true) {
-					filterRow?.classList.toggle('visible', visible);
-					filterRow?.setAttribute('aria-hidden', String(!visible));
+					filterMenu?.classList.toggle('open', visible);
+					filterMenu?.setAttribute('aria-hidden', String(!visible));
 					filterToggle?.setAttribute('aria-expanded', String(visible));
 					filterToggle?.setAttribute('title', visible ? 'Hide filters' : 'Show filters');
 					filterToggle?.setAttribute('aria-label', visible ? 'Hide filters' : 'Show filters');
@@ -678,13 +939,25 @@ export function buildActiveVulnerabilitiesHtml(
 
 				function cardMatchesFilters(el) {
 					const query = (searchInput?.value ?? '').trim().toLowerCase();
-					const severity = severityFilter?.value ?? '';
+					const severities = selectedSeverities();
+					const category = categoryFilter?.value ?? '';
 					const cwe = cweFilter?.value ?? '';
+					const type = typeFilter?.value ?? '';
+					const file = fileFilter?.value ?? '';
 
-					if (severity && el.dataset.severity !== severity) {
+					if (severities.length && !severities.includes(el.dataset.severity)) {
+						return false;
+					}
+					if (category && (el.dataset.category ?? '') !== category) {
 						return false;
 					}
 					if (cwe && el.dataset.cwe !== cwe) {
+						return false;
+					}
+					if (type && el.dataset.type !== type) {
+						return false;
+					}
+					if (file && el.dataset.file !== file) {
 						return false;
 					}
 					if (query && !(el.dataset.searchText ?? '').includes(query)) {
@@ -712,6 +985,31 @@ export function buildActiveVulnerabilitiesHtml(
 					if (filterEmpty) {
 						filterEmpty.classList.toggle('visible', totalCount > 0 && visibleCount === 0);
 					}
+					syncFilterChrome();
+				}
+
+				function persistFilters() {
+					persistUiState({
+						searchQuery: searchInput?.value ?? '',
+						severityFilters: selectedSeverities(),
+						categoryFilter: categoryFilter?.value ?? '',
+						cweFilter: cweFilter?.value ?? '',
+						typeFilter: typeFilter?.value ?? '',
+						fileFilter: fileFilter?.value ?? '',
+					});
+				}
+
+				function resetFilters() {
+					if (searchInput) {
+						searchInput.value = '';
+					}
+					severityChips.forEach((chip) => chip.setAttribute('aria-pressed', 'false'));
+					if (categoryFilter) categoryFilter.value = '';
+					if (cweFilter) cweFilter.value = '';
+					if (typeFilter) typeFilter.value = '';
+					if (fileFilter) fileFilter.value = '';
+					persistFilters();
+					applyFilters();
 				}
 
 				function restoreUiState() {
@@ -721,11 +1019,30 @@ export function buildActiveVulnerabilitiesHtml(
 					if (searchInput && typeof state.searchQuery === 'string') {
 						searchInput.value = state.searchQuery;
 					}
-					if (severityFilter && typeof state.severityFilter === 'string') {
-						severityFilter.value = state.severityFilter;
+
+					const savedSeverities = Array.isArray(state.severityFilters)
+						? state.severityFilters
+						: (typeof state.severityFilter === 'string' && state.severityFilter
+							? [state.severityFilter]
+							: []);
+					severityChips.forEach((chip) => {
+						chip.setAttribute(
+							'aria-pressed',
+							savedSeverities.includes(chip.dataset.severity) ? 'true' : 'false',
+						);
+					});
+
+					if (categoryFilter && typeof state.categoryFilter === 'string') {
+						categoryFilter.value = state.categoryFilter;
 					}
 					if (cweFilter && typeof state.cweFilter === 'string') {
 						cweFilter.value = state.cweFilter;
+					}
+					if (typeFilter && typeof state.typeFilter === 'string') {
+						typeFilter.value = state.typeFilter;
+					}
+					if (fileFilter && typeof state.fileFilter === 'string') {
+						fileFilter.value = state.fileFilter;
 					}
 
 					applyFilters();
@@ -741,8 +1058,11 @@ export function buildActiveVulnerabilitiesHtml(
 					persistUiState({
 						scrollTop: window.scrollY,
 						searchQuery: searchInput?.value ?? '',
-						severityFilter: severityFilter?.value ?? '',
+						severityFilters: selectedSeverities(),
+						categoryFilter: categoryFilter?.value ?? '',
 						cweFilter: cweFilter?.value ?? '',
+						typeFilter: typeFilter?.value ?? '',
+						fileFilter: fileFilter?.value ?? '',
 					});
 				}
 
@@ -755,7 +1075,7 @@ export function buildActiveVulnerabilitiesHtml(
 				);
 
 				filterToggle?.addEventListener('click', () => {
-					setFilterVisibility(!filterRow?.classList.contains('visible'));
+					setFilterVisibility(!filterMenu?.classList.contains('open'));
 				});
 
 				cards.forEach((el) => {
@@ -771,17 +1091,24 @@ export function buildActiveVulnerabilitiesHtml(
 				});
 
 				searchInput?.addEventListener('input', () => {
-					persistUiState({ searchQuery: searchInput.value });
+					persistFilters();
 					applyFilters();
 				});
-				severityFilter?.addEventListener('change', () => {
-					persistUiState({ severityFilter: severityFilter.value });
-					applyFilters();
+				[categoryFilter, cweFilter, typeFilter, fileFilter].forEach((el) => {
+					el?.addEventListener('change', () => {
+						persistFilters();
+						applyFilters();
+					});
 				});
-				cweFilter?.addEventListener('change', () => {
-					persistUiState({ cweFilter: cweFilter.value });
-					applyFilters();
+				severityChips.forEach((chip) => {
+					chip.addEventListener('click', () => {
+						const pressed = chip.getAttribute('aria-pressed') === 'true';
+						chip.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+						persistFilters();
+						applyFilters();
+					});
 				});
+				resetBtn?.addEventListener('click', resetFilters);
 
 				document.addEventListener(
 					'click',

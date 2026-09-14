@@ -60,7 +60,8 @@ Current system shape, module boundaries, and conventions.
 | LLM Request | `src/modules/feedback/llm_request/` | Copilot client manager, payload serialization, LLM call, response parsing, error sanitization |
 | LLM Feedback | `src/modules/feedback/llm_feedback/` | Feedback types |
 | Feedback Views | `src/modules/feedback/views/` | Feedback panel, sign-in panel, terms of use panel HTML builders |
-| Feedback Settings | `src/modules/feedback/settings/` | Extension settings (Copilot model options) |
+| Feedback Settings | `src/modules/feedback/settings/` | Locked Copilot model (Gemini Flash) |
+| Rules CLI | `src/modules/rules/ruleScriptCommands.ts`, `src/modules/core/ariadneCli.ts` | `ariadne init` / `init --force` wrappers |
 | Vuln Types | `src/modules/feedback/vulnerability_results/` | VulnerabilityMetadata, 3-layer hierarchy types, toFlatMetadata adapter |
 | Tracker Analysis | `src/modules/tracker/analysis/` | Snapshot analyzer, session metrics computation |
 | Tracker Storage | `src/modules/tracker/storage/` | SessionStore (workspaceState persistence) |
@@ -73,7 +74,8 @@ Current system shape, module boundaries, and conventions.
 - **VSCode API**: only in `src/modules/` — never in `src/utils/` or `src/types/`.
 - **Cross-repo**: scanner core is a private Rust repo. This repo treats it as an opaque external dependency.
 - **Privacy**: no private repo URLs, scanner internals, or proprietary rule logic in committed files.
-- **LLM boundary**: Extension → GitHub Copilot SDK → Copilot API. Requests contain vulnerability metadata + active file content. No source code leaves the user's machine except the active file sent for LLM context.
+- **LLM boundary**: Extension → GitHub Copilot SDK → Copilot API (Gemini Flash only). Requests contain vulnerability metadata + active file content. No source code leaves the user's machine except the active file sent for LLM context.
+- **Auth gate**: GitHub sign-in with terms + analytics consent is required before the SAST session process is spawned. Sign-out kills the engine and clears diagnostics.
 
 ## Data flow
 
@@ -110,7 +112,7 @@ Messages sent from TypeScript → Rust (defined in `messages.ts` / `messages.rs`
 
 | Message | Fields | Trigger |
 |---|---|---|
-| `Init` | `root: string` | Extension activation |
+| `Init` | `root: string` | Engine start after GitHub sign-in (and after session restart) |
 | `OpenFile` | `path, content` | File opened in editor |
 | `UpdateFile` | `path, edits: TextEdit[]` | File edited (debounced 300–500ms) |
 | `CloseFile` | `path` | File closed |

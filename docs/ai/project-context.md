@@ -52,7 +52,7 @@ The scanning engine is developed in a separate **private** Rust repository. It i
 2. **VS Code Diagnostic Presentation Layer** (Module 2) — Severity-coded inline annotations (wavy underline, whole-line background, end-of-line label), HoverProvider with vulnerability summary + "Ask Ariadne" action link, Active Vulnerabilities webview panel in bottom panel ViewsContainer.
 3. **AI-Powered Conceptual Feedback Engine** (Module 3) — LLM prompt serialization from vulnerability metadata, three-section response (issue description, security implication, concept pointer), constrained to never produce code fixes, GitHub Copilot SDK integration, response validation with static fallback.
 4. **Session-Based Reinforcement Tracker** (Module 4) — In-memory scan snapshot log, pattern analyzer (persisting/improving/new/resolved classifications), priority-based status bar summary, soft toast notifications, Session Metrics webview panel with severity count tiles and trend data, workspaceState persistence.
-5. **Supporting features** — GitHub OAuth authentication for Copilot access, `.ariadne` rule file language support with syntax highlighting, sign-in sidebar panel, terms of use panel.
+5. **Supporting features** — GitHub OAuth authentication required for scanning and Copilot access, `.ariadne` rule file language support with syntax highlighting, accordion settings sidebar, terms of use panel.
 
 ## Notes for coding agents
 
