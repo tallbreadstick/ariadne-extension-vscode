@@ -30,7 +30,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import type { FindingLifecycleRecord, SessionRecord } from '../analysis/lifecycleTypes.js';
 import type { SessionMeta, UserConfig } from './storageTypes.js';
 import {
@@ -92,7 +92,7 @@ export class SessionStore {
 	 */
 	private writeQueue: Promise<void> = Promise.resolve();
 
-	constructor(private readonly context: vscode.ExtensionContext) {}
+	constructor(private readonly context: vscode.ExtensionContext) { }
 
 	// ── Migration ─────────────────────────────────────────────────
 
@@ -163,11 +163,16 @@ export class SessionStore {
 		);
 	}
 
-	/** Appends a completed session and persists immediately. */
+	/** Appends or updates a completed session and persists immediately. */
 	async appendCompletedSession(session: SessionRecord): Promise<void> {
 		return this.enqueuePersist(async () => {
 			const sessions = this.loadCompletedSessions();
-			sessions.push(session);
+			const existingIndex = sessions.findIndex(s => s.sessionId === session.sessionId);
+			if (existingIndex !== -1) {
+				sessions[existingIndex] = session;
+			} else {
+				sessions.push(session);
+			}
 			await this.context.workspaceState.update(WS_COMPLETED_SESSIONS, sessions);
 			console.log(
 				`[Ariadne Store] Saved completed session ${session.sessionId} ` +

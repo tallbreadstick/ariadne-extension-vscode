@@ -988,7 +988,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const observed = metadataToObservedFindings(finalFindings);
 			updateSessionLatest(activeSession, observed, timestamp);
 
-			const result = processObservation(observed, lifecycles, timestamp, true);
+			const result = processObservation(
+				observed,
+				lifecycles,
+				timestamp,
+				true,
+				getWorkspaceFileContent,
+			);
 			lifecycles = result.lifecycles;
 			void store.saveFindingLifecycles(lifecycles);
 
