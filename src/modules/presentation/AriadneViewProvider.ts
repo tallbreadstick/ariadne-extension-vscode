@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { resolveWorkspaceFsPath } from '../detection/bridge/convert.js';
 
 export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	private currentHtml: string;
@@ -40,7 +41,7 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 		// Handle messages posted from the webview (e.g. click-to-navigate).
 		webviewView.webview.onDidReceiveMessage(async (msg) => {
 			if (msg.type === 'goto-line' && msg.filePath && msg.line) {
-				const uri = vscode.Uri.file(msg.filePath);
+				const uri = vscode.Uri.file(resolveWorkspaceFsPath(msg.filePath));
 				// VS Code lines are 0-indexed; engine lines are 1-indexed.
 				const line = Math.max(0, msg.line - 1);
 				const range = new vscode.Range(line, 0, line, 0);

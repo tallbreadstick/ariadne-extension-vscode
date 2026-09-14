@@ -8,6 +8,8 @@
     "vscode": "^1.107.0"
   },
   "categories": [
+    "Programming Languages",
+    "Linters",
     "Other"
   ],
   "activationEvents": [
@@ -30,6 +32,9 @@
         ],
         "extensions": [
           ".ariadne"
+        ],
+        "filenamePatterns": [
+          "*.ariadne"
         ],
         "configuration": "./language-configuration.json"
       }
@@ -128,6 +133,9 @@
       }
     },
     "configurationDefaults": {
+      "files.associations": {
+        "*.ariadne": "ariadne"
+      },
       "github.copilot.editor.enableCodeActions": false,
       "errorLens.excludeBySource": [
         "ariadne"

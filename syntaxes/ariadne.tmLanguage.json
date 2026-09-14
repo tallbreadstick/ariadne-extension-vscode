@@ -7,19 +7,21 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#cwe" },
+    { "include": "#declarations" },
     { "include": "#functions" },
     { "include": "#booleans" },
     { "include": "#operators" },
     { "include": "#commands" },
     { "include": "#fields" },
+    { "include": "#predicates" },
     { "include": "#literals" },
+    { "include": "#identifiers" },
     { "include": "#punctuation" }
   ],
   "repository": {
     "comments": {
       "name": "comment.line.number-sign.ariadne",
-      "begin": "#",
-      "end": "$"
+      "match": "#.*$"
     },
     "strings": {
       "name": "string.quoted.double.ariadne",
@@ -36,9 +38,36 @@
       "name": "constant.other.cwe.ariadne",
       "match": "\\bCWE-\\d+\\b"
     },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(PACK)\\b\\s+([^\\s#]+)",
+          "captures": {
+            "1": { "name": "keyword.control.ariadne" },
+            "2": { "name": "entity.name.type.ariadne" }
+          }
+        },
+        {
+          "match": "\\b(RULE|SOURCE|GUARD|FLOW_POLICY)\\b\\s+([^\\s#]+)",
+          "captures": {
+            "1": { "name": "keyword.control.ariadne" },
+            "2": { "name": "entity.name.function.ariadne" }
+          }
+        },
+        {
+          "match": "\\b(MATCH)\\b\\s+([^\\s#]+)\\s+\\b(ON)\\b\\s+([^\\s#]+)",
+          "captures": {
+            "1": { "name": "keyword.control.ariadne" },
+            "2": { "name": "entity.name.function.ariadne" },
+            "3": { "name": "keyword.other.ariadne" },
+            "4": { "name": "support.type.element.ariadne" }
+          }
+        }
+      ]
+    },
     "functions": {
       "name": "support.function.ariadne",
-      "match": "\\b(?:path_has|auth_gate|manual_auth_detected|public_auth_routes)\\b"
+      "match": "\\b(?:path_has|auth_gate|manual_auth_detected|listed_in)\\b"
     },
     "booleans": {
       "name": "constant.language.boolean.ariadne",
@@ -62,7 +91,11 @@
     },
     "fields": {
       "name": "keyword.other.ariadne",
-      "match": "\\b(?:USE_FLOW_POLICY|INSTEAD_OF|REGISTER|STRATEGY|MATCHES|SEVERITY|PREFIX|ENGINE|EXCEPT|ROUTE|KIND|NAMES|REGEX|WHEN|FROM|FIND|FILE|BIND|NAME|OWASP|CWE|USE|ON|TO|IN)\\b"
+      "match": "\\b(?:USE_FLOW_POLICY|INSTEAD_OF|REGISTER|STRATEGY|MATCHES|SEVERITY|PREFIX|ENGINE|EXCEPT|ROUTE|KIND|NAMES|REGEX|WHERE|WHEN|FROM|FIND|FILE|BIND|NAME|OWASP|WITH|ARG|CWE|USE|ON|TO|IN)\\b"
+    },
+    "predicates": {
+      "name": "keyword.operator.word.ariadne",
+      "match": "\\b(?:REFERENCES|CONTAINS|CALLS|HAS|IS)\\b"
     },
     "literals": {
       "patterns": [
@@ -73,8 +106,16 @@
         {
           "name": "constant.language.kind.ariadne",
           "match": "\\b(?:user_input|sensitive|taint|match|config|structural)\\b"
+        },
+        {
+          "name": "support.type.element.ariadne",
+          "match": "\\b(?:controller_method|return_statement|cast_expression|abstract_class|assignment|annotation|dotenv_file|dependency|interface|endpoint|literal|method|field|class|call|sink|line|name)\\b"
         }
       ]
+    },
+    "identifiers": {
+      "name": "variable.other.ariadne",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_.]*\\b"
     },
     "punctuation": {
       "patterns": [
