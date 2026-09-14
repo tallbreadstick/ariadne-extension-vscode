@@ -83,7 +83,7 @@ function showPersistingToast(analysis: SessionAnalysis): void {
 		: `${persistingTypes.slice(0, 3).join(', ')} and ${persistingTypes.length - 3} more`;
 
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} recurring ${count === 1 ? 'issue persists' : 'issues persist'} — ${detail}`,
+		`Ariadne: ${count} ${count === 1 ? 'issue is persisting' : 'issues are persisting'} — ${detail}`,
 	);
 }
 
