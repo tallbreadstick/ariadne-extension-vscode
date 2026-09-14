@@ -10,8 +10,8 @@ export interface AriadneSession {
 	kill(): void;
 	/** Kill the engine and spawn a fresh session process. */
 	restart(): void;
-	/** Subscribe to findings emitted after each analysis. */
-	onFindings(cb: FindingsCallback): void;
+	/** Subscribe to findings emitted after each analysis. Returns disposable to unsubscribe. */
+	onFindings(cb: FindingsCallback): { dispose: () => void };
 	/** Fired after `restart()` once the new process is spawned. */
 	onRestarted(cb: () => void): void;
 }
@@ -88,8 +88,16 @@ export function runSession(): AriadneSession {
 				cb();
 			}
 		},
-		onFindings(cb: FindingsCallback): void {
+		onFindings(cb: FindingsCallback): { dispose: () => void } {
 			findingsCallbacks.push(cb);
+			return {
+				dispose: () => {
+					const idx = findingsCallbacks.indexOf(cb);
+					if (idx !== -1) {
+						findingsCallbacks.splice(idx, 1);
+					}
+				},
+			};
 		},
 		onRestarted(cb: () => void): void {
 			restartedCallbacks.push(cb);

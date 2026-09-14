@@ -3,7 +3,12 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
-import { registerDocumentEvents } from './modules/detection/bridge/documentEvents';
+import {
+	registerDocumentEvents,
+	flushAllPendingUpdates,
+	cancelAllPendingUpdates,
+	isTrackedDocument,
+} from './modules/detection/bridge/documentEvents';
 import { registerRuleLanguage } from './modules/rules/ruleDiagnostics';
 import {
 	metadataToVulnerability,
@@ -148,7 +153,7 @@ function buildVulnsHtml(vulns: Vulnerability[], store: SessionStore): string {
 // ─────────────────────────────────────────────────────────────────────
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
@@ -217,14 +222,20 @@ export function activate(context: vscode.ExtensionContext) {
 	// Held until the timer expires or is cancelled.
 	let pendingSettlementFindings: import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').VulnerabilityMetadata[] | null = null;
 
-	// If a previous active session exists (e.g. VS Code reloaded before
-	// deactivation could persist), finalize it now and start fresh.
-	const staleSession = store.loadActiveSession();
-	if (staleSession) {
-		const finalized = finalizeSession(staleSession, lifecycles, Date.now());
-		void store.appendCompletedSession(finalized);
-		void store.clearActiveSession();
-		console.log(`[Ariadne] Finalized stale session ${staleSession.sessionId} from previous activation.`);
+	// 1. Recover any cleanly finalized session persisted synchronously to disk during deactivation
+	const pendingFinalized = await store.recoverPendingFinalizedSession();
+
+	// 2. If no pending finalized session was recovered, check if an unfinalized session exists
+	// (e.g. VS Code crashed or closed abruptly before deactivation could run).
+	// In that case, recover it as incomplete per Section 9 of the trends framework.
+	if (!pendingFinalized) {
+		const staleSession = store.loadActiveSession();
+		if (staleSession) {
+			const recovered = finalizeSession(staleSession, lifecycles, Date.now(), 'incomplete');
+			void store.appendCompletedSession(recovered);
+			void store.clearActiveSession();
+			console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
+		}
 	}
 
 	// Save-scan settlement state is session-scoped. Since we start with no
@@ -240,6 +251,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// SessionRecord.startedAt matches the initial checkpoint timestamp exactly.
 	// Until then, activeSession is null and no lifecycle or Trends writes occur.
 	let activeSession: ReturnType<typeof startSession> | null = null;
+	let lastSettledRevision: number | null = null;
 
 	let latestVulnerabilities: Vulnerability[] = [];
 	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
@@ -448,6 +460,10 @@ export function activate(context: vscode.ExtensionContext) {
 		// Only results from a pending save scan are candidates for Trends.
 		if (pendingSaveRevision === null) {
 			// Live-edit result — UI already updated above, done.
+			console.log(
+				`[Ariadne Live Scan] Evaluated ${findings.length} findings ` +
+				`(${vulns.length} active vulnerabilities displayed).`,
+			);
 			return;
 		}
 
@@ -457,8 +473,9 @@ export function activate(context: vscode.ExtensionContext) {
 		if (currentRev !== pendingSaveRevision) {
 			console.log(
 				`[Ariadne] Stale save result discarded ` +
-				`(scan rev=${pendingSaveRevision}, current rev=${currentRev}).`,
+				`(scan revision=${pendingSaveRevision}, current revision=${currentRev}).`,
 			);
+
 			pendingSaveRevision = null;
 			return;
 		}
@@ -482,6 +499,7 @@ export function activate(context: vscode.ExtensionContext) {
 				return; // Defensive guard — shouldn't happen.
 			}
 
+			lastSettledRevision = getCurrentRevision();
 			console.log('[Ariadne] Save scan settled — updating lifecycle and Session Metrics.');
 
 			// ── 4a. Build scan snapshot ─────────────────────────────────
@@ -496,13 +514,17 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!activeSession) {
 				// First settlement: create the session NOW, using the
 				// settlement timestamp so startedAt === initialCheckpointDoneAt.
-				activeSession = startSession(store.nextSessionId(), timestamp);
+				const priorCompletedSession = store.loadPriorCompletedSession();
+				activeSession = startSession(store.nextSessionId(), timestamp, priorCompletedSession);
 				setSessionBaseline(activeSession, observedFindings, timestamp);
 				updateSessionLatest(activeSession, observedFindings, timestamp);
 				saveScanState.initialCheckpointDoneAt = timestamp;
+				const priorInfo = priorCompletedSession
+					? ` (prior completed baseline: ${priorCompletedSession.sessionId})`
+					: ' (no prior completed baseline; T=N/A)';
 				console.log(
 					`[Ariadne] Initial checkpoint + session ${activeSession.sessionId} ` +
-					`started at ${new Date(timestamp).toISOString()} ` +
+					`started at ${new Date(timestamp).toISOString()}${priorInfo} ` +
 					`(${settledFindings.length} finding(s))`,
 				);
 			} else {
@@ -568,21 +590,6 @@ export function activate(context: vscode.ExtensionContext) {
 		}, 2000);
 	});
 
-	// ── Finalize session on deactivation ─────────────────────────────────
-	context.subscriptions.push({
-		dispose: () => {
-			if (activeSession !== null) {
-				const finalized = finalizeSession(activeSession, lifecycles, Date.now());
-				// Best-effort persist — VS Code may not await this
-				void store.appendCompletedSession(finalized);
-				void store.clearActiveSession();
-			}
-			saveScanState.initialCheckpointDoneAt = null;
-			saveScanState.totalSaveScansThisSession = 0;
-			void store.saveSaveScanState(saveScanState);
-			session.kill();
-		},
-	});
 
 	// Re-apply decorations whenever the user switches to a different tab
 	// (decorations are editor-bound, not document-bound, in VS Code).
@@ -638,6 +645,9 @@ export function activate(context: vscode.ExtensionContext) {
 				console.log(`  Session ID : ${sessionData.sessionId}`);
 				console.log(`  Started At : ${new Date(sessionData.startedAt).toISOString()}`);
 				console.log(`  Ended At   : ${sessionData.endedAt ? new Date(sessionData.endedAt).toISOString() : '(active)'}`);
+				if (sessionData.priorCompletedSessionId) {
+					console.log(`  Prior Baseline: ${sessionData.priorCompletedSessionId}`);
+				}
 				if (sessionData.baselineCheckpoint) {
 					console.log(`  Baseline   : ${sessionData.baselineCheckpoint.findings.length} finding(s) at ${new Date(sessionData.baselineCheckpoint.timestamp).toISOString()}`);
 				} else {
@@ -660,8 +670,13 @@ export function activate(context: vscode.ExtensionContext) {
 					: '?';
 				const baselineCount = s.baselineCheckpoint?.findings.length ?? 0;
 				const finalCount = s.finalCheckpoint?.findings.length ?? 0;
+				const priorBaselineLine = s.priorCompletedSessionId
+					? `\n  │ Prior Baseline  : ${s.priorCompletedSessionId}`
+					: '';
 				console.log(
 					`\n  ┌─ ${s.sessionId} ──────────────────────────────` +
+					`\n  │ Status          : ${(s.status ?? (s.endedAt ? 'completed' : 'active')).toUpperCase()}` +
+					priorBaselineLine +
 					`\n  │ Started At      : ${new Date(s.startedAt).toISOString()}` +
 					`\n  │ Ended At        : ${s.endedAt ? new Date(s.endedAt).toISOString() : '(not finalized)'}` +
 					`\n  │ Duration        : ${duration}` +
@@ -755,8 +770,8 @@ export function activate(context: vscode.ExtensionContext) {
 			console.log('║        ARIADNE — SAVE SCAN STATE DEBUG DUMP             ║');
 			console.log('╚══════════════════════════════════════════════════════════╝');
 			console.log(`  Initial Checkpoint      : ${state.initialCheckpointDoneAt
-					? new Date(state.initialCheckpointDoneAt).toISOString()
-					: '(not yet set — no settled scan has been processed)'
+				? new Date(state.initialCheckpointDoneAt).toISOString()
+				: '(not yet set — no settled scan has been processed)'
 				}`);
 			console.log(`  Settled Scans (session) : ${state.totalSaveScansThisSession}`);
 			console.log(`  Settlement Cancellations: ${state.totalSettledCancellations}`);
@@ -773,7 +788,7 @@ export function activate(context: vscode.ExtensionContext) {
 				`Ariadne Debug: Initial checkpoint ${checkpointStr}. ` +
 				`Settled scans: ${state.totalSaveScansThisSession}. ` +
 				`Cancellations: ${state.totalSettledCancellations}. ` +
-				`Workspace rev: ${currentRev}. ` +
+				`Workspace revision: ${currentRev}. ` +
 				`See Developer Console for details.`,
 			);
 		},
@@ -908,8 +923,110 @@ export function activate(context: vscode.ExtensionContext) {
 		debugShowSaveScanState,
 		debugResetSaveScanState,
 	);
+
+	// ── Deactivation Coordinator ─────────────────────────────────────────
+	deactivationHandler = async (): Promise<void> => {
+		console.log('[Ariadne] Deactivating extension...');
+
+		// 1. Cancel active timers
+		cancelSettlement('extension deactivation');
+		cancelAllPendingUpdates();
+
+		// 2. If no session was ever started, just shut down the engine
+		if (!activeSession) {
+			console.log('[Ariadne] No active session was started during this run.');
+			session.kill();
+			return;
+		}
+
+		const currentRev = getCurrentRevision();
+		const hasDirtyTrackedDocs = vscode.workspace.textDocuments.some(
+			doc => doc.isDirty && isTrackedDocument(doc),
+		);
+
+		// Case A: Clean workspace — no modifications since last settled save
+		if (lastSettledRevision !== null && currentRev === lastSettledRevision && !hasDirtyTrackedDocs) {
+			console.log(`[Ariadne] Clean deactivation: finalizing session ${activeSession.sessionId} as 'completed'...`);
+			const timestamp = Date.now();
+			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
+			store.saveFinalizedSessionSync(finalized);
+			void store.appendCompletedSession(finalized);
+			void store.clearActiveSession();
+			saveScanState.initialCheckpointDoneAt = null;
+			saveScanState.totalSaveScansThisSession = 0;
+			void store.saveSaveScanState(saveScanState);
+			console.log(`[Ariadne] Session ${activeSession.sessionId} finalized cleanly as 'completed'.`);
+			session.kill();
+			return;
+		}
+
+		// Case B: Workspace has unsaved edits or un-settled changes
+		// Flush pending editor buffers to Rust engine and attempt final scan
+		console.log(
+			`[Ariadne] Workspace has un-settled edits ` +
+			`(revision=${currentRev}, lastSettled=${lastSettledRevision}, dirty=${hasDirtyTrackedDocs}). ` +
+			`Requesting final session scan...`,
+		);
+		flushAllPendingUpdates(session);
+
+		try {
+			const finalFindings = await new Promise<VulnerabilityMetadata[]>((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					reject(new Error('Final session scan timed out (4000ms)'));
+				}, 4000);
+
+				const sub = session.onFindings((findings) => {
+					clearTimeout(timeout);
+					sub.dispose();
+					resolve(findings);
+				});
+
+				session.send({ type: 'Analyze', path: null });
+			});
+
+			const timestamp = Date.now();
+			const observed = metadataToObservedFindings(finalFindings);
+			updateSessionLatest(activeSession, observed, timestamp);
+
+			const result = processObservation(
+				observed,
+				lifecycles,
+				timestamp,
+				true,
+				getWorkspaceFileContent,
+			);
+			lifecycles = result.lifecycles;
+			void store.saveFindingLifecycles(lifecycles);
+
+			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
+			store.saveFinalizedSessionSync(finalized);
+			void store.appendCompletedSession(finalized);
+			void store.clearActiveSession();
+			console.log(`[Ariadne] Final scan completed. Session ${activeSession.sessionId} finalized as 'completed'.`);
+		} catch (err) {
+			console.warn(
+				`[Ariadne] Final scan failed during deactivation ` +
+				`(${err instanceof Error ? err.message : String(err)}). Marking session 'incomplete'.`,
+			);
+			const timestamp = Date.now();
+			const incomplete = finalizeSession(activeSession, lifecycles, timestamp, 'incomplete');
+			store.saveFinalizedSessionSync(incomplete);
+			void store.appendCompletedSession(incomplete);
+			void store.clearActiveSession();
+		} finally {
+			saveScanState.initialCheckpointDoneAt = null;
+			saveScanState.totalSaveScansThisSession = 0;
+			void store.saveSaveScanState(saveScanState);
+			session.kill();
+		}
+	};
 }
 
-export function deactivate(): void {
-	return undefined;
+let deactivationHandler: (() => Promise<void>) | null = null;
+
+export async function deactivate(): Promise<void> {
+	if (deactivationHandler) {
+		await deactivationHandler();
+		deactivationHandler = null;
+	}
 }

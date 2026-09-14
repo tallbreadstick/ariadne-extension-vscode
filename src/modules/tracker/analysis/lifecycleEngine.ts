@@ -21,6 +21,7 @@ import type {
 	SessionRecord,
 	SessionCheckpoint,
 	LifecyclePolicy,
+	TrendComparisonBaseline,
 } from './lifecycleTypes.js';
 
 import { LIFECYCLE_POLICY } from './lifecycleTypes.js';
@@ -483,17 +484,113 @@ export function classifyFinding(
 // SESSION MANAGEMENT
 // ══════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * Extracts the frozen Trend comparison baseline from a prior completed session.
+ *
+ * For each vulnerability type/key observed in the prior session, captures:
+ * - `sourceSessionId`: The prior completed session ID
+ * - `flcIds`: The set C of logical fingerprints known at the prior session's end
+ * - `denominator`: Total count |C|
+ * - `resolvedAtSourceFinal`: How many were already resolved at the prior session's end
+ *
+ * Gracefully returns null if the prior session is null, incomplete, or has no findings.
+ *
+ * Reference: Section 5 & 6 — Consolidated Implementation Decision Summary
+ */
+export function extractTrendComparisonBaseline(
+	priorSession: SessionRecord | null,
+): Record<string, TrendComparisonBaseline> | null {
+	if (!priorSession || priorSession.status !== 'completed') {
+		return null;
+	}
+
+	const summaries = priorSession.lifecycleSummaries ?? [];
+	const finalFindings = priorSession.finalCheckpoint?.findings ?? [];
+
+	// If no summaries and no final checkpoint findings exist, baseline is empty/null
+	if (summaries.length === 0 && finalFindings.length === 0) {
+		return null;
+	}
+
+	const result: Record<string, TrendComparisonBaseline> = {};
+
+	// Helper to resolve a group key (prefers cweId, fallback to type)
+	const getGroupKey = (item: { cweId?: string; type?: string }) =>
+		item.cweId && item.cweId.length > 0 ? item.cweId : (item.type ?? 'Unknown');
+
+	if (summaries.length > 0) {
+		// Group by vulnerability key from lifecycleSummaries
+		for (const flc of summaries) {
+			const key = getGroupKey(flc);
+			if (!result[key]) {
+				result[key] = {
+					sourceSessionId: priorSession.sessionId,
+					flcIds: [],
+					denominator: 0,
+					resolvedAtSourceFinal: 0,
+				};
+			}
+			const entry = result[key];
+			if (!entry.flcIds.includes(flc.logicalFingerprint)) {
+				entry.flcIds.push(flc.logicalFingerprint);
+				entry.denominator += 1;
+				if (flc.durableResolutionAt !== null) {
+					entry.resolvedAtSourceFinal += 1;
+				}
+			}
+		}
+	} else {
+		// Fallback: group from finalCheckpoint.findings
+		for (const finding of finalFindings) {
+			const key = getGroupKey(finding);
+			if (!result[key]) {
+				result[key] = {
+					sourceSessionId: priorSession.sessionId,
+					flcIds: [],
+					denominator: 0,
+					resolvedAtSourceFinal: 0,
+				};
+			}
+			const entry = result[key];
+			if (!entry.flcIds.includes(finding.logicalFingerprint)) {
+				entry.flcIds.push(finding.logicalFingerprint);
+				entry.denominator += 1;
+			}
+		}
+	}
+
+	return Object.keys(result).length > 0 ? result : null;
+}
+
 /**
  * Creates a new observation session record.
+ *
+ * If a prior completed session is provided, extracts and freezes
+ * its Trend comparison baseline (cohort C) for the lifetime of this session.
+ * Incomplete sessions are ignored and treated as null.
  */
-export function startSession(sessionId: string, timestamp: number): SessionRecord {
+export function startSession(
+	sessionId: string,
+	timestamp: number,
+	priorCompletedSession?: SessionRecord | null,
+): SessionRecord {
+	const isCompleted = priorCompletedSession?.status === 'completed';
+	const trendComparisonByKey = isCompleted
+		? extractTrendComparisonBaseline(priorCompletedSession)
+		: null;
+
 	return {
 		sessionId,
 		startedAt: timestamp,
 		endedAt: null,
+		status: 'active',
 		baselineCheckpoint: null,
 		finalCheckpoint: null,
 		lifecycleSummaries: [],
+		priorCompletedSessionId: isCompleted ? priorCompletedSession.sessionId : null,
+		trendComparisonByKey,
 	};
 }
 
@@ -535,17 +632,20 @@ export function updateSessionLatest(
 }
 
 /**
- * Finalizes an active session by capturing lifecycle summaries
+ * Finalizes an active session by capturing lifecycle summaries,
+ * recording completion status ('completed' or 'incomplete'),
  * and setting the end timestamp.
  */
 export function finalizeSession(
 	session: SessionRecord,
 	lifecycles: FindingLifecycleRecord[],
 	timestamp: number,
+	status: 'completed' | 'incomplete' = 'completed',
 ): SessionRecord {
 	return {
 		...session,
 		endedAt: timestamp,
+		status,
 		lifecycleSummaries: lifecycles.map(lc => ({ ...lc })),
 	};
 }

@@ -582,7 +582,7 @@ function buildToolbar(vulns: Vulnerability[]): string {
 					${buildCweOptions(vulns)}
 				</select>
 			</div>
-			<div class="results-meta" id="results-meta" aria-live="polite"></div>
+			<div class="results-meta" id="results-meta" aria-live="polite">Live scan • ${vulns.length} vulnerabilit${vulns.length === 1 ? 'y' : 'ies'}</div>
 		</div>`;
 }
 
@@ -705,8 +705,8 @@ export function buildActiveVulnerabilitiesHtml(
 
 					if (resultsMeta) {
 						resultsMeta.textContent = visibleCount === totalCount
-							? totalCount + ' vulnerabilit' + (totalCount === 1 ? 'y' : 'ies')
-							: 'Showing ' + visibleCount + ' of ' + totalCount;
+							? 'Live scan • ' + totalCount + ' vulnerabilit' + (totalCount === 1 ? 'y' : 'ies')
+							: 'Live scan • Showing ' + visibleCount + ' of ' + totalCount;
 					}
 
 					if (filterEmpty) {

@@ -1,7 +1,17 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import type * as vscode from 'vscode';
+import { SessionStore } from '../modules/tracker/storage/sessionStore.js';
 import {
 	processObservation,
 	classifyFinding,
+	startSession,
+	setSessionBaseline,
+	updateSessionLatest,
+	finalizeSession,
+	extractTrendComparisonBaseline,
 } from '../modules/tracker/analysis/lifecycleEngine.js';
 import type {
 	FindingLifecycleRecord,
@@ -842,6 +852,536 @@ describe('Lifecycle Engine Test Suite', () => {
 			assert.strictEqual(lifecycles[0].isCommentedOut, false);
 			assert.notStrictEqual(lifecycles[0].durableResolutionAt, null);
 			assert.strictEqual(resolvedResult.classifications[0].status, 'resolved');
+		});
+	});
+
+	// ── 14. Session Lifecycle & Deactivation Finalization ─────────────
+	describe('14. Session Lifecycle & Deactivation Finalization', () => {
+		it('starts session with status active and null endedAt', () => {
+			const tStart = 10000;
+			const session = startSession('session-001', tStart);
+
+			assert.strictEqual(session.sessionId, 'session-001');
+			assert.strictEqual(session.startedAt, tStart);
+			assert.strictEqual(session.endedAt, null);
+			assert.strictEqual(session.status, 'active');
+			assert.strictEqual(session.baselineCheckpoint, null);
+			assert.strictEqual(session.finalCheckpoint, null);
+			assert.deepStrictEqual(session.lifecycleSummaries, []);
+		});
+
+		it('captures baseline and latest checkpoints on observations', () => {
+			const tStart = 10000;
+			const session = startSession('session-001', tStart);
+			const mockFindings = [createMockFinding({ instanceName: 'f1' })];
+
+			setSessionBaseline(session, mockFindings, tStart);
+			updateSessionLatest(session, mockFindings, tStart);
+
+			assert.notStrictEqual(session.baselineCheckpoint, null);
+			assert.strictEqual(session.baselineCheckpoint?.timestamp, tStart);
+			assert.strictEqual(session.baselineCheckpoint?.findings.length, 1);
+			assert.strictEqual(session.finalCheckpoint?.timestamp, tStart);
+
+			// Subsequent baseline call does NOT overwrite baseline
+			const mockFindings2 = [createMockFinding({ instanceName: 'f1' }), createMockFinding({ instanceName: 'f2' })];
+			setSessionBaseline(session, mockFindings2, tStart + 5000);
+			assert.strictEqual(session.baselineCheckpoint?.findings.length, 1);
+
+			// But updateSessionLatest DOES update final checkpoint
+			updateSessionLatest(session, mockFindings2, tStart + 5000);
+			assert.strictEqual(session.finalCheckpoint?.timestamp, tStart + 5000);
+			assert.strictEqual(session.finalCheckpoint?.findings.length, 2);
+		});
+
+		it('finalizes session cleanly with status completed', () => {
+			const tStart = 10000;
+			const tEnd = 25000;
+			const session = startSession('session-001', tStart);
+			const mockFinding = createMockFinding();
+			setSessionBaseline(session, [mockFinding], tStart);
+			updateSessionLatest(session, [mockFinding], tStart);
+
+			const step = processObservation([mockFinding], [], tStart, true);
+			const finalized = finalizeSession(session, step.lifecycles, tEnd, 'completed');
+
+			assert.strictEqual(finalized.sessionId, 'session-001');
+			assert.strictEqual(finalized.startedAt, tStart);
+			assert.strictEqual(finalized.endedAt, tEnd);
+			assert.strictEqual(finalized.status, 'completed');
+			assert.strictEqual(finalized.lifecycleSummaries.length, 1);
+		});
+
+		it('finalizes session with status incomplete on failure or timeout fallback', () => {
+			const tStart = 10000;
+			const tEnd = 20000;
+			const session = startSession('session-002', tStart);
+			const mockFinding = createMockFinding();
+			setSessionBaseline(session, [mockFinding], tStart);
+
+			const step = processObservation([mockFinding], [], tStart, true);
+			const finalized = finalizeSession(session, step.lifecycles, tEnd, 'incomplete');
+
+			assert.strictEqual(finalized.sessionId, 'session-002');
+			assert.strictEqual(finalized.endedAt, tEnd);
+			assert.strictEqual(finalized.status, 'incomplete');
+			assert.strictEqual(finalized.lifecycleSummaries.length, 1);
+		});
+	});
+
+	// ── 15. Synchronous Shutdown Persistence & Recovery ───────────────
+	describe('15. Synchronous Shutdown Persistence & Recovery', () => {
+		let tempDir: string;
+		let mockContext: vscode.ExtensionContext;
+		let memento: Map<string, any>;
+
+		beforeEach(() => {
+			tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ariadne-test-store-'));
+			memento = new Map<string, any>();
+			mockContext = {
+				storageUri: { fsPath: tempDir },
+				globalStorageUri: { fsPath: tempDir },
+				workspaceState: {
+					get: (key: string, defaultValue?: any) => memento.has(key) ? memento.get(key) : defaultValue,
+					update: async (key: string, value: any) => {
+						if (value === undefined) {
+							memento.delete(key);
+						} else {
+							memento.set(key, value);
+						}
+					},
+				},
+			} as unknown as vscode.ExtensionContext;
+		});
+
+		afterEach(() => {
+			if (fs.existsSync(tempDir)) {
+				fs.rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		it('synchronously persists finalized session to local disk in <1ms', () => {
+			const store = new SessionStore(mockContext);
+			const session = startSession('session-001', 1000);
+			const finalized = finalizeSession(session, [], 2000, 'completed');
+
+			store.saveFinalizedSessionSync(finalized);
+
+			const filePath = store.getFinalizedSessionFilePath();
+			assert.strictEqual(fs.existsSync(filePath), true);
+
+			const raw = fs.readFileSync(filePath, 'utf8');
+			const parsed = JSON.parse(raw);
+			assert.strictEqual(parsed.sessionId, 'session-001');
+			assert.strictEqual(parsed.status, 'completed');
+			assert.strictEqual(parsed.endedAt, 2000);
+		});
+
+		it('recovers pending finalized session, writes to completedSessions, and cleans up file', async () => {
+			const store = new SessionStore(mockContext);
+			const session = startSession('session-001', 1000);
+			const finalized = finalizeSession(session, [], 2000, 'completed');
+
+			// Persist synchronously as if during deactivation
+			store.saveFinalizedSessionSync(finalized);
+			const filePath = store.getFinalizedSessionFilePath();
+			assert.strictEqual(fs.existsSync(filePath), true);
+
+			// Recover as if during next activation
+			const recovered = await store.recoverPendingFinalizedSession();
+			assert.notStrictEqual(recovered, null);
+			assert.strictEqual(recovered!.sessionId, 'session-001');
+			assert.strictEqual(recovered!.status, 'completed');
+
+			// Temporary file must be unlinked/deleted
+			assert.strictEqual(fs.existsSync(filePath), false);
+
+			// Check completed sessions
+			const completed = store.loadCompletedSessions();
+			assert.strictEqual(completed.length, 1);
+			assert.strictEqual(completed[0].sessionId, 'session-001');
+			assert.strictEqual(completed[0].status, 'completed');
+		});
+
+		it('returns null and does not fail if no pending file exists', async () => {
+			const store = new SessionStore(mockContext);
+			const recovered = await store.recoverPendingFinalizedSession();
+			assert.strictEqual(recovered, null);
+		});
+	});
+
+	// ══════════════════════════════════════════════════════════════════
+	// 16. Prior Completed Session Lookup & Graceful Incomplete Handling
+	// ══════════════════════════════════════════════════════════════════
+	describe('16. Prior Completed Session Lookup & Graceful Incomplete Handling', () => {
+		let tempDir: string;
+		let mockContext: vscode.ExtensionContext;
+		let storageState: Record<string, unknown>;
+
+		beforeEach(() => {
+			tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ariadne-test-prior-'));
+			storageState = {};
+			mockContext = {
+				storageUri: { fsPath: tempDir } as any,
+				globalStorageUri: { fsPath: tempDir } as any,
+				workspaceState: {
+					get: <T>(key: string, defaultValue?: T): T => {
+						return (storageState[key] !== undefined ? storageState[key] : defaultValue) as T;
+					},
+					update: async (key: string, value: unknown): Promise<void> => {
+						if (value === undefined) {
+							delete storageState[key];
+						} else {
+							storageState[key] = value;
+						}
+					},
+				},
+			} as unknown as vscode.ExtensionContext;
+		});
+
+		afterEach(() => {
+			if (fs.existsSync(tempDir)) {
+				fs.rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		it('returns null when no completed sessions exist (e.g. Session 1)', () => {
+			const store = new SessionStore(mockContext);
+			const prior = store.loadPriorCompletedSession();
+			assert.strictEqual(prior, null);
+		});
+
+		it('returns the completed session when exactly one exists', async () => {
+			const store = new SessionStore(mockContext);
+			const s1 = startSession('session-001', 1000);
+			const finalized1 = finalizeSession(s1, [], 2000, 'completed');
+			await store.appendCompletedSession(finalized1);
+
+			const prior = store.loadPriorCompletedSession();
+			assert.notStrictEqual(prior, null);
+			assert.strictEqual(prior!.sessionId, 'session-001');
+			assert.strictEqual(prior!.status, 'completed');
+		});
+
+		it('gracefully skips an incomplete session and pulls the preceding completed session', async () => {
+			const store = new SessionStore(mockContext);
+			// Session 1: completed
+			const s1 = startSession('session-001', 1000);
+			const finalized1 = finalizeSession(s1, [], 2000, 'completed');
+			await store.appendCompletedSession(finalized1);
+
+			// Session 2: incomplete (e.g. power cut or shutdown timeout)
+			const s2 = startSession('session-002', 3000);
+			const finalized2 = finalizeSession(s2, [], 4000, 'incomplete');
+			await store.appendCompletedSession(finalized2);
+
+			// When Session 3 queries for prior completed baseline:
+			const prior = store.loadPriorCompletedSession();
+			assert.notStrictEqual(prior, null);
+			// MUST skip session-002 and return session-001!
+			assert.strictEqual(prior!.sessionId, 'session-001');
+			assert.strictEqual(prior!.status, 'completed');
+		});
+
+		it('skips multiple consecutive incomplete sessions until it finds the completed one', async () => {
+			const store = new SessionStore(mockContext);
+			const s1 = finalizeSession(startSession('session-001', 1000), [], 2000, 'completed');
+			const s2 = finalizeSession(startSession('session-002', 3000), [], 4000, 'incomplete');
+			const s3 = finalizeSession(startSession('session-003', 5000), [], 6000, 'incomplete');
+
+			await store.appendCompletedSession(s1);
+			await store.appendCompletedSession(s2);
+			await store.appendCompletedSession(s3);
+
+			const prior = store.loadPriorCompletedSession();
+			assert.notStrictEqual(prior, null);
+			assert.strictEqual(prior!.sessionId, 'session-001');
+		});
+
+		it('returns null if all stored sessions are incomplete', async () => {
+			const store = new SessionStore(mockContext);
+			const s1 = finalizeSession(startSession('session-001', 1000), [], 2000, 'incomplete');
+			const s2 = finalizeSession(startSession('session-002', 3000), [], 4000, 'incomplete');
+
+			await store.appendCompletedSession(s1);
+			await store.appendCompletedSession(s2);
+
+			const prior = store.loadPriorCompletedSession();
+			assert.strictEqual(prior, null);
+		});
+
+		it('loadPriorCompletedSessionBefore returns the preceding completed session before a given ID', async () => {
+			const store = new SessionStore(mockContext);
+			const s1 = finalizeSession(startSession('session-001', 1000), [], 2000, 'completed');
+			const s2 = finalizeSession(startSession('session-002', 3000), [], 4000, 'completed');
+			const s3 = finalizeSession(startSession('session-003', 5000), [], 6000, 'incomplete');
+			const s4 = finalizeSession(startSession('session-004', 7000), [], 8000, 'completed');
+
+			await store.appendCompletedSession(s1);
+			await store.appendCompletedSession(s2);
+			await store.appendCompletedSession(s3);
+			await store.appendCompletedSession(s4);
+
+			// Preceding completed before session-004 should skip session-003 and return session-002
+			const beforeS4 = store.loadPriorCompletedSessionBefore('session-004');
+			assert.notStrictEqual(beforeS4, null);
+			assert.strictEqual(beforeS4!.sessionId, 'session-002');
+
+			// Preceding completed before session-002 should return session-001
+			const beforeS2 = store.loadPriorCompletedSessionBefore('session-002');
+			assert.notStrictEqual(beforeS2, null);
+			assert.strictEqual(beforeS2!.sessionId, 'session-001');
+
+			// Preceding completed before session-001 should be null
+			const beforeS1 = store.loadPriorCompletedSessionBefore('session-001');
+			assert.strictEqual(beforeS1, null);
+		});
+
+		it('extractTrendComparisonBaseline returns null for null or incomplete session', () => {
+			assert.strictEqual(extractTrendComparisonBaseline(null), null);
+
+			const incomplete = finalizeSession(startSession('session-001', 1000), [], 2000, 'incomplete');
+			assert.strictEqual(extractTrendComparisonBaseline(incomplete), null);
+		});
+
+		it('extractTrendComparisonBaseline groups findings by key and computes denominator and prior resolved counts', () => {
+			const s1 = startSession('session-001', 1000);
+			const finding1 = createMockFinding({
+				logicalFingerprint: 'fp-sql-1',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+			});
+			const finding2 = createMockFinding({
+				logicalFingerprint: 'fp-sql-2',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+			});
+			const finding3 = createMockFinding({
+				logicalFingerprint: 'fp-path-1',
+				cweId: 'CWE-22',
+				type: 'Path Traversal',
+			});
+
+			updateSessionLatest(s1, [finding1, finding2, finding3], 1500);
+
+			// Mock lifecycle summaries where fp-sql-1 was already durably resolved at session end
+			const flcSql1 = {
+				...finding1,
+				firstConfirmedAt: 1000,
+				lastConfirmedAt: 1200,
+				missingSince: 1300,
+				provisionalResolutionAt: 1400,
+				durableResolutionAt: 1500, // durably resolved!
+				identicalRestorationCount: 0,
+				inSessionToggleCount: 0,
+				recurrenceCount: 0,
+			} as unknown as FindingLifecycleRecord;
+
+			const flcSql2 = {
+				...finding2,
+				firstConfirmedAt: 1000,
+				lastConfirmedAt: 1500,
+				missingSince: null,
+				provisionalResolutionAt: null,
+				durableResolutionAt: null,
+				identicalRestorationCount: 0,
+				inSessionToggleCount: 0,
+				recurrenceCount: 0,
+			} as unknown as FindingLifecycleRecord;
+
+			const flcPath1 = {
+				...finding3,
+				firstConfirmedAt: 1000,
+				lastConfirmedAt: 1500,
+				missingSince: null,
+				provisionalResolutionAt: null,
+				durableResolutionAt: null,
+				identicalRestorationCount: 0,
+				inSessionToggleCount: 0,
+				recurrenceCount: 0,
+			} as unknown as FindingLifecycleRecord;
+
+			const completed1 = finalizeSession(s1, [flcSql1, flcSql2, flcPath1], 2000, 'completed');
+
+			const baseline = extractTrendComparisonBaseline(completed1);
+			assert.notStrictEqual(baseline, null);
+
+			// CWE-89 (SQL Injection) check
+			assert.ok(baseline!['CWE-89']);
+			assert.strictEqual(baseline!['CWE-89'].sourceSessionId, 'session-001');
+			assert.strictEqual(baseline!['CWE-89'].denominator, 2);
+			assert.strictEqual(baseline!['CWE-89'].resolvedAtSourceFinal, 1);
+			assert.deepStrictEqual(baseline!['CWE-89'].flcIds, ['fp-sql-1', 'fp-sql-2']);
+
+			// CWE-22 (Path Traversal) check
+			assert.ok(baseline!['CWE-22']);
+			assert.strictEqual(baseline!['CWE-22'].sourceSessionId, 'session-001');
+			assert.strictEqual(baseline!['CWE-22'].denominator, 1);
+			assert.strictEqual(baseline!['CWE-22'].resolvedAtSourceFinal, 0);
+			assert.deepStrictEqual(baseline!['CWE-22'].flcIds, ['fp-path-1']);
+		});
+
+		it('startSession attaches priorCompletedSessionId and trendComparisonByKey when completed session provided', () => {
+			const s1 = startSession('session-001', 1000);
+			updateSessionLatest(s1, [createMockFinding({ logicalFingerprint: 'fp-1', cweId: 'CWE-89' })], 1500);
+			const completed1 = finalizeSession(s1, [], 2000, 'completed');
+
+			// Start session-002 with completed1 passed
+			const s2 = startSession('session-002', 2500, completed1);
+			assert.strictEqual(s2.priorCompletedSessionId, 'session-001');
+			assert.notStrictEqual(s2.trendComparisonByKey, null);
+			assert.ok(s2.trendComparisonByKey!['CWE-89']);
+			assert.strictEqual(s2.trendComparisonByKey!['CWE-89'].denominator, 1);
+
+			// Start session-003 with an incomplete session -> should ignore incomplete session
+			const incomplete = finalizeSession(startSession('session-x', 100), [], 200, 'incomplete');
+			const s3 = startSession('session-003', 3000, incomplete);
+			assert.strictEqual(s3.priorCompletedSessionId, null);
+			assert.strictEqual(s3.trendComparisonByKey, null);
+		});
+	});
+
+	// ══════════════════════════════════════════════════════════════════
+	// 17. End-to-End Integration: Cross-Session Recurring, Identical Restoration & Comment Retention
+	// ══════════════════════════════════════════════════════════════════
+	describe('17. End-to-End Integration: Cross-Session Recurring, Identical Restoration & Comment Retention', () => {
+		it('tracks cross-session recurrence, identical restoration, and graduation to persisting', () => {
+			const finding = createMockFinding({
+				logicalFingerprint: 'fp-sql-recurrent',
+				contentFingerprint: 'sha256:sql_content_1',
+				scopeFingerprint: 'sha256:sql_scope_1',
+				cweId: 'CWE-89',
+			});
+			const lifecycles: FindingLifecycleRecord[] = [];
+
+			// --- Session 1 ---
+			const s1 = startSession('session-001', t0);
+			// Finding observed & confirmed
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([finding], lifecycles, t0 + 10_000, true);
+			processObservation([finding], lifecycles, t0 + 35_000, true);
+			assert.strictEqual(classifyFinding(lifecycles[0], t0 + 35_000), 'persisting');
+
+			// Finding resolved cleanly before Session 1 ends
+			processObservation([], lifecycles, t0 + 40_000, true); // missingSince
+			processObservation([], lifecycles, t0 + 46_000, true); // provisional
+			processObservation([], lifecycles, t0 + 52_000, true); // durable resolution
+			assert.strictEqual(classifyFinding(lifecycles[0], t0 + 52_000), 'resolved');
+
+			const completed1 = finalizeSession(s1, lifecycles, t0 + 60_000, 'completed');
+			assert.strictEqual(completed1.status, 'completed');
+
+			// Trend baseline from Session 1
+			const baseline = extractTrendComparisonBaseline(completed1);
+			assert.strictEqual(baseline!['CWE-89'].denominator, 1);
+			assert.strictEqual(baseline!['CWE-89'].resolvedAtSourceFinal, 1);
+
+			// --- Session 2 ---
+			// Starts with Session 1 as prior completed session
+			const tSession2 = t0 + 100_000;
+			const s2 = startSession('session-002', tSession2, completed1);
+			assert.strictEqual(s2.priorCompletedSessionId, 'session-001');
+
+			// Vulnerability reintroduced in Session 2 with identical code!
+			const recurrentFinding = createMockFinding({
+				logicalFingerprint: 'fp-sql-recurrent',
+				contentFingerprint: 'sha256:sql_content_1',
+				scopeFingerprint: 'sha256:sql_scope_1',
+				cweId: 'CWE-89',
+			});
+
+			const stepRecur = processObservation([recurrentFinding], lifecycles, tSession2, true);
+			const lc = lifecycles[0];
+
+			// Must be classified as recurring
+			assert.strictEqual(stepRecur.classifications[0].status, 'recurring');
+			assert.strictEqual(lc.recurrenceCount, 1, 'recurrenceCount must be 1');
+			assert.strictEqual(lc.identicalRestorationCount, 1, 'identicalRestorationCount must be 1');
+			assert.strictEqual(stepRecur.classifications[0].isIdenticalRestoration, true);
+
+			// After 35s and 2 confirmations in Session 2, it graduates to persisting
+			processObservation([recurrentFinding], lifecycles, tSession2 + 10_000, true);
+			const stepPersist = processObservation([recurrentFinding], lifecycles, tSession2 + 35_000, true);
+			assert.strictEqual(stepPersist.classifications[0].status, 'persisting');
+			assert.strictEqual(lc.recurrenceCount, 1, 'recurrenceCount must stay 1 after graduating');
+		});
+
+		it('ensures deactivation scan with commented-out code withholds resolution in session summaries', () => {
+			const finding = createMockFinding({
+				filePath: '/workspace/src/app.ts',
+				lineNumber: 2,
+				instanceName: 'vulnSink',
+			});
+			let lifecycles: FindingLifecycleRecord[] = [];
+
+			const session = startSession('session-deact', t0);
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([finding], lifecycles, t0 + 35_000, true);
+
+			// Code is commented out when deactivation scan runs
+			const commentedFile = 'function test() {\n// vulnSink();\n}';
+			const fileProvider = () => commentedFile;
+
+			// Deactivation scan receives 0 findings from scanner because it was commented out
+			const deactResult = processObservation([], lifecycles, t0 + 45_000, true, fileProvider);
+			lifecycles = deactResult.lifecycles;
+
+			assert.strictEqual(lifecycles[0].isCommentedOut, true);
+			assert.strictEqual(lifecycles[0].provisionalResolutionAt, null);
+			assert.strictEqual(lifecycles[0].durableResolutionAt, null);
+			assert.strictEqual(deactResult.classifications[0].status, 'persisting');
+
+			// Finalize session
+			const finalized = finalizeSession(session, lifecycles, t0 + 46_000, 'completed');
+			assert.strictEqual(finalized.lifecycleSummaries[0].isCommentedOut, true);
+			assert.strictEqual(finalized.lifecycleSummaries[0].durableResolutionAt, null);
+
+			// In trend comparison baseline, it must NOT be marked resolvedAtSourceFinal
+			const baseline = extractTrendComparisonBaseline(finalized);
+			assert.strictEqual(baseline!['CWE-89'].resolvedAtSourceFinal, 0, 'Commented out finding must NOT count as resolved');
+		});
+
+		it('deduplicates completed sessions when saved synchronously and recovered on activation', async () => {
+			const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ariadne-test-dedup-'));
+			const storageState: Record<string, unknown> = {};
+			const mockContext = {
+				storageUri: { fsPath: tempDir } as any,
+				globalStorageUri: { fsPath: tempDir } as any,
+				workspaceState: {
+					get: <T>(key: string, defaultValue?: T): T => {
+						return (storageState[key] !== undefined ? storageState[key] : defaultValue) as T;
+					},
+					update: async (key: string, value: unknown): Promise<void> => {
+						if (value === undefined) {
+							delete storageState[key];
+						} else {
+							storageState[key] = value;
+						}
+					},
+				},
+			} as unknown as vscode.ExtensionContext;
+
+			try {
+				const store = new SessionStore(mockContext);
+				const s1 = startSession('session-001', 1000);
+				const finalized = finalizeSession(s1, [], 2000, 'completed');
+
+				// Deactivation saves sync AND appends to workspaceState
+				store.saveFinalizedSessionSync(finalized);
+				await store.appendCompletedSession(finalized);
+
+				// Next activation recovers from sync file
+				await store.recoverPendingFinalizedSession();
+
+				// Sessions must NOT be duplicated!
+				const completed = store.loadCompletedSessions();
+				assert.strictEqual(completed.length, 1, 'Must contain exactly 1 session, not duplicates');
+				assert.strictEqual(completed[0].sessionId, 'session-001');
+			} finally {
+				if (fs.existsSync(tempDir)) {
+					fs.rmSync(tempDir, { recursive: true, force: true });
+				}
+			}
 		});
 	});
 });

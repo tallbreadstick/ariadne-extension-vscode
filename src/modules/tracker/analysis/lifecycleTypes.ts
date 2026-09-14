@@ -318,10 +318,20 @@ export interface SessionCheckpoint {
 // ══════════════════════════════════════════════════════════════════════
 
 /**
- * Record for a completed or active observation session.
+ * Completion status of an observation session.
  *
- * Stores the session boundaries, baseline/final checkpoints, and
- * per-finding lifecycle summaries at session end.
+ * - `active` — Session is currently in progress.
+ * - `completed` — Session finalized cleanly with a valid final checkpoint.
+ * - `incomplete` — Session terminated abruptly or final scan failed/timed out on a dirty workspace.
+ */
+export type SessionStatus = 'active' | 'completed' | 'incomplete';
+
+/**
+ * Persisted record of an entire observation session.
+ *
+ * Stored in workspaceState:
+ * - `ariadne.activeSession` (current session, while active)
+ * - `ariadne.completedSessions` (appended on session finalization)
  *
  * Reference: Section 6.2 — SessionRecord
  */
@@ -334,6 +344,12 @@ export interface SessionRecord {
 
 	/** Epoch ms when the session ended. Null while the session is active. */
 	endedAt: number | null;
+
+	/**
+	 * Completion status of the session.
+	 * 'active' while running, 'completed' or 'incomplete' when ended.
+	 */
+	status?: SessionStatus;
 
 	/**
 	 * Snapshot of findings at the first settled observation.
@@ -353,4 +369,37 @@ export interface SessionRecord {
 	 * findingLifecycles store).
 	 */
 	lifecycleSummaries: FindingLifecycleRecord[];
+
+	/**
+	 * The session ID of the prior completed session used as the baseline for Trend (T),
+	 * or null if no prior completed session existed (e.g. first session or prior incomplete).
+	 */
+	priorCompletedSessionId?: string | null;
+
+	/**
+	 * Frozen Trend comparison baseline by vulnerability key/type from the prior completed session.
+	 * Null if no prior completed session exists.
+	 */
+	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null;
+}
+
+/**
+ * Frozen Trend comparison baseline captured from a prior completed session.
+ * Used by Ervin & Kenn's math to compute pairwise Trend (T) against
+ * the previous session's final state.
+ *
+ * Reference: Section 5 & 6 — Consolidated Implementation Decision Summary
+ */
+export interface TrendComparisonBaseline {
+	/** The sessionId of the prior completed session used as the reference baseline. */
+	sourceSessionId: string;
+
+	/** FLC logical fingerprints present at the source session's final checkpoint. */
+	flcIds: string[];
+
+	/** Total number of reference findings (|C|). */
+	denominator: number;
+
+	/** Number of findings already durably resolved at source session end. */
+	resolvedAtSourceFinal: number;
 }
