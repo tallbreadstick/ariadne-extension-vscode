@@ -6,7 +6,13 @@ import { SEVERITY_BG_TITLE, SEVERITY_COLORS_TITLE } from "../severityColors.js";
 const SEVERITY_COLOR = SEVERITY_COLORS_TITLE;
 const SEVERITY_BG = SEVERITY_BG_TITLE;
 
-// ── UC-2.3: Severity → DiagnosticSeverity mapping ─────────────────────
+const SEVERITY_RANK: Record<AriadneFinding["severity"], number> = {
+  Critical: 0,
+  High: 1,
+  Medium: 2,
+  Low: 3,
+};
+
 // Used when publishing zero-width diagnostics to the Problems Panel.
 const SEVERITY_TO_DIAGNOSTIC: Record<AriadneFinding["severity"], vscode.DiagnosticSeverity> = {
   Critical: vscode.DiagnosticSeverity.Error,
@@ -20,6 +26,9 @@ export class DiagnosticManager {
     AriadneFinding["severity"],
     vscode.TextEditorDecorationType
   >;
+
+  /** After-text only: no underline, so the label can sit at end-of-line. */
+  private readonly afterDecorationType: vscode.TextEditorDecorationType;
 
   private readonly findingsByFile = new Map<string, AriadneFinding[]>();
 
@@ -39,12 +48,16 @@ export class DiagnosticManager {
       Medium:   this._makeDecorationType("Medium"),
       Low:      this._makeDecorationType("Low"),
     };
+    this.afterDecorationType = vscode.window.createTextEditorDecorationType({
+      isWholeLine: false,
+    });
 
     // UC-2.3: Create the "ariadne" DiagnosticCollection for Problems Panel.
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection("ariadne");
 
     context.subscriptions.push(
       ...Object.values(this.decorationTypes),
+      this.afterDecorationType,
       this.diagnosticCollection,
     );
 
@@ -142,10 +155,12 @@ export class DiagnosticManager {
     const findings =
       this.findingsByFile.get(editor.document.uri.toString()) ?? [];
 
-    // Bucket DecorationOptions per severity (allows per-range renderOptions)
+    // Bucket DecorationOptions per severity (underline stays on the finding span)
     const buckets: Record<AriadneFinding["severity"], vscode.DecorationOptions[]> = {
       Critical: [], High: [], Medium: [], Low: [],
     };
+    // One after-label per line so "SQL Injection" sits after `;`, not mid-call.
+    const afterByLine = new Map<number, AriadneFinding[]>();
 
     for (const f of findings) {
       const range = this._codeHighlightRange(editor.document, f);
@@ -154,15 +169,27 @@ export class DiagnosticManager {
         continue;
       }
 
-      const color = SEVERITY_COLOR[f.severity];
+      buckets[f.severity].push({ range });
 
-      buckets[f.severity].push({
-        range,
-        // Per-range renderOptions → different inline label per finding
+      const labelLine = range.end.line;
+      const existing = afterByLine.get(labelLine) ?? [];
+      existing.push(f);
+      afterByLine.set(labelLine, existing);
+    }
+
+    const afters: vscode.DecorationOptions[] = [];
+    for (const [line, lineFindings] of afterByLine) {
+      const lineText = editor.document.lineAt(line).text;
+      const end = lineText.length;
+      const lead = lineFindings.reduce((best, f) =>
+        SEVERITY_RANK[f.severity] < SEVERITY_RANK[best.severity] ? f : best
+      );
+      afters.push({
+        range: new vscode.Range(line, end, line, end),
         renderOptions: {
           after: {
-            contentText: `  ${f.vulnerabilityName}`,
-            color,
+            contentText: `  ${lineFindings.map((f) => f.vulnerabilityName).join("  ·  ")}`,
+            color: SEVERITY_COLOR[lead.severity],
             fontStyle: "italic",
             margin: "0 0 0 16px",
           },
@@ -173,12 +200,14 @@ export class DiagnosticManager {
     for (const severity of ["Critical", "High", "Medium", "Low"] as const) {
       editor.setDecorations(this.decorationTypes[severity], buckets[severity]);
     }
+    editor.setDecorations(this.afterDecorationType, afters);
   }
 
   private _clearDecorations(editor: vscode.TextEditor): void {
     for (const dt of Object.values(this.decorationTypes)) {
       editor.setDecorations(dt, []);
     }
+    editor.setDecorations(this.afterDecorationType, []);
   }
 
   /**
@@ -198,13 +227,20 @@ export class DiagnosticManager {
     const leading = startLineText.match(/^\s*/)?.[0]?.length ?? 0;
 
     const startCol = Math.max(f.startColumn, leading);
-    const endCol =
+    let endCol =
       f.endColumn >= 999
         ? endLineText.length
         : Math.min(f.endColumn, endLineText.length);
 
+    // Empty or inverted spans used to drop the underline entirely.
     if (startCol >= endCol) {
-      return undefined;
+      endCol = endLineText.length;
+    }
+    if (startCol >= endCol) {
+      if (leading >= endLineText.length) {
+        return undefined;
+      }
+      return new vscode.Range(f.startLine, leading, f.endLine, endLineText.length);
     }
 
     return new vscode.Range(f.startLine, startCol, f.endLine, endCol);

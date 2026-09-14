@@ -17,7 +17,7 @@
     { "open": "\"", "close": "\"" }
   ],
   "indentationRules": {
-    "increaseIndentPattern": "^\\s*(RULE|GUARD|SOURCE|FLOW_POLICY|MATCH|STRATEGY|WHEN|EXCEPT|MATCHES|NAMES)\\b.*$",
+    "increaseIndentPattern": "^\\s*(RULE|GUARD|SOURCE|FLOW_POLICY|MATCH|STRATEGY|WHEN|EXCEPT|WHERE|MATCHES|NAMES)\\b.*$",
     "decreaseIndentPattern": "^\\s*$"
   }
 }
