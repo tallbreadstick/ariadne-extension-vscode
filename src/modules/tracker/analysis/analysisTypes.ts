@@ -12,6 +12,32 @@
 
 import type { Vulnerability, ScanSnapshot } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
 
+// ── Score types ───────────────────────────────────────────────────────
+
+/**
+ * Per-CWE score entry for the Improving Trends collapsible rows.
+ *
+ * Computed by `scoreCalculator.ts` and attached to `SessionAnalysis.typeScores`.
+ */
+export interface TypeScoreEntry {
+	/** Vulnerability type label (e.g. "SQL Injection"). */
+	type: string;
+	/** CWE identifier used as the grouping key. */
+	cweId: string;
+	/** Fix Score for this CWE (0–10). */
+	f: number;
+	/** Persistence Score for this CWE (0–10). */
+	p: number;
+	/** Pairwise Trend Score for this CWE. Null if first session or not in comparison set. */
+	t: number | null;
+	/** Total FLCs ever observed for this CWE. */
+	totalInstances: number;
+	/** FLCs with durable resolution. */
+	resolvedInstances: number;
+	/** FLCs currently open. */
+	openInstances: number;
+}
+
 // ── Status classification ─────────────────────────────────────────────
 
 /**
@@ -96,4 +122,22 @@ export interface SessionAnalysis {
 	 * Measurement-integrity counter.
 	 */
 	totalInSessionToggles?: number;
+	/**
+	 * Live F/P/T scores computed from the current lifecycle state.
+	 * Updated each settled observation.
+	 */
+	scores?: {
+		/** Workspace-level Fix Score (0–10). */
+		f: number;
+		/** Workspace-level Persistence Score (0–10). */
+		p: number;
+		/** Live Trend Score. Null = first session (no comparison set). */
+		tLive: number | null;
+		/** User-facing label for T (e.g. "Some progress (+2.00)"). */
+		tLabel: string | null;
+	};
+	/**
+	 * Per-CWE score breakdown for the Improving Trends collapsible rows.
+	 */
+	typeScores?: TypeScoreEntry[];
 }
