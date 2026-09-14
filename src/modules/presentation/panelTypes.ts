@@ -91,6 +91,14 @@ export interface TrendData {
 	 * Optional — placeholder rows are shown when absent.
 	 */
 	resolvedItems?: TrendSubItem[];
+	/** Workspace-level Fix Score (0–10). */
+	fixScore?: number;
+	/** Workspace-level Persistence Score (0–10). */
+	persistenceScore?: number;
+	/** Workspace-level Trend Score. Null = first session. */
+	trendScore?: number | null;
+	/** User-facing trend label, e.g. "Some progress (+2.00)". */
+	trendLabel?: string;
 }
 
 /**

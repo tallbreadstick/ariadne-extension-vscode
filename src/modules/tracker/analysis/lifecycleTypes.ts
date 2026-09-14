@@ -381,6 +381,19 @@ export interface SessionRecord {
 	 * Null if no prior completed session exists.
 	 */
 	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null;
+
+	/**
+	 * Aggregate F/P/T scores frozen at session finalization.
+	 * Only set for completed sessions. Null/undefined while active or for incomplete sessions.
+	 */
+	finalScores?: {
+		/** Fix Score (0–10). */
+		f: number;
+		/** Persistence Score (0–10). */
+		p: number;
+		/** Trend Score. Null = first session (no comparison set). */
+		t: number | null;
+	};
 }
 
 /**
