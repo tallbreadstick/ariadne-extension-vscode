@@ -4,6 +4,7 @@ import {
 	collectVulnFilterFacets,
 	countActiveVulnFilters,
 	emptyVulnListFilter,
+	formatCategoryLabel,
 	isVulnFilterActive,
 	matchesVulnListFilter,
 } from '../modules/presentation/views/vulnFilters.js';
@@ -113,4 +114,13 @@ describe('Vuln list filters', () => {
 			cwe: 'CWE-89',
 		}), 3);
 	});
+
+	it('formats OWASP category labels without code prefixes', () => {
+		assert.strictEqual(formatCategoryLabel('A01-2021; broken access control'), 'broken access control');
+		assert.strictEqual(formatCategoryLabel('A01:2021-Broken Access Control'), 'Broken Access Control');
+		assert.strictEqual(formatCategoryLabel('A03:2021'), 'Injection');
+		assert.strictEqual(formatCategoryLabel('A05:2021 - Security Misconfiguration'), 'Security Misconfiguration');
+		assert.strictEqual(formatCategoryLabel(''), '');
+	});
 });
+

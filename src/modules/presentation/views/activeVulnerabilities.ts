@@ -8,7 +8,7 @@
 
 import { Vulnerability, Severity } from '../panelTypes.js';
 import { severityCssVars } from '../severityColors.js';
-import { collectVulnFilterFacets } from './vulnFilters.js';
+import { collectVulnFilterFacets, formatCategoryLabel } from './vulnFilters.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
@@ -75,6 +75,21 @@ const FILTER_SVG =
 	`<svg class="filter-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2"
 			stroke-linecap="round" />
+	</svg>`;
+
+const SEARCH_SVG =
+	`<svg class="search-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.1zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/>
+	</svg>`;
+
+const CLOSE_SVG =
+	`<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" aria-hidden="true">
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M8 7.293l3.646-3.647.708.708L8.707 8l3.647 3.646-.708.708L8 8.707l-3.646 3.647-.708-.708L7.293 8 3.646 4.354l.708-.708L8 7.293z"/>
+	</svg>`;
+
+const CHECK_MARK_SVG =
+	`<svg class="check-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
 	</svg>`;
 
 // ── Card builder ──────────────────────────────────────────────────────
@@ -161,7 +176,7 @@ const CSS = /* css */ `
         --bg: var(--vscode-editor-background);
         --panel: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
         --card: var(--vscode-editorWidget-background);
-        --border: var(--vscode-panel-border);
+        --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
         --text: var(--vscode-foreground);
         --muted: var(--vscode-descriptionForeground);
         ${severityCssVars()}
@@ -201,16 +216,82 @@ const CSS = /* css */ `
 		grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .search-input,
-    .filter-select {
+	.search-wrap {
+		position: relative;
+		display: flex;
+		align-items: center;
+		width: 100%;
+	}
+
+	.search-icon {
+		position: absolute;
+		left: 9px;
+		width: 14px;
+		height: 14px;
+		color: var(--muted);
+		pointer-events: none;
+	}
+
+    .search-input {
         width: 100%;
-        padding: 6px 8px;
+        padding: 6px 26px 6px 28px;
         border-radius: 4px;
         border: 1px solid var(--border);
         background: var(--vscode-input-background, var(--card));
         color: var(--vscode-input-foreground, var(--text));
         font: inherit;
         font-size: 12px;
+    }
+
+	.search-input::-webkit-search-cancel-button,
+	.search-input::-webkit-search-decoration {
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.search-clear-btn {
+		position: absolute;
+		right: 5px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+		border-radius: 50%;
+	}
+
+	.search-clear-btn:hover {
+		color: var(--text);
+		background: color-mix(in srgb, var(--text) 12%, transparent);
+	}
+
+	.search-clear-btn[hidden] {
+		display: none;
+	}
+
+    .filter-select {
+        width: 100%;
+        padding: 6px 24px 6px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background-color: var(--vscode-input-background, var(--card));
+        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="%23888888"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.976 10.072l4.357-4.357.62.618L8.284 11h-.62L3 6.333l.619-.618 4.357 4.357z"/></svg>');
+        background-repeat: no-repeat;
+        background-position: right 8px center;
+        appearance: none;
+        -webkit-appearance: none;
+        color: var(--vscode-input-foreground, var(--text));
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
     }
 
     .search-input:focus,
@@ -231,11 +312,17 @@ const CSS = /* css */ `
 		background: var(--vscode-button-secondaryBackground, var(--card));
 		color: var(--vscode-button-secondaryForeground, var(--text));
 		cursor: pointer;
+		transition: background 0.15s ease-out, border-color 0.15s ease-out;
 	}
 
 	.filter-toggle:hover,
 	.filter-toggle[aria-expanded="true"] {
 		background: var(--vscode-button-secondaryHoverBackground, var(--panel));
+	}
+
+	.filter-toggle.has-filters {
+		border-color: var(--vscode-focusBorder, var(--button-bg));
+		background: color-mix(in srgb, var(--button-bg) 16%, var(--card));
 	}
 
 	.filter-toggle:focus-visible {
@@ -268,6 +355,17 @@ const CSS = /* css */ `
 		display: none;
 	}
 
+	@keyframes filterMenuSlideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
     .filter-menu {
         display: none;
         gap: 12px;
@@ -279,6 +377,7 @@ const CSS = /* css */ `
 
 	.filter-menu.open {
 		display: grid;
+		animation: filterMenuSlideDown 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	.filter-fieldset {
@@ -286,11 +385,17 @@ const CSS = /* css */ `
 		margin: 0;
 		padding: 0;
 		display: grid;
-		gap: 6px;
 		min-width: 0;
 	}
 
-	.filter-legend,
+	.filter-legend {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--muted);
+		margin: 0 0 8px 0;
+		padding: 0;
+	}
+
 	.filter-label {
 		font-size: 11px;
 		font-weight: 600;
@@ -304,56 +409,111 @@ const CSS = /* css */ `
 	}
 
 	.severity-chip {
-		padding: 4px 10px;
-		border-radius: 999px;
-		border: 1px solid var(--border);
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 6px;
+		border-radius: 4px;
+		border: 0;
 		background: transparent;
 		color: var(--text);
 		font: inherit;
-		font-size: 11px;
-		font-weight: 600;
+		font-size: 13px;
+		font-weight: 500;
 		cursor: pointer;
-		transition: background 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
+		user-select: none;
+		line-height: 1.2;
+		transition: background 0.12s ease-out;
+	}
+
+	.severity-chip:hover {
+		background: color-mix(in srgb, var(--text) 8%, transparent);
+	}
+
+	.severity-chip:active {
+		transform: scale(0.97);
 	}
 
 	.severity-chip:focus-visible {
 		outline: 1px solid var(--vscode-focusBorder, var(--file));
-		outline-offset: 1px;
+		outline-offset: 2px;
 	}
 
-	.severity-chip.critical[aria-pressed="true"] {
+	.severity-check {
+		display: inline-grid;
+		place-items: center;
+		width: 15px;
+		height: 15px;
+		border-radius: 3px;
+		border: 1.5px solid var(--vscode-checkbox-border, var(--border));
+		background: transparent;
+		flex-shrink: 0;
+		pointer-events: none;
+		transition: background 0.15s ease-out, border-color 0.15s ease-out;
+	}
+
+	.severity-name {
+		pointer-events: none;
+	}
+
+	.check-icon {
+		width: 11px;
+		height: 11px;
+		opacity: 0;
+		transform: scale(0.5);
+		transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+	}
+
+	.severity-chip[aria-pressed="true"] .severity-name {
+		font-weight: 600;
+	}
+
+	.severity-chip.critical[aria-pressed="true"] .severity-check {
 		border-color: var(--critical);
-		background: color-mix(in srgb, var(--critical) 18%, transparent);
-		color: var(--critical);
+		background: var(--critical);
+	}
+	.severity-chip.critical[aria-pressed="true"] .check-icon {
+		color: #ffffff;
 	}
 
-	.severity-chip.high[aria-pressed="true"] {
+	.severity-chip.high[aria-pressed="true"] .severity-check {
 		border-color: var(--high);
-		background: color-mix(in srgb, var(--high) 18%, transparent);
-		color: var(--high);
+		background: var(--high);
+	}
+	.severity-chip.high[aria-pressed="true"] .check-icon {
+		color: #ffffff;
 	}
 
-	.severity-chip.medium[aria-pressed="true"] {
+	.severity-chip.medium[aria-pressed="true"] .severity-check {
 		border-color: var(--medium);
-		background: color-mix(in srgb, var(--medium) 18%, transparent);
-		color: var(--medium);
+		background: var(--medium);
+	}
+	.severity-chip.medium[aria-pressed="true"] .check-icon {
+		color: #1a1a1a;
 	}
 
-	.severity-chip.low[aria-pressed="true"] {
+	.severity-chip.low[aria-pressed="true"] .severity-check {
 		border-color: var(--low);
-		background: color-mix(in srgb, var(--low) 18%, transparent);
-		color: var(--low);
+		background: var(--low);
+	}
+	.severity-chip.low[aria-pressed="true"] .check-icon {
+		color: #ffffff;
+	}
+
+	.severity-chip[aria-pressed="true"] .check-icon {
+		opacity: 1;
+		transform: scale(1);
 	}
 
 	.filter-grid {
 		display: grid;
-		gap: 10px;
+		gap: 8px;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
 	.filter-field {
 		display: grid;
-		gap: 4px;
+		gap: 6px;
 		min-width: 0;
 	}
 
@@ -704,17 +864,22 @@ const CSS = /* css */ `
 
 // ── Public API ────────────────────────────────────────────────────────
 
-function buildSelectOptions(values: string[], allLabel: string): string {
+function buildSelectOptions(
+	values: string[],
+	allLabel: string,
+	formatLabel?: (val: string) => string,
+): string {
 	const all = `<option value="">${escapeHtml(allLabel)}</option>`;
-	const options = values.map((value) =>
-		`<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`,
-	);
+	const options = values.map((value) => {
+		const label = formatLabel ? formatLabel(value) : value;
+		return `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`;
+	});
 	return [all, ...options].join('');
 }
 
 function buildSeverityChips(): string {
 	return SEVERITY_OPTIONS.map((severity) =>
-		`<button type="button" class="severity-chip ${severity}" data-severity="${severity}" aria-pressed="false">${capitalize(severity)}</button>`,
+		`<button type="button" class="severity-chip ${severity}" data-severity="${severity}" aria-pressed="false" role="checkbox" aria-checked="false"><span class="severity-check" aria-hidden="true">${CHECK_MARK_SVG}</span><span class="severity-name">${capitalize(severity)}</span></button>`,
 	).join('');
 }
 
@@ -728,13 +893,26 @@ function buildToolbar(vulns: Vulnerability[]): string {
 	return /* html */ `
 		<div class="toolbar">
 			<div class="toolbar-row">
-				<input
-					class="search-input"
-					id="vuln-search"
-					type="search"
-					placeholder="Search title or file…"
-					aria-label="Search vulnerabilities by title or file"
-				/>
+				<div class="search-wrap">
+					${SEARCH_SVG}
+					<input
+						class="search-input"
+						id="vuln-search"
+						type="search"
+						placeholder="Search title or file…"
+						aria-label="Search vulnerabilities by title or file"
+					/>
+					<button
+						class="search-clear-btn"
+						id="search-clear-btn"
+						type="button"
+						aria-label="Clear search query"
+						title="Clear search"
+						hidden
+					>
+						${CLOSE_SVG}
+					</button>
+				</div>
 				<button
 					class="filter-toggle"
 					type="button"
@@ -759,25 +937,13 @@ function buildToolbar(vulns: Vulnerability[]): string {
 					<label class="filter-field">
 						<span class="filter-label">Category</span>
 						<select class="filter-select" id="category-filter" aria-label="Filter by OWASP category">
-							${buildSelectOptions(facets.categories, 'All categories')}
-						</select>
-					</label>
-					<label class="filter-field">
-						<span class="filter-label">CWE</span>
-						<select class="filter-select" id="cwe-filter" aria-label="Filter by CWE">
-							${buildSelectOptions(facets.cwes, 'All CWEs')}
+							${buildSelectOptions(facets.categories, 'All categories', formatCategoryLabel)}
 						</select>
 					</label>
 					<label class="filter-field">
 						<span class="filter-label">Type</span>
 						<select class="filter-select" id="type-filter" aria-label="Filter by vulnerability type">
 							${buildSelectOptions(facets.types, 'All types')}
-						</select>
-					</label>
-					<label class="filter-field">
-						<span class="filter-label">File</span>
-						<select class="filter-select" id="file-filter" aria-label="Filter by file">
-							${buildSelectOptions(facets.files, 'All files')}
 						</select>
 					</label>
 				</div>
@@ -862,12 +1028,11 @@ export function buildActiveVulnerabilitiesHtml(
 				const vscode = acquireVsCodeApi();
 				const cards = Array.from(document.querySelectorAll('.vuln-card'));
 				const searchInput = document.getElementById('vuln-search');
+				const searchClearBtn = document.getElementById('search-clear-btn');
 				const filterToggle = document.getElementById('filter-toggle');
 				const filterMenu = document.getElementById('filter-menu');
 				const categoryFilter = document.getElementById('category-filter');
-				const cweFilter = document.getElementById('cwe-filter');
 				const typeFilter = document.getElementById('type-filter');
-				const fileFilter = document.getElementById('file-filter');
 				const severityChips = Array.from(document.querySelectorAll('.severity-chip'));
 				const resetBtn = document.getElementById('reset-filters-btn');
 				const filterBadge = document.getElementById('filter-badge');
@@ -900,9 +1065,7 @@ export function buildActiveVulnerabilitiesHtml(
 					if ((searchInput?.value ?? '').trim()) count += 1;
 					if (selectedSeverities().length) count += 1;
 					if (categoryFilter?.value) count += 1;
-					if (cweFilter?.value) count += 1;
 					if (typeFilter?.value) count += 1;
-					if (fileFilter?.value) count += 1;
 					return count;
 				}
 
@@ -912,8 +1075,14 @@ export function buildActiveVulnerabilitiesHtml(
 						filterBadge.hidden = count === 0;
 						filterBadge.textContent = String(count);
 					}
+					if (filterToggle) {
+						filterToggle.classList.toggle('has-filters', count > 0);
+					}
 					if (resetBtn) {
 						resetBtn.disabled = count === 0;
+					}
+					if (searchClearBtn && searchInput) {
+						searchClearBtn.hidden = searchInput.value.length === 0;
 					}
 				}
 
@@ -941,9 +1110,7 @@ export function buildActiveVulnerabilitiesHtml(
 					const query = (searchInput?.value ?? '').trim().toLowerCase();
 					const severities = selectedSeverities();
 					const category = categoryFilter?.value ?? '';
-					const cwe = cweFilter?.value ?? '';
 					const type = typeFilter?.value ?? '';
-					const file = fileFilter?.value ?? '';
 
 					if (severities.length && !severities.includes(el.dataset.severity)) {
 						return false;
@@ -951,13 +1118,7 @@ export function buildActiveVulnerabilitiesHtml(
 					if (category && (el.dataset.category ?? '') !== category) {
 						return false;
 					}
-					if (cwe && el.dataset.cwe !== cwe) {
-						return false;
-					}
 					if (type && el.dataset.type !== type) {
-						return false;
-					}
-					if (file && el.dataset.file !== file) {
 						return false;
 					}
 					if (query && !(el.dataset.searchText ?? '').includes(query)) {
@@ -993,9 +1154,7 @@ export function buildActiveVulnerabilitiesHtml(
 						searchQuery: searchInput?.value ?? '',
 						severityFilters: selectedSeverities(),
 						categoryFilter: categoryFilter?.value ?? '',
-						cweFilter: cweFilter?.value ?? '',
 						typeFilter: typeFilter?.value ?? '',
-						fileFilter: fileFilter?.value ?? '',
 					});
 				}
 
@@ -1003,11 +1162,12 @@ export function buildActiveVulnerabilitiesHtml(
 					if (searchInput) {
 						searchInput.value = '';
 					}
-					severityChips.forEach((chip) => chip.setAttribute('aria-pressed', 'false'));
+					severityChips.forEach((chip) => {
+						chip.setAttribute('aria-pressed', 'false');
+						chip.setAttribute('aria-checked', 'false');
+					});
 					if (categoryFilter) categoryFilter.value = '';
-					if (cweFilter) cweFilter.value = '';
 					if (typeFilter) typeFilter.value = '';
-					if (fileFilter) fileFilter.value = '';
 					persistFilters();
 					applyFilters();
 				}
@@ -1026,23 +1186,16 @@ export function buildActiveVulnerabilitiesHtml(
 							? [state.severityFilter]
 							: []);
 					severityChips.forEach((chip) => {
-						chip.setAttribute(
-							'aria-pressed',
-							savedSeverities.includes(chip.dataset.severity) ? 'true' : 'false',
-						);
+						const isSelected = savedSeverities.includes(chip.dataset.severity);
+						chip.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+						chip.setAttribute('aria-checked', isSelected ? 'true' : 'false');
 					});
 
 					if (categoryFilter && typeof state.categoryFilter === 'string') {
 						categoryFilter.value = state.categoryFilter;
 					}
-					if (cweFilter && typeof state.cweFilter === 'string') {
-						cweFilter.value = state.cweFilter;
-					}
 					if (typeFilter && typeof state.typeFilter === 'string') {
 						typeFilter.value = state.typeFilter;
-					}
-					if (fileFilter && typeof state.fileFilter === 'string') {
-						fileFilter.value = state.fileFilter;
 					}
 
 					applyFilters();
@@ -1060,9 +1213,7 @@ export function buildActiveVulnerabilitiesHtml(
 						searchQuery: searchInput?.value ?? '',
 						severityFilters: selectedSeverities(),
 						categoryFilter: categoryFilter?.value ?? '',
-						cweFilter: cweFilter?.value ?? '',
 						typeFilter: typeFilter?.value ?? '',
-						fileFilter: fileFilter?.value ?? '',
 					});
 				}
 
@@ -1094,7 +1245,7 @@ export function buildActiveVulnerabilitiesHtml(
 					persistFilters();
 					applyFilters();
 				});
-				[categoryFilter, cweFilter, typeFilter, fileFilter].forEach((el) => {
+				[categoryFilter, typeFilter].forEach((el) => {
 					el?.addEventListener('change', () => {
 						persistFilters();
 						applyFilters();
@@ -1103,12 +1254,22 @@ export function buildActiveVulnerabilitiesHtml(
 				severityChips.forEach((chip) => {
 					chip.addEventListener('click', () => {
 						const pressed = chip.getAttribute('aria-pressed') === 'true';
-						chip.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+						const nextState = pressed ? 'false' : 'true';
+						chip.setAttribute('aria-pressed', nextState);
+						chip.setAttribute('aria-checked', nextState);
 						persistFilters();
 						applyFilters();
 					});
 				});
 				resetBtn?.addEventListener('click', resetFilters);
+				searchClearBtn?.addEventListener('click', () => {
+					if (searchInput) {
+						searchInput.value = '';
+						searchInput.focus();
+						persistFilters();
+						applyFilters();
+					}
+				});
 
 				document.addEventListener(
 					'click',

@@ -30,7 +30,9 @@
 ## Progress checklist
 
 - [x] Pure filter matching + facet collection
-- [x] Filter menu UI (severity, category, CWE, type, file, reset)
+- [x] Filter menu UI (severity checkboxes, category, type, and reset button)
+- [x] Streamlined dropdowns (omitted redundant file and CWE filters, 2 clean dropdowns: Category and Type)
+- [x] Friendly category label formatting (clean human names instead of code prefixes)
 - [x] Tests and compile
 
 ## Scope
@@ -55,13 +57,15 @@
 - src/modules/presentation/views/activeVulnerabilities.ts
 - src/modules/presentation/views/vulnFilters.ts
 - src/test/vulnFilters.test.ts
+- src/test/activeVulnerabilities.test.ts
 
 ## Acceptance criteria
 
-- criterion 1: Users can filter by severity, OWASP category, CWE, vulnerability type, and file
+- criterion 1: Users can filter by severity, OWASP category, and vulnerability type
 - criterion 2: Search is scoped to title and file path rather than every field
 - criterion 3: Reset filters clears search and structured filters
 - criterion 4: Dimensions combine with AND; multiple severities combine with OR
+- criterion 5: Category options display clean names without code prefixes (e.g., "Broken Access Control", "Injection")
 
 ## Validation
 

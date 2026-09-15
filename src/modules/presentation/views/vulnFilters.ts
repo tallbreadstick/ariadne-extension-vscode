@@ -115,3 +115,40 @@ export function matchesVulnListFilter(
 
 	return true;
 }
+
+export const OWASP_TOP_10_NAMES: Record<string, string> = {
+	A01: 'Broken Access Control',
+	A02: 'Cryptographic Failures',
+	A03: 'Injection',
+	A04: 'Insecure Design',
+	A05: 'Security Misconfiguration',
+	A06: 'Vulnerable and Outdated Components',
+	A07: 'Identification and Authentication Failures',
+	A08: 'Software and Data Integrity Failures',
+	A09: 'Security Logging and Monitoring Failures',
+	A10: 'Server-Side Request Forgery',
+};
+
+/**
+ * Formats an OWASP category tag into a human-friendly name without code prefixes.
+ * e.g. "A01:2021-Broken Access Control" -> "Broken Access Control"
+ *      "A01-2021; broken access control" -> "broken access control"
+ *      "A03:2021" -> "Injection"
+ */
+export function formatCategoryLabel(raw: string): string {
+	if (!raw) {
+		return '';
+	}
+	const match = raw.match(/^A\d{2}(?:[:\-]\d{4})?[-;:·\s]+([a-zA-Z].*)$/i);
+	if (match && match[1].trim()) {
+		return match[1].trim();
+	}
+	const codeMatch = raw.match(/^(A\d{2})/i);
+	if (codeMatch) {
+		const key = codeMatch[1].toUpperCase();
+		if (OWASP_TOP_10_NAMES[key]) {
+			return OWASP_TOP_10_NAMES[key];
+		}
+	}
+	return raw;
+}
