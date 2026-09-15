@@ -106,6 +106,11 @@ export function buildSessionAnalysis(
 
 	const deltas: VulnerabilityDelta[] = [];
 
+	// ── Per-type aggregation for type-level improving detection ──
+	const typeResolvedCount = new Map<string, number>();
+	const typeActiveCount = new Map<string, number>();
+	const typeTotalCount = new Map<string, number>();
+
 	for (const classification of classifications) {
 		totalIdenticalRestorations += classification.lifecycle.identicalRestorationCount ?? 0;
 		totalInSessionToggles += classification.lifecycle.inSessionToggleCount ?? 0;
@@ -116,6 +121,7 @@ export function buildSessionAnalysis(
 		}
 
 		const status = classification.status as VulnerabilityStatus;
+		const type = classification.lifecycle.type;
 
 		// Find the matching Vulnerability in the current scan for the delta
 		const matchedVuln = findMatchingVulnerability(
@@ -133,19 +139,43 @@ export function buildSessionAnalysis(
 			currentInstanceCount: classification.currentOccurrenceCount,
 		});
 
+		// Track per-type counts for improving detection
+		typeTotalCount.set(type, (typeTotalCount.get(type) ?? 0) + 1);
+
 		switch (status) {
 			case 'persisting':
 				persistingPatterns++;
+				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
 				break;
 			case 'improving':
+				// FLC-level improving (occurrence count reduction) — still count
 				improvingTrends++;
+				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
 				break;
 			case 'resolved':
 				resolvedThisSession++;
+				typeResolvedCount.set(type, (typeResolvedCount.get(type) ?? 0) + 1);
 				break;
 			case 'recurring':
 				recurringPatterns++;
+				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
 				break;
+		}
+	}
+
+	// ── Type-level improving detection ───────────────────────────
+	// A vulnerability type is "improving" when it has at least one
+	// resolved instance AND at least one still-active instance.
+	for (const [type, resolved] of typeResolvedCount.entries()) {
+		const active = typeActiveCount.get(type) ?? 0;
+		if (resolved > 0 && active > 0) {
+			improvingTrends++;
+			// Mark the still-active deltas for this type as 'improving'
+			for (const d of deltas) {
+				if (d.vulnerability.type === type && d.status === 'persisting') {
+					(d as { status: VulnerabilityStatus }).status = 'improving';
+				}
+			}
 		}
 	}
 
