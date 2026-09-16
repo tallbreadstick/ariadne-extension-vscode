@@ -9,6 +9,7 @@
 import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
+import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ function buildCommonVulnerabilitiesPanel(
 
 	if (!items || items.length === 0) {
 		const totalSessions = totalSessionsAnalyzed ?? items?.[0]?.totalSessions ?? 0;
-		const emptyMessage = totalSessions < 2
+		const emptyMessage = totalSessions < COMMON_VULN_POLICY.K
 			? 'Not enough session data yet'
 			: 'No common vulnerabilities';
 		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;

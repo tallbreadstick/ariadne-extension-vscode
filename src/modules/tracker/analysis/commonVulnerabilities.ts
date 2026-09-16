@@ -32,9 +32,10 @@ export const COMMON_VULN_POLICY = {
 	 * Entry threshold: minimum number of sessions a vulnerability type
 	 * must appear in to be classified as Common.
 	 *
-	 * One error is a slip; two indicate a systematic knowledge gap.
+	 * Set to 3 to align with a 3-hour weekly laboratory session
+	 * where hourly full-scan checkpoints occur at hours 1, 2, and 3.
 	 */
-	K: 2,
+	K: 3,
 
 	/**
 	 * Graduation threshold: minimum consecutive clean sessions
@@ -106,7 +107,7 @@ function typeKey(cweId: string, type: string): string {
  * @param activeSession      The current active session (null if none)
  * @param currentLifecycles  Live FindingLifecycleRecord[] for active session
  * @param graduationHistory  Per-type graduation state (persisted, mutated in-place)
- * @param K                  Session-presence threshold (default: 2)
+ * @param K                  Session-presence threshold (default: 3)
  * @param G                  Graduation threshold (default: 2)
  * @returns Map of type key → CommonVulnerabilityEntry for qualifying types
  */
@@ -216,6 +217,18 @@ export function computeCommonVulnerabilities(
 			activeFindingCount,
 		});
 	}
+ 
+	// Step 3: Sort common vulnerabilities descending (highest sessionCount first, then activeFindingCount)
+	const sortedEntries = Array.from(common.entries()).sort(([, a], [, b]) => {
+		if (b.sessionCount !== a.sessionCount) {
+			return b.sessionCount - a.sessionCount;
+		}
+		if (b.activeFindingCount !== a.activeFindingCount) {
+			return b.activeFindingCount - a.activeFindingCount;
+		}
+		return a.type.localeCompare(b.type);
+	});
 
-	return common;
+	return new Map(sortedEntries);
 }
+

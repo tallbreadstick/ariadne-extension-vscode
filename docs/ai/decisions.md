@@ -117,6 +117,19 @@ Within each section, newest decision at the top.
 - supersedes: <title of previous decision> (if applicable)
 -->
 
+### Hourly auto full scan with seamless session rollover and K=3 policy
+
+- date: 2026-09-16
+- status: accepted
+- context: Students attend a single 3-hour lab session per week. Previously, observation session boundaries were tied strictly to VS Code window open/close. Under that model, students took 2–3 weeks (2–3 lab sessions) to generate enough session records to unlock the Common Vulnerabilities panel (which required $K=2$ or $K=3$). Mentor feedback indicated that students should be able to see their Common Vulnerabilities within a single 3-hour lab class. Furthermore, university computer labs face tight turnover schedules where the room must be vacated immediately at the end of Hour 3 for the next class; surfacing common vulnerabilities during Hour 3 provides students with a dedicated remediation and reflection window with instructor guidance before class dismissal.
+- decision:
+  1. Add an hourly timer (`HOURLY_SCAN_INTERVAL_MS = 60 * 60 * 1000`) that triggers an automatic workspace-wide full scan (`Analyze`) every 60 minutes while an active session is running.
+  2. Finalize the current observation session cleanly as `completed` and seamlessly roll over into the next session using the latest observation state as the new baseline checkpoint.
+  3. Align the Common Vulnerabilities entry threshold to $K=3$ (`COMMON_VULN_POLICY.K = 3`), corresponding to the 3 hourly checkpoints of a 3-hour lab class.
+  4. Sort Common Vulnerabilities descending by `sessionCount` then `activeFindingCount` so the most persistent and active security gaps appear at the top.
+- consequences: Students generate 3 full session checkpoints during a 3-hour lab session, unlocking Common Vulnerabilities as they enter Hour 3 rather than after class ends. This ensures students have actionable instructional feedback while still in the lab environment. Rollover requires zero user interaction and creates cleanly completed sessions in `completedSessions`.
+- task: docs/ai/tasks/2026-09-16-hourly-auto-full-scan.md
+
 ### Replace raw scan snapshots with finding lifecycle records
 
 - date: 2026-09-03
