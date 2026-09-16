@@ -9,3 +9,6 @@ iterations/
 .cursor/ecc-install-state.json
 docs-walkthrough/
 Response/
+docs/ariadne-trends*
+docs/core-fingerprint*
+docs/responses/
