@@ -108,6 +108,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
 
             .panel {
                 padding: 24px 0px 28px 0px;
+                width: 100%;
+                min-width: 0;
                 max-width: 100%;
                 box-sizing: border-box;
             }
@@ -231,8 +233,18 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
 
             /* --- BODY SECTIONS --- */
             .content {
-                display: grid;
+                display: flex;
+                flex-direction: column;
                 gap: 28px;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .info-section {
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
             }
 
             .section-heading {
@@ -240,6 +252,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 align-items: center;
                 gap: 12px;
                 margin-bottom: 12px;
+                min-width: 0;
+                max-width: 100%;
             }
 
             .section-number {
@@ -268,6 +282,9 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 letter-spacing: 0.02em;
                 text-transform: uppercase;
                 color: var(--muted);
+                min-width: 0;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .section-box {
@@ -278,11 +295,21 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 font-size: 14px;
                 color: var(--text);
                 border-radius: 4px;
-                overflow-wrap: break-word;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                box-sizing: border-box;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .section-box p {
                 margin: 0 0 10px 0;
+                min-width: 0;
+                max-width: 100%;
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                white-space: normal;
             }
             
             .section-box p:last-child {
@@ -296,6 +323,9 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 color: var(--section-orange);
                 font-family: Consolas, "Courier New", monospace;
                 font-size: 0.95em;
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                white-space: pre-wrap;
             }
 
             /* --- SKELETON LOADING ANIMATION --- */
@@ -331,6 +361,12 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 font-size: 14px;
                 line-height: 1.6;
                 display: none;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                box-sizing: border-box;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .error-box.visible { display: block; }
@@ -341,6 +377,11 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 border-top: 1px solid var(--border);
                 font-size: 13px;
                 color: var(--muted);
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             @media (max-width: 350px) {

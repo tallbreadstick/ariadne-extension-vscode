@@ -68,6 +68,8 @@ describe('Feedback Panel File Path Display Test Suite', () => {
 			assert.ok(html.includes('overflow-x: hidden;'), 'Body should have overflow-x: hidden');
 			assert.ok(html.includes('.header-sub > span.meta-file'), 'CSS should have specific meta-file rules');
 			assert.ok(html.includes('text-overflow: ellipsis;'), 'CSS should truncate long text with ellipsis');
+			assert.ok(html.includes('.section-box'), 'CSS should style section-box');
+			assert.ok(html.includes('overflow-wrap: anywhere;'), 'CSS should allow breaking text anywhere to prevent horizontal overflow');
 		});
 	});
 });
