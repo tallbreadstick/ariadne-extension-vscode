@@ -108,7 +108,7 @@ export function buildSessionAnalysis(
 
 	// ── Per-type aggregation for type-level improving detection ──
 	const typeResolvedCount = new Map<string, number>();
-	const typeActiveCount = new Map<string, number>();
+	const typePersistingCount = new Map<string, number>();
 	const typeTotalCount = new Map<string, number>();
 
 	for (const classification of classifications) {
@@ -145,12 +145,12 @@ export function buildSessionAnalysis(
 		switch (status) {
 			case 'persisting':
 				persistingPatterns++;
-				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
+				typePersistingCount.set(type, (typePersistingCount.get(type) ?? 0) + 1);
 				break;
 			case 'improving':
 				// FLC-level improving (occurrence count reduction) — still count
 				improvingTrends++;
-				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
+				typePersistingCount.set(type, (typePersistingCount.get(type) ?? 0) + 1);
 				break;
 			case 'resolved':
 				resolvedThisSession++;
@@ -158,22 +158,23 @@ export function buildSessionAnalysis(
 				break;
 			case 'recurring':
 				recurringPatterns++;
-				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
 				break;
 		}
 	}
 
 	// ── Type-level improving detection ───────────────────────────
 	// A vulnerability type is "improving" when it has at least one
-	// resolved instance AND at least one still-active instance.
+	// resolved instance AND at least one still-persisting instance.
+	// Recurring findings are regressions (relapses), never improving trends.
 	for (const [type, resolved] of typeResolvedCount.entries()) {
-		const active = typeActiveCount.get(type) ?? 0;
-		if (resolved > 0 && active > 0) {
+		const persisting = typePersistingCount.get(type) ?? 0;
+		if (resolved > 0 && persisting > 0) {
 			improvingTrends++;
-			// Mark the still-active deltas for this type as 'improving'
+			// Mark the still-persisting deltas for this type as 'improving'
 			for (const d of deltas) {
 				if (d.vulnerability.type === type && d.status === 'persisting') {
 					(d as { status: VulnerabilityStatus }).status = 'improving';
+					persistingPatterns = Math.max(0, persistingPatterns - 1);
 				}
 			}
 		}
@@ -400,7 +401,7 @@ export function toSessionMetrics(
 		low: analysis.severityCounts.low,
 		trends: {
 			persistingPatterns: analysis.persistingPatterns,
-			improvingTrends: analysis.improvingTrends,
+			improvingTrends: improvingItems.length,
 			resolvedThisSession: analysis.resolvedThisSession,
 			recurringPatterns: analysis.recurringPatterns,
 			persistingItems: persistingItems.length > 0 ? persistingItems : undefined,

@@ -98,12 +98,7 @@ function buildMetricCard(title: string, value: number, severity: Severity): stri
 
 function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): string {
 	if (!items || items.length === 0) {
-		if (count === 0) { return ''; }
-		return /* html */ `
-			<div class="trend-sub-item trend-sub-placeholder">
-				<span class="sub-label">—</span>
-				<span class="sub-count">${count}</span>
-			</div>`;
+		return '';
 	}
 	return items.map((item) => /* html */ `
 		<div class="trend-sub-item">
@@ -114,12 +109,7 @@ function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): s
 
 function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: number): string {
 	if (!items || items.length === 0) {
-		if (count === 0) { return ''; }
-		return /* html */ `
-			<div class="trend-sub-item trend-sub-placeholder">
-				<span class="sub-label">—</span>
-				<span class="sub-count">${count}</span>
-			</div>`;
+		return '';
 	}
 	return items.map((item) => {
 		const progressClass = item.progressLabel === 'Some progress'
