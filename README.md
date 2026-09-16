@@ -109,9 +109,8 @@ Open **File → Preferences → Settings** and search for **Ariadne**, or edit `
 | Setting | Default | Purpose |
 |---|---|---|
 | `ariadne.executable` | `"ariadne"` | Path to the scanner binary |
-| `ariadne.copilot.model` | `""` | Override Copilot model selection |
 
-Authentication is handled via the VS Code Copilot extension SDK.
+GitHub sign-in is required to use the extension (scanning, rule scripts, and AI explanations). Explanations always use Gemini Flash via the user's Copilot allowance.
 
 ## npm scripts (reference)
 

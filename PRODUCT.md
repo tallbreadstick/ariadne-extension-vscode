@@ -30,14 +30,14 @@ Product surfaces in the extension:
 
 - Editor: severity-coded diagnostics, decorations, hover with an “Ask Ariadne” action
 - Bottom panel: Active Vulnerabilities and Session Metrics webviews
-- Sidebar: Account (GitHub sign-in) webview
+- Sidebar: Settings webview (Account, Scripting, and Session accordions)
 - Command palette and status bar
 - Optional “Ask Ariadne” feedback panel (Copilot-backed)
 - Terms of use panel
 
 The scanner binary is a separate private Rust engine. This public extension repo talks to it only through a local stdio bridge. Students (or a lab image) must have the `ariadne` CLI available; the extension does not embed the engine.
 
-Ask Ariadne requires GitHub Copilot access and a GitHub OAuth sign-in inside VS Code. Scanning itself does not.
+GitHub sign-in (with terms and analytics consent) is required to use Ariadne, including scanning, rule scripts, and Ask Ariadne. Explanations use Gemini Flash through GitHub Copilot.
 
 Session history is workspace-scoped VS Code storage, not an external database. Cross-workspace and class-level dashboards are out of scope.
 
@@ -50,7 +50,7 @@ Confirmed:
 - LLM output is a three-section explanation only. The product must never generate, suggest, complete, or display code fixes.
 - Java-only detection for this capstone. Other languages are deferred.
 - VS Code is the only product surface. Webviews, editor chrome, hover, status bar, and commands — not a standalone website, mobile app, or other IDE.
-- Explanations require GitHub Copilot sign-in. Detection does not.
+- Explanations and detection both require GitHub sign-in. The SAST engine does not spawn until the user is signed in. Explanations always use Gemini Flash.
 - Trends and session metrics report observed scanner behavior only. They must not claim student intent, learning, understanding, permanent remediation, or semantic security from scan data alone.
 - This extension repo is public. Do not commit private scanner URLs, internals, or proprietary rule logic.
 - Source sent to Copilot is limited to vulnerability metadata plus the active file for explanation context.

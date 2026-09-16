@@ -8,7 +8,7 @@ import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js'
 export const GITHUB_AUTH_SCOPES = ['read:user', 'user:email'] as const;
 
 /** Bump when terms copy changes so users re-accept on next sign-in. */
-export const TERMS_VERSION = '1.0';
+export const TERMS_VERSION = '1.2';
 
 /** User consent captured before the first GitHub sign-in. */
 export interface AuthConsent {
