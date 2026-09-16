@@ -381,7 +381,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					type,
 					instances: active,
 					progressLabel: label,
-					progressDelta: delta.toFixed(2),
+					progressDelta: formatTrendDelta(delta),
 				});
 			}
 		}

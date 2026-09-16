@@ -130,7 +130,7 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 		return /* html */ `
 			<div class="trend-sub-item">
 				<span class="sub-label">${item.type}</span>
-				<span class="sub-progress ${progressClass}">${item.progressLabel} (+${item.progressDelta})</span>
+				<span class="sub-progress ${progressClass}">${item.progressLabel} (${item.progressDelta})</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
