@@ -705,6 +705,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const timestamp = Date.now();
 
 			// ── 4c. Session record — create or update ───────────────────
+			const isFirstSettlement = !activeSession;
 			if (!activeSession) {
 				// First settlement: create the session NOW, using the
 				// settlement timestamp so startedAt === initialCheckpointDoneAt.
@@ -752,6 +753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					previousScanSnapshot,
 					lifecycles,
 					activeSession?.trendComparisonByKey,
+					{ isInitialCheckpoint: isFirstSettlement },
 				);
 				latestSessionAnalysis = sessionAnalysis;
 

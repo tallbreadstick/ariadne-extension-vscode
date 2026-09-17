@@ -11,6 +11,7 @@
  */
 
 import type { Vulnerability, ScanSnapshot } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type { FindingClassification } from './lifecycleTypes.js';
 
 // ── Score types ───────────────────────────────────────────────────────
 
@@ -140,4 +141,8 @@ export interface SessionAnalysis {
 	 * Per-CWE score breakdown for the Improving Trends collapsible rows.
 	 */
 	typeScores?: TypeScoreEntry[];
+	/**
+	 * Findings newly detected in this observation transitioning to Candidate.
+	 */
+	newCandidateFindings?: FindingClassification[];
 }

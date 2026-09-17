@@ -73,20 +73,18 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
 // SESSION ANALYSIS BUILDER
 // ══════════════════════════════════════════════════════════════════════
 
+export interface BuildSessionAnalysisOptions {
+	/** True if this is the session's first checkpoint (suppresses initial new-candidate toast). */
+	isInitialCheckpoint?: boolean;
+}
+
 /**
  * Builds a SessionAnalysis from lifecycle classifications and the
  * current scan snapshot.
  *
- * This replaces the old `analyzeSession(snapshots)` function.
- * The lifecycle engine has already processed the observation and
- * produced classifications — this function maps them to the shape
- * the UI expects.
- *
- * @param classifications - Output from lifecycleEngine.processObservation()
- * @param currentScan - The current scan snapshot (for active findings)
- * @param previousScan - The previous scan snapshot, or null
- * @param lifecycles - Current lifecycle records (for F/P computation)
- * @param trendComparisonByKey - Frozen comparison set from prior session (for T computation)
+ * This is the bridge from the lifecycle engine to the presentation
+ * layer. It maps FindingClassification[] to the SessionAnalysis shape
+ * expected by the Session Metrics panel, status bar, and toast service.
  */
 export function buildSessionAnalysis(
 	classifications: FindingClassification[],
@@ -94,8 +92,15 @@ export function buildSessionAnalysis(
 	previousScan: ScanSnapshot | null,
 	lifecycles?: FindingLifecycleRecord[],
 	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null,
+	options?: BuildSessionAnalysisOptions,
 ): SessionAnalysis {
 	const activeFindings = currentScan.vulnerabilities;
+
+	const newCandidateFindings = options?.isInitialCheckpoint
+		? []
+		: classifications.filter(
+			(c) => c.status === 'candidate' && c.previousState === undefined,
+		);
 
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
@@ -227,6 +232,7 @@ export function buildSessionAnalysis(
 		totalInSessionToggles,
 		scores,
 		typeScores,
+		newCandidateFindings,
 	};
 }
 

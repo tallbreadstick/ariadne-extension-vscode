@@ -16,6 +16,7 @@
 import type {
 	FindingLifecycleRecord,
 	FindingClassification,
+	FindingLifecycleState,
 	InternalFindingState,
 	ObservedFinding,
 	SessionRecord,
@@ -102,6 +103,12 @@ export function processObservation(
 	const matchedFingerprints = new Set<string>();
 	const restoredFingerprints = new Set<string>();
 
+	// Record previous state of existing lifecycles before mutation
+	const previousStateByFingerprint = new Map<string, FindingLifecycleState | undefined>();
+	for (const lifecycle of existingLifecycles) {
+		previousStateByFingerprint.set(lifecycle.logicalFingerprint, lifecycle.lifecycleState);
+	}
+
 	// ── Update existing lifecycles ──────────────────────────────────
 	for (const lifecycle of existingLifecycles) {
 		const observed = observedMap.get(lifecycle.logicalFingerprint);
@@ -131,6 +138,7 @@ export function processObservation(
 			timestamp,
 			policy,
 			restoredFingerprints.has(lifecycle.logicalFingerprint),
+			previousStateByFingerprint.get(lifecycle.logicalFingerprint),
 		),
 	);
 
@@ -406,6 +414,7 @@ function classifyLifecycle(
 	timestamp: number,
 	policy: LifecyclePolicy,
 	isIdenticalRestoration: boolean = false,
+	previousState?: FindingLifecycleState,
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
 	lifecycle.lifecycleState = status;
@@ -415,6 +424,7 @@ function classifyLifecycle(
 		status,
 		previousOccurrenceCount: lifecycle.baselineOccurrenceCount,
 		currentOccurrenceCount: lifecycle.currentOccurrenceCount,
+		previousState,
 		...(isIdenticalRestoration ? { isIdenticalRestoration: true } : {}),
 	};
 }

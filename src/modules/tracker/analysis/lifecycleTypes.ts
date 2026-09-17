@@ -235,6 +235,12 @@ export interface FindingClassification {
 	currentOccurrenceCount: number;
 
 	/**
+	 * Lifecycle state prior to this observation, or undefined if this finding
+	 * was newly created in this observation.
+	 */
+	previousState?: FindingLifecycleState;
+
+	/**
 	 * True if this observation was an identical restoration of a
 	 * previously absent finding (same logical, content, and scope fingerprints).
 	 * Measurement-integrity flag (Section 11.2).
