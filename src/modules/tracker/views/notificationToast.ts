@@ -108,7 +108,7 @@ function showRecurringToast(analysis: SessionAnalysis): void {
 	if (!tryAcquire('recurring')) { return; }
 
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} ${count === 1 ? 'pattern has reappeared' : 'patterns have reappeared'}! Requires your attention.`,
+		`Ariadne: ${count} ${count === 1 ? 'pattern has reappeared' : 'patterns have reappeared'}! Please review your recent changes.`,
 	);
 }
 
