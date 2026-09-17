@@ -432,7 +432,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			assert.strictEqual(sql?.activeFindingCount, 1);
 		});
 
-		it('sorts common vulnerabilities descending by sessionCount then activeFindingCount', () => {
+		it('sorts common vulnerabilities descending by activeFindingCount then sessionCount', () => {
 			const s1 = createMockSession('s1', [
 				{ type: 'SQL Injection', cweId: 'CWE-89', state: 'persisting' },
 				{ type: 'Cross-Site Scripting', cweId: 'CWE-79', state: 'persisting' },
@@ -461,17 +461,74 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 
 			const list = Array.from(common.values());
 			assert.strictEqual(list.length, 3);
-			// 1st: XSS (sessionCount = 4)
-			assert.strictEqual(list[0].type, 'Cross-Site Scripting');
-			assert.strictEqual(list[0].sessionCount, 4);
-			// 2nd: SQL (sessionCount = 3, active = 1)
-			assert.strictEqual(list[1].type, 'SQL Injection');
-			assert.strictEqual(list[1].sessionCount, 3);
-			assert.strictEqual(list[1].activeFindingCount, 1);
-			// 3rd: Path Traversal (sessionCount = 3, active = 0)
+			// 1st: SQL Injection (active = 1) -> prioritized over 0-active items
+			assert.strictEqual(list[0].type, 'SQL Injection');
+			assert.strictEqual(list[0].activeFindingCount, 1);
+			assert.strictEqual(list[0].sessionCount, 3);
+			// 2nd: XSS (active = 0, sessionCount = 4)
+			assert.strictEqual(list[1].type, 'Cross-Site Scripting');
+			assert.strictEqual(list[1].sessionCount, 4);
+			assert.strictEqual(list[1].activeFindingCount, 0);
+			// 3rd: Path Traversal (active = 0, sessionCount = 3)
 			assert.strictEqual(list[2].type, 'Path Traversal');
 			assert.strictEqual(list[2].sessionCount, 3);
 			assert.strictEqual(list[2].activeFindingCount, 0);
+		});
+
+		it('qualifies common vulnerabilities using hourly checkpoints in active session without session rollover', () => {
+			const mockFinding = {
+				logicalFingerprint: 'fp-sql',
+				contentFingerprint: 'content-sql',
+				scopeFingerprint: 'scope-sql',
+				ruleId: 'rule-CWE-89',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				severity: 'high' as const,
+				instanceName: 'inst-sql',
+				filePath: 'src/db.ts',
+				occurrenceCount: 1,
+			};
+
+			const activeSession: SessionRecord = {
+				sessionId: 'session-lab-1',
+				status: 'active',
+				startedAt: 1000,
+				endedAt: null,
+				baselineCheckpoint: {
+					timestamp: 1000,
+					findings: [mockFinding],
+				},
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [],
+				hourlyCheckpoints: [
+					// Hour 1 checkpoint
+					{
+						timestamp: 2000,
+						findings: [mockFinding],
+					},
+					// Hour 2 checkpoint
+					{
+						timestamp: 3000,
+						findings: [mockFinding],
+					},
+				],
+			};
+
+			// Active session with 2 hourly checkpoints + current active state = 3 observation milestones!
+			const common = computeCommonVulnerabilities(
+				[], // 0 completed sessions
+				activeSession,
+				[activeFlcSql],
+				{},
+			);
+
+			assert.strictEqual(common.size, 1);
+			const sql = common.get('CWE-89::SQL Injection');
+			assert.ok(sql);
+			assert.strictEqual(sql?.sessionCount, 3, 'SQL Injection reaches sessionCount 3 across hourly checkpoints');
+			assert.strictEqual(sql?.activeFindingCount, 1);
 		});
 	});
 

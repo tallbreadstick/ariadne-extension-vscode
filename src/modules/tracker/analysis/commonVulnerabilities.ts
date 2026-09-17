@@ -120,11 +120,45 @@ export function computeCommonVulnerabilities(
 	G: number = COMMON_VULN_POLICY.G,
 ): Map<string, CommonVulnerabilityEntry> {
 
-	// Build list of all sessions (completed + active)
-	const allSessions: SessionRecord[] = [...completedSessions];
-	if (activeSession) {
+	// Build list of all session milestones (completed sessions + active session hourly checkpoints + current active state)
+	const allSessions: Array<{
+		sessionId: string;
+		lifecycleSummaries: Array<{
+			cweId: string;
+			type: string;
+			durableResolutionAt?: number | null;
+			missingSince?: number | null;
+			recurrenceCount?: number;
+		}>;
+	}> = [];
+
+	for (const cs of completedSessions) {
 		allSessions.push({
-			...activeSession,
+			sessionId: cs.sessionId,
+			lifecycleSummaries: cs.lifecycleSummaries,
+		});
+	}
+
+	if (activeSession) {
+		// Include prior hourly full scan checkpoints in active session without needing session rollovers
+		if (activeSession.hourlyCheckpoints && activeSession.hourlyCheckpoints.length > 0) {
+			for (let i = 0; i < activeSession.hourlyCheckpoints.length; i++) {
+				const cp = activeSession.hourlyCheckpoints[i];
+				allSessions.push({
+					sessionId: `${activeSession.sessionId}-hour-${i + 1}`,
+					lifecycleSummaries: cp.findings.map(f => ({
+						cweId: f.cweId,
+						type: f.type,
+						durableResolutionAt: null,
+						missingSince: null,
+						recurrenceCount: 0,
+					})),
+				});
+			}
+		}
+
+		allSessions.push({
+			sessionId: activeSession.sessionId,
 			lifecycleSummaries: currentLifecycles,
 		});
 	}
@@ -195,7 +229,7 @@ export function computeCommonVulnerabilities(
 		if (graduated) {
 			// Record graduation point for future session-count reset
 			graduationHistory[key] = {
-				graduatedAfterSessionIndex: completedSessions.length - 1,
+				graduatedAfterSessionIndex: allSessions.length - 1,
 			};
 			continue; // Graduated types are not Common
 		}
@@ -217,14 +251,17 @@ export function computeCommonVulnerabilities(
 			activeFindingCount,
 		});
 	}
- 
-	// Step 3: Sort common vulnerabilities descending (highest sessionCount first, then activeFindingCount)
+
+	// Step 3: Sort common vulnerabilities descending:
+	// Primary: highest activeFindingCount first (most urgent unaddressed issues at the top)
+	// Secondary: highest sessionCount (frequently occurring across sessions)
+	// Tertiary: alphabetical by type
 	const sortedEntries = Array.from(common.entries()).sort(([, a], [, b]) => {
-		if (b.sessionCount !== a.sessionCount) {
-			return b.sessionCount - a.sessionCount;
-		}
 		if (b.activeFindingCount !== a.activeFindingCount) {
 			return b.activeFindingCount - a.activeFindingCount;
+		}
+		if (b.sessionCount !== a.sessionCount) {
+			return b.sessionCount - a.sessionCount;
 		}
 		return a.type.localeCompare(b.type);
 	});

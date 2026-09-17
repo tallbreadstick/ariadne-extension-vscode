@@ -89,7 +89,7 @@
       },
       {
         "command": "ariadne-extension-vscode.triggerHourlyRollover",
-        "title": "Ariadne: Trigger Hourly Session Rollover"
+        "title": "Ariadne: Debug — Trigger Hourly Session Rollover"
       }
     ],
     "viewsContainers": {

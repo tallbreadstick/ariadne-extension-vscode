@@ -737,22 +737,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			lifecycles = result.lifecycles;
 			void store.saveFindingLifecycles(lifecycles);
 
-			// Finalize the current hour cleanly as 'completed'
-			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
-			store.saveFinalizedSessionSync(finalized);
-			await store.appendCompletedSession(finalized);
-			console.log(`[Ariadne] Session ${activeSession.sessionId} finalized cleanly at hourly rollover.`);
-
-			// Rollover: seamlessly start next session with the latest state as its baseline
+			// Record hourly checkpoint on active session without ending or resetting the session
 			hourlySessionCount++;
-			const newSessionId = store.nextSessionId();
-			activeSession = startSession(newSessionId, timestamp, finalized);
-			setSessionBaseline(activeSession, observed, timestamp);
-			updateSessionLatest(activeSession, observed, timestamp);
-			saveScanState.initialCheckpointDoneAt = timestamp;
-			saveScanState.totalSaveScansThisSession = 0;
+			if (!activeSession.hourlyCheckpoints) {
+				activeSession.hourlyCheckpoints = [];
+			}
+			activeSession.hourlyCheckpoints.push({
+				timestamp,
+				findings: observed,
+			});
 			void store.saveActiveSession(activeSession);
-			void store.saveSaveScanState(saveScanState);
+			console.log(`[Ariadne] Recorded hourly full scan checkpoint #${hourlySessionCount} for session ${activeSession.sessionId}.`);
 
 			const currentSnapshot = metadataToScanSnapshot(rolloverFindings, await store.nextScanId());
 			const sessionAnalysis = buildSessionAnalysis(
