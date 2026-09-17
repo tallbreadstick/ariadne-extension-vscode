@@ -123,6 +123,7 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 			: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		return /* html */ `
 			<div class="trend-sub-item">
+				<span class="sub-label">${item.type || 'Unknown'}</span>
 				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
