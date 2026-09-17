@@ -653,6 +653,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			assert.ok(!html.includes('(+-'), 'Should not contain (+- sign');
 			assert.ok(!html.includes('(++'), 'Should not contain (++ sign');
 			assert.ok(html.includes('Some progress (+2.00)'));
+			assert.ok(html.includes('<span class="sub-label">SQL Injection</span>'));
 			// Check that header instance count displays 2, matching instances
 			assert.ok(html.includes('Instances :  <span style="color: var(--text); font-weight: 700;">2</span>'));
 		});
