@@ -32,9 +32,10 @@ export const COMMON_VULN_POLICY = {
 	 * Entry threshold: minimum number of sessions a vulnerability type
 	 * must appear in to be classified as Common.
 	 *
-	 * One error is a slip; two indicate a systematic knowledge gap.
+	 * Set to 3 to align with a 3-hour weekly laboratory session
+	 * where hourly full-scan checkpoints occur at hours 1, 2, and 3.
 	 */
-	K: 2,
+	K: 3,
 
 	/**
 	 * Graduation threshold: minimum consecutive clean sessions
@@ -106,7 +107,7 @@ function typeKey(cweId: string, type: string): string {
  * @param activeSession      The current active session (null if none)
  * @param currentLifecycles  Live FindingLifecycleRecord[] for active session
  * @param graduationHistory  Per-type graduation state (persisted, mutated in-place)
- * @param K                  Session-presence threshold (default: 2)
+ * @param K                  Session-presence threshold (default: 3)
  * @param G                  Graduation threshold (default: 2)
  * @returns Map of type key → CommonVulnerabilityEntry for qualifying types
  */
@@ -119,11 +120,62 @@ export function computeCommonVulnerabilities(
 	G: number = COMMON_VULN_POLICY.G,
 ): Map<string, CommonVulnerabilityEntry> {
 
-	// Build list of all sessions (completed + active)
-	const allSessions: SessionRecord[] = [...completedSessions];
-	if (activeSession) {
+	// Build list of all session milestones (completed sessions + active session hourly checkpoints + current active state)
+	const allSessions: Array<{
+		sessionId: string;
+		lifecycleSummaries: Array<{
+			cweId: string;
+			type: string;
+			durableResolutionAt?: number | null;
+			missingSince?: number | null;
+			recurrenceCount?: number;
+		}>;
+	}> = [];
+
+	for (const cs of completedSessions) {
+		// Include prior hourly checkpoints from completed sessions so milestones carry forward
+		if (cs.hourlyCheckpoints && cs.hourlyCheckpoints.length > 0) {
+			for (let i = 0; i < cs.hourlyCheckpoints.length; i++) {
+				const cp = cs.hourlyCheckpoints[i];
+				allSessions.push({
+					sessionId: `${cs.sessionId}-hour-${i + 1}`,
+					lifecycleSummaries: cp.findings.map(f => ({
+						cweId: f.cweId,
+						type: f.type,
+						durableResolutionAt: null,
+						missingSince: null,
+						recurrenceCount: 0,
+					})),
+				});
+			}
+		}
+
 		allSessions.push({
-			...activeSession,
+			sessionId: cs.sessionId,
+			lifecycleSummaries: cs.lifecycleSummaries,
+		});
+	}
+
+	if (activeSession) {
+		// Include prior hourly full scan checkpoints in active session without needing session rollovers
+		if (activeSession.hourlyCheckpoints && activeSession.hourlyCheckpoints.length > 0) {
+			for (let i = 0; i < activeSession.hourlyCheckpoints.length; i++) {
+				const cp = activeSession.hourlyCheckpoints[i];
+				allSessions.push({
+					sessionId: `${activeSession.sessionId}-hour-${i + 1}`,
+					lifecycleSummaries: cp.findings.map(f => ({
+						cweId: f.cweId,
+						type: f.type,
+						durableResolutionAt: null,
+						missingSince: null,
+						recurrenceCount: 0,
+					})),
+				});
+			}
+		}
+
+		allSessions.push({
+			sessionId: activeSession.sessionId,
 			lifecycleSummaries: currentLifecycles,
 		});
 	}
@@ -194,7 +246,7 @@ export function computeCommonVulnerabilities(
 		if (graduated) {
 			// Record graduation point for future session-count reset
 			graduationHistory[key] = {
-				graduatedAfterSessionIndex: completedSessions.length - 1,
+				graduatedAfterSessionIndex: allSessions.length - 1,
 			};
 			continue; // Graduated types are not Common
 		}
@@ -217,5 +269,20 @@ export function computeCommonVulnerabilities(
 		});
 	}
 
-	return common;
+	// Step 3: Sort common vulnerabilities descending:
+	// Primary: highest activeFindingCount first (most urgent unaddressed issues at the top)
+	// Secondary: highest sessionCount (frequently occurring across sessions)
+	// Tertiary: alphabetical by type
+	const sortedEntries = Array.from(common.entries()).sort(([, a], [, b]) => {
+		if (b.activeFindingCount !== a.activeFindingCount) {
+			return b.activeFindingCount - a.activeFindingCount;
+		}
+		if (b.sessionCount !== a.sessionCount) {
+			return b.sessionCount - a.sessionCount;
+		}
+		return a.type.localeCompare(b.type);
+	});
+
+	return new Map(sortedEntries);
 }
+

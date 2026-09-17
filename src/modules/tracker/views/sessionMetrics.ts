@@ -9,6 +9,7 @@
 import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
+import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
@@ -98,12 +99,7 @@ function buildMetricCard(title: string, value: number, severity: Severity): stri
 
 function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): string {
 	if (!items || items.length === 0) {
-		if (count === 0) { return ''; }
-		return /* html */ `
-			<div class="trend-sub-item trend-sub-placeholder">
-				<span class="sub-label">—</span>
-				<span class="sub-count">${count}</span>
-			</div>`;
+		return '';
 	}
 	return items.map((item) => /* html */ `
 		<div class="trend-sub-item">
@@ -114,12 +110,7 @@ function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): s
 
 function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: number): string {
 	if (!items || items.length === 0) {
-		if (count === 0) { return ''; }
-		return /* html */ `
-			<div class="trend-sub-item trend-sub-placeholder">
-				<span class="sub-label">—</span>
-				<span class="sub-count">${count}</span>
-			</div>`;
+		return '';
 	}
 	return items.map((item) => {
 		const progressClass = item.progressLabel === 'Some progress'
@@ -127,10 +118,13 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 			: item.progressLabel === 'Clear progress'
 				? 'progress-clear'
 				: 'progress-major';
+		const deltaText = item.progressDelta === 'N/A'
+			? ' (N/A)'
+			: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		return /* html */ `
 			<div class="trend-sub-item">
-				<span class="sub-label">${item.type}</span>
-				<span class="sub-progress ${progressClass}">${item.progressLabel} (+${item.progressDelta})</span>
+				<span class="sub-label">${item.type || 'Unknown'}</span>
+				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
@@ -218,7 +212,7 @@ function buildCommonVulnerabilitiesPanel(
 
 	if (!items || items.length === 0) {
 		const totalSessions = totalSessionsAnalyzed ?? items?.[0]?.totalSessions ?? 0;
-		const emptyMessage = totalSessions < 2
+		const emptyMessage = totalSessions < COMMON_VULN_POLICY.K
 			? 'Not enough session data yet'
 			: 'No common vulnerabilities';
 		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;

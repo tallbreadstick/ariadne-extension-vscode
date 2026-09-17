@@ -86,6 +86,10 @@
       {
         "command": "ariadne-extension-vscode.debugResetSaveScanState",
         "title": "Ariadne: Debug — Reset Save Scan State"
+      },
+      {
+        "command": "ariadne-extension-vscode.triggerHourlyRollover",
+        "title": "Ariadne: Debug — Trigger Hourly Session Rollover"
       }
     ],
     "viewsContainers": {

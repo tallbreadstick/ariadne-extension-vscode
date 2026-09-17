@@ -73,6 +73,12 @@ import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel 
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /**
+ * Default interval (ms) for the hourly auto full scan and session rollover.
+ * Set to 60 minutes (3,600,000 ms) to align with 1-hour instructional lab milestones.
+ */
+export const HOURLY_SCAN_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
  * Maps a presentation-layer Vulnerability to the VulnerabilityMetadata
  * shape expected by the LLM pipeline.
  */
@@ -354,29 +360,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const resolvedMap = new Map<string, number>();
 		const improvingMap = new Map<string, ImprovingSubItem>();
 
+		// ── Per-type aggregation for improving detection ──────────────
+		// Track resolved vs active counts per vulnerability type so we
+		// can detect "improving" at the type level (some instances fixed,
+		// some still active).
+		const typeResolvedCount = new Map<string, number>();
+		const typePersistingCount = new Map<string, number>();
+		const typeTotalCount = new Map<string, number>();
+
 		for (const flc of lifecycles) {
+			// Count per-type totals for improving detection
+			typeTotalCount.set(flc.type, (typeTotalCount.get(flc.type) ?? 0) + 1);
+
 			if (flc.lifecycleState === 'recurring') {
 				recurringPatterns++;
 				recurringMap.set(flc.type, (recurringMap.get(flc.type) ?? 0) + 1);
 			} else if (flc.lifecycleState === 'resolved' || flc.durableResolutionAt !== null) {
-				resolvedThisSession++;
-				resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
-			} else if (flc.lifecycleState === 'improving') {
-				improvingTrends++;
-				const existing = improvingMap.get(flc.type);
-				if (existing) {
-					existing.instances++;
-				} else {
-					improvingMap.set(flc.type, {
-						type: flc.type,
-						instances: 1,
-						progressLabel: 'Some progress',
-						progressDelta: 'N/A',
-					});
+				const isResolvedInActiveSession = activeSession !== null
+					&& flc.durableResolutionAt !== null
+					&& flc.durableResolutionAt >= activeSession.startedAt;
+				if (isResolvedInActiveSession) {
+					resolvedThisSession++;
+					resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
+					typeResolvedCount.set(flc.type, (typeResolvedCount.get(flc.type) ?? 0) + 1);
 				}
 			} else if (flc.lifecycleState === 'persisting') {
 				persistingPatterns++;
 				persistingMap.set(flc.type, (persistingMap.get(flc.type) ?? 0) + 1);
+				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
+			} else if (flc.lifecycleState === 'improving') {
+				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
+			}
+		}
+
+		// ── Type-level improving detection ───────────────────────────
+		// A vulnerability type is "improving" when it has at least one
+		// resolved instance AND at least one still-persisting instance.
+		// Recurring findings are regressions (relapses), never improving trends.
+		for (const [type, resolved] of typeResolvedCount.entries()) {
+			const persisting = typePersistingCount.get(type) ?? 0;
+			const total = typeTotalCount.get(type) ?? 0;
+			if (resolved > 0 && persisting > 0) {
+				improvingTrends += persisting; // count improving instances
+				const progressRatio = resolved / total;
+				const delta = Math.round(progressRatio * 10 * 100) / 100;
+				const label = progressRatio >= 0.7 ? 'Major progress'
+					: progressRatio >= 0.4 ? 'Clear progress'
+					: 'Some progress';
+				improvingMap.set(type, {
+					type,
+					instances: persisting,
+					progressLabel: label,
+					progressDelta: formatTrendDelta(delta),
+				});
+				persistingPatterns = Math.max(0, persistingPatterns - persisting);
+				persistingMap.delete(type);
 			}
 		}
 
@@ -667,6 +705,105 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	}
 
+	// ── Hourly Auto Full Scan & Session Rollover ────────────────────────
+	let hourlyScanTimer: ReturnType<typeof setInterval> | null = null;
+	let hourlySessionCount = 1;
+
+	function startHourlyScanTimer(): void {
+		if (hourlyScanTimer !== null) {
+			return;
+		}
+		console.log('[Ariadne] Started hourly auto full scan timer (60m interval).');
+		hourlyScanTimer = setInterval(async () => {
+			await performHourlySessionRollover();
+		}, HOURLY_SCAN_INTERVAL_MS);
+	}
+
+	function stopHourlyScanTimer(): void {
+		if (hourlyScanTimer !== null) {
+			clearInterval(hourlyScanTimer);
+			hourlyScanTimer = null;
+			console.log('[Ariadne] Stopped hourly auto full scan timer.');
+		}
+	}
+
+	async function performHourlySessionRollover(): Promise<void> {
+		if (!activeSession || !featuresUnlocked) {
+			return;
+		}
+
+		console.log(`[Ariadne] Hourly auto full scan checkpoint triggered for session ${activeSession.sessionId}...`);
+
+		// Cancel any pending save settlement timer
+		cancelSettlement('hourly session rollover');
+
+		// Flush pending editor buffers so engine's forest has latest content
+		flushAllPendingUpdates(session);
+
+		try {
+			const rolloverFindings = await new Promise<VulnerabilityMetadata[]>((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					reject(new Error('Hourly auto scan timed out (5000ms)'));
+				}, 5000);
+
+				const sub = session.onFindings((findings) => {
+					clearTimeout(timeout);
+					sub.dispose();
+					resolve(findings);
+				});
+
+				session.send({ type: 'Analyze', path: null });
+			});
+
+			const timestamp = Date.now();
+			const observed = metadataToObservedFindings(rolloverFindings);
+			updateSessionLatest(activeSession, observed, timestamp);
+
+			const result = processObservation(
+				observed,
+				lifecycles,
+				timestamp,
+				true,
+				getWorkspaceFileContent,
+			);
+			lifecycles = result.lifecycles;
+			void store.saveFindingLifecycles(lifecycles);
+
+			// Record hourly checkpoint on active session without ending or resetting the session
+			hourlySessionCount++;
+			if (!activeSession.hourlyCheckpoints) {
+				activeSession.hourlyCheckpoints = [];
+			}
+			activeSession.hourlyCheckpoints.push({
+				timestamp,
+				findings: observed,
+			});
+			void store.saveActiveSession(activeSession);
+			console.log(`[Ariadne] Recorded hourly full scan checkpoint #${hourlySessionCount} for session ${activeSession.sessionId}.`);
+
+			const currentSnapshot = metadataToScanSnapshot(rolloverFindings, await store.nextScanId());
+			const sessionAnalysis = buildSessionAnalysis(
+				result.classifications,
+				currentSnapshot,
+				previousScanSnapshot,
+				lifecycles,
+				activeSession.trendComparisonByKey,
+			);
+			latestSessionAnalysis = sessionAnalysis;
+			previousScanSnapshot = currentSnapshot;
+
+			refreshSessionMetricsPanel();
+			updateStatusBar(sessionAnalysis);
+
+			vscode.window.setStatusBarMessage(
+				`$(check) Ariadne: Hourly checkpoint completed (Hour ${hourlySessionCount})`,
+				5000,
+			);
+		} catch (err) {
+			console.warn('[Ariadne] Hourly auto full scan rollover failed:', err);
+		}
+	}
+
 	// ── Ariadne engine session ───────────────────────────────────────────
 	registerDocumentEvents(
 		context,
@@ -697,10 +834,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			buildVulnsHtml(latestVulnerabilities, store, true),
 		);
 		refreshSessionMetricsPanel();
+		if (activeSession) {
+			startHourlyScanTimer();
+		}
 	};
 
 	stopScanner = () => {
 		featuresUnlocked = false;
+		stopHourlyScanTimer();
 		session.kill();
 		diagnosticManager.clearAll();
 		latestVulnerabilities = [];
@@ -799,6 +940,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				setSessionBaseline(activeSession, observedFindings, timestamp);
 				updateSessionLatest(activeSession, observedFindings, timestamp);
 				saveScanState.initialCheckpointDoneAt = timestamp;
+				startHourlyScanTimer();
 				const priorInfo = priorCompletedSession
 					? ` (prior completed baseline: ${priorCompletedSession.sessionId})`
 					: ' (no prior completed baseline; T=N/A)';
@@ -838,6 +980,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					previousScanSnapshot,
 					lifecycles,
 					activeSession?.trendComparisonByKey,
+					activeSession?.startedAt,
 				);
 				latestSessionAnalysis = sessionAnalysis;
 
@@ -1156,6 +1299,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				settlementTimer = null;
 				pendingSettlementFindings = null;
 			}
+			stopHourlyScanTimer();
 			pendingSaveRevision = null;
 			await store.clearSaveScanState();
 			saveScanState = store.loadSaveScanState();
@@ -1169,6 +1313,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			vscode.window.showInformationMessage(
 				'Ariadne Debug: Save scan state reset. Next settled save will re-trigger the initial checkpoint.',
 			);
+		},
+	);
+
+	const triggerHourlyRollover = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.triggerHourlyRollover',
+		async () => {
+			await performHourlySessionRollover();
 		},
 	);
 
@@ -1272,6 +1423,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		debugResetLifecycles,
 		debugShowSaveScanState,
 		debugResetSaveScanState,
+		triggerHourlyRollover,
 	);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
@@ -1279,6 +1431,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		console.log('[Ariadne] Deactivating extension...');
 
 		// 1. Cancel active timers
+		stopHourlyScanTimer();
 		cancelSettlement('extension deactivation');
 		cancelAllPendingUpdates();
 
