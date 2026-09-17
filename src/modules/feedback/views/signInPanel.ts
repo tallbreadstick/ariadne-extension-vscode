@@ -1,9 +1,10 @@
 /**
- * View builder for the Ariadne sidebar (GitHub account + extension settings).
+ * View builder for the Ariadne sidebar (accordion settings).
  */
 
 import type { SignInPanelViewModel } from '../auth/authTypes.js';
 import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js';
+import { LOCKED_COPILOT_MODEL_LABEL } from '../settings/extensionSettings.js';
 
 function escapeHtml(value: string): string {
 	return value
@@ -22,8 +23,7 @@ function formatSignedInDate(epochMs: number): string {
 }
 
 const OPEN_TERMS_COMMAND = 'ariadne-extension-vscode.openTermsOfUse';
-const OPEN_SETTINGS_COMMAND = 'workbench.action.openSettings';
-const OPEN_SETTINGS_ARGS = encodeURIComponent(JSON.stringify('ariadne'));
+const OPEN_PRIVACY_COMMAND = 'ariadne-extension-vscode.openPrivacyPolicy';
 
 const GITHUB_MARK_SVG = /* html */ `
 	<svg class="github-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -70,23 +70,53 @@ const CSS = /* css */ `
 		min-height: 100%;
 	}
 
-	.section {
-		padding: 7px 8px;
-		display: grid;
-		gap: 6px;
+	.accordion-item {
+		border-bottom: 1px solid var(--border);
 	}
 
-	.section + .section {
-		border-top: 1px solid var(--border);
-	}
-
-	.section-title {
-		margin: 0;
+	.accordion-item > summary {
+		list-style: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 8px;
 		font-size: 11px;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--muted);
+		user-select: none;
+	}
+
+	.accordion-item > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.accordion-item > summary:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: -1px;
+	}
+
+	.chevron {
+		width: 0;
+		height: 0;
+		border-left: 4px solid transparent;
+		border-right: 4px solid transparent;
+		border-top: 5px solid var(--muted);
+		transition: transform 0.15s ease-out;
+		flex-shrink: 0;
+	}
+
+	.accordion-item[open] > summary .chevron {
+		transform: rotate(180deg);
+	}
+
+	.accordion-body {
+		padding: 0 8px 12px;
+		display: grid;
+		gap: 8px;
 	}
 
 	.subtitle {
@@ -183,14 +213,12 @@ const CSS = /* css */ `
 		line-height: 1.45;
 	}
 
-	.consent-item a,
-	.link-row a {
+	.consent-item a {
 		color: var(--accent);
 		text-decoration: none;
 	}
 
-	.consent-item a:hover,
-	.link-row a:hover {
+	.consent-item a:hover {
 		color: var(--accent-hover);
 		text-decoration: underline;
 	}
@@ -212,7 +240,7 @@ const CSS = /* css */ `
 		font-size: 13px;
 		font-weight: 400;
 		cursor: pointer;
-		transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+		transition: background 0.15s ease-out, border-color 0.15s ease-out, opacity 0.15s ease-out;
 	}
 
 	.btn:disabled {
@@ -238,6 +266,16 @@ const CSS = /* css */ `
 
 	.btn-secondary:not(:disabled):hover {
 		background: color-mix(in srgb, var(--text) 6%, transparent);
+	}
+
+	.btn-danger {
+		background: transparent;
+		color: var(--error);
+		border-color: color-mix(in srgb, var(--error) 45%, transparent);
+	}
+
+	.btn-danger:not(:disabled):hover {
+		background: color-mix(in srgb, var(--error) 10%, transparent);
 	}
 
 	.error-box {
@@ -293,7 +331,7 @@ const CSS = /* css */ `
 		height: 100%;
 		border-radius: 999px;
 		background: var(--accent);
-		transition: width 0.2s ease;
+		transition: width 0.2s ease-out;
 	}
 
 	.usage-meta {
@@ -301,49 +339,35 @@ const CSS = /* css */ `
 		font-size: 11px;
 	}
 
-	.setting-field {
+	.model-lock {
 		display: grid;
-		gap: 6px;
-	}
-
-	.setting-label {
-		font-size: 12px;
-		color: var(--text);
-	}
-
-	.setting-hint {
-		margin: 0;
-		font-size: 11px;
-		color: var(--muted);
-		line-height: 1.4;
-	}
-
-	.select {
-		width: 100%;
-		padding: 6px 8px;
+		gap: 2px;
+		padding: 8px;
+		border: 1px solid var(--border);
 		border-radius: 2px;
-		border: 1px solid var(--input-border);
-		background: var(--input-bg);
-		color: var(--input-fg);
-		font: inherit;
+		background: color-mix(in srgb, var(--muted) 8%, transparent);
 	}
 
-	.select:focus {
-		outline: 1px solid var(--vscode-focusBorder);
-		outline-offset: -1px;
+	.model-lock-label {
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
 	}
 
-	.link-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 3px 0;
-		font-size: 12px;
-	}
-
-	.link-row span {
+	.model-lock-value {
+		font-size: 13px;
+		font-weight: 600;
 		color: var(--text);
+	}
+
+	.placeholder-list {
+		margin: 0;
+		padding-left: 16px;
+		color: var(--muted);
+		font-size: 12px;
+		line-height: 1.5;
 	}
 
 	.github-mark {
@@ -358,7 +382,7 @@ function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
 	if (!usage) {
 		return /* html */ `
 		<div class="usage-block">
-			<div class="usage-label">Copilot usage</div>
+			<div class="usage-label">Token usage</div>
 			<div class="usage-meta">Usage data unavailable right now.</div>
 		</div>`;
 	}
@@ -367,7 +391,7 @@ function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
 		return /* html */ `
 		<div class="usage-block">
 			<div class="usage-header">
-				<span class="usage-label">Copilot usage</span>
+				<span class="usage-label">Token usage</span>
 				<span class="usage-value">Unlimited</span>
 			</div>
 			<div class="usage-meta">${escapeHtml(usage.label)} plan</div>
@@ -381,7 +405,7 @@ function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
 	return /* html */ `
 		<div class="usage-block">
 			<div class="usage-header">
-				<span class="usage-label">Copilot usage</span>
+				<span class="usage-label">Token usage</span>
 				<span class="usage-value">${usage.remainingPercent}% remaining</span>
 			</div>
 			<div class="usage-bar-track" aria-hidden="true">
@@ -392,31 +416,38 @@ function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
 		</div>`;
 }
 
+function buildModelLock(): string {
+	return /* html */ `
+		<div class="model-lock">
+			<div class="model-lock-label">AI model</div>
+			<div class="model-lock-value">${escapeHtml(LOCKED_COPILOT_MODEL_LABEL)}</div>
+		</div>`;
+}
+
 function buildSignedOutBody(model: SignInPanelViewModel): string {
 	const termsChecked = model.hasConsent ? 'checked' : '';
-	const analyticsChecked = model.analyticsConsent ? 'checked' : '';
+	const privacyChecked = model.analyticsConsent ? 'checked' : '';
 
 	return /* html */ `
 		<span class="status-pill signed-out">Not signed in</span>
 		<p class="subtitle">
-			Sign in with GitHub to power AI vulnerability explanations through your own
-			GitHub Copilot allowance.
+			Sign in with GitHub to use Ariadne — scanning, rule scripts, and AI
+			explanations.
 		</p>
 		<div class="consent-block">
 			<div class="consent-item">
 				<input type="checkbox" id="terms-checkbox" ${termsChecked} />
 				<label for="terms-checkbox">
 					I agree to the Ariadne
-					<a href="command:${OPEN_TERMS_COMMAND}">Terms of Use</a>
-					for AI feedback and anonymous activity collection.
+					<a href="command:${OPEN_TERMS_COMMAND}">Terms of Use</a>.
 				</label>
 			</div>
 			<div class="consent-item">
-				<input type="checkbox" id="analytics-checkbox" ${analyticsChecked} />
-				<label for="analytics-checkbox">
-					I consent to anonymous collection of vulnerability trends, persisting
-					patterns, and other extension activity as described in the
-					<a href="command:${OPEN_TERMS_COMMAND}">Terms of Use</a>.
+				<input type="checkbox" id="privacy-checkbox" ${privacyChecked} />
+				<label for="privacy-checkbox">
+					I agree to the Ariadne
+					<a href="command:${OPEN_PRIVACY_COMMAND}">Privacy Policy</a>,
+					including anonymous activity collection.
 				</label>
 			</div>
 		</div>
@@ -426,6 +457,7 @@ function buildSignedOutBody(model: SignInPanelViewModel): string {
 				Sign in with GitHub
 			</button>
 		</div>
+		${buildModelLock()}
 		<p class="footer-note">
 			Your GitHub credentials are stored securely by VS Code. Ariadne never embeds
 			API keys in the extension bundle.
@@ -442,10 +474,8 @@ function buildSignedInBody(model: SignInPanelViewModel): string {
 		<span class="status-pill signed-in">Signed in</span>
 		<div class="account-label">${label}</div>
 		<div class="meta-line">Signed in ${signedInAt}</div>
-		<div class="meta-line">
-			AI feedback will use your GitHub Copilot subscription when available.
-		</div>
 		${buildCopilotUsageBlock(model)}
+		${buildModelLock()}
 		<div class="actions">
 			<button class="btn btn-secondary" id="sign-out-btn" type="button">
 				Sign out
@@ -493,39 +523,43 @@ function buildAuthBody(model: SignInPanelViewModel): string {
 	}
 }
 
-function buildModelOptions(settings: SidebarSettingsViewModel): string {
-	return settings.copilotModelOptions
-		.map((option) => {
-			const selected = option === settings.copilotModel ? ' selected' : '';
-			return `<option value="${escapeHtml(option)}"${selected}>${escapeHtml(option)}</option>`;
-		})
-		.join('');
+function buildScriptingSection(model: SignInPanelViewModel): string {
+	const signedIn = model.status === 'signed-in';
+	const disabled = signedIn ? '' : 'disabled';
+	const settings: SidebarSettingsViewModel = model.settings;
+	const statusLine = signedIn
+		? (settings.rulesPresent
+			? 'Rule scripts are present in this workspace.'
+			: 'This workspace has no Ariadne rule scripts yet.')
+		: 'Sign in to initialize or reset rule scripts.';
+
+	return /* html */ `
+		<p class="subtitle">${statusLine}</p>
+		<div class="actions">
+			<button class="btn btn-primary" id="init-rules-btn" type="button" ${disabled}>
+				Initialize rule scripts
+			</button>
+			<button class="btn btn-danger" id="reset-rules-btn" type="button" ${disabled}>
+				Reset rule scripts
+			</button>
+		</div>
+		<p class="footer-note">
+			Initialize runs <code>ariadne init</code> in the open folder. Reset restores
+			the default scripts after a confirmation prompt.
+		</p>`;
 }
 
-function buildSettingsSection(settings: SidebarSettingsViewModel): string {
+function buildSessionSection(): string {
 	return /* html */ `
-		<h2 class="section-title">Settings</h2>
-		<div class="setting-field">
-			<label class="setting-label" for="copilot-model-select">Copilot model</label>
-			<select class="select" id="copilot-model-select" aria-label="Copilot model">
-				${buildModelOptions(settings)}
-			</select>
-			<p class="setting-hint">
-				Model used for plain-English vulnerability explanations. Lighter models respond faster.
-			</p>
-		</div>
-		<div class="link-row">
-			<span>Terms of Use</span>
-			<a href="command:${OPEN_TERMS_COMMAND}">View</a>
-		</div>
-		<div class="link-row">
-			<span>All Ariadne settings</span>
-			<a href="command:${OPEN_SETTINGS_COMMAND}?${OPEN_SETTINGS_ARGS}">Open</a>
-		</div>`;
+		<p class="subtitle">Local session data settings will appear here.</p>
+		<ul class="placeholder-list">
+			<li>Clear session history — coming soon</li>
+			<li>Export session metrics — coming soon</li>
+		</ul>`;
 }
 
 /**
- * Builds the Ariadne sidebar HTML (account status + extension settings).
+ * Builds the Ariadne sidebar HTML (accordion settings).
  */
 export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 	return /* html */ `<!DOCTYPE html>
@@ -540,43 +574,103 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 	</head>
 	<body>
 		<div class="sidebar">
-			<section class="section">
-				<h2 class="section-title">GitHub account</h2>
-				${buildAuthBody(model)}
-			</section>
-			<section class="section">
-				${buildSettingsSection(model.settings)}
-			</section>
+			<details class="accordion-item" id="accordion-account" name="ariadne-settings" open>
+				<summary>Account<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildAuthBody(model)}
+				</div>
+			</details>
+			<details class="accordion-item" id="accordion-scripting" name="ariadne-settings">
+				<summary>Scripting<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildScriptingSection(model)}
+				</div>
+			</details>
+			<details class="accordion-item" id="accordion-session" name="ariadne-settings">
+				<summary>Session<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildSessionSection()}
+				</div>
+			</details>
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
+			const ACCORDION_IDS = ['accordion-account', 'accordion-scripting', 'accordion-session'];
+			let syncingAccordion = false;
+
+			function persistOpenAccordion(openId) {
+				vscode.setState({ ...(vscode.getState() || {}), openAccordion: openId });
+			}
+
+			function restoreAccordionState() {
+				const state = vscode.getState();
+				const savedId = state && state.openAccordion;
+				if (typeof savedId !== 'string' || !ACCORDION_IDS.includes(savedId)) {
+					return;
+				}
+				syncingAccordion = true;
+				for (const id of ACCORDION_IDS) {
+					const el = document.getElementById(id);
+					if (el) {
+						el.open = id === savedId;
+					}
+				}
+				syncingAccordion = false;
+			}
+
+			restoreAccordionState();
+			for (const id of ACCORDION_IDS) {
+				document.getElementById(id)?.addEventListener('toggle', (event) => {
+					if (syncingAccordion) {
+						return;
+					}
+					const el = event.currentTarget;
+					if (!el.open) {
+						persistOpenAccordion(null);
+						return;
+					}
+					syncingAccordion = true;
+					for (const otherId of ACCORDION_IDS) {
+						if (otherId === el.id) {
+							continue;
+						}
+						const other = document.getElementById(otherId);
+						if (other) {
+							other.open = false;
+						}
+					}
+					syncingAccordion = false;
+					persistOpenAccordion(el.id);
+				});
+			}
 
 			const termsCheckbox = document.getElementById('terms-checkbox');
-			const analyticsCheckbox = document.getElementById('analytics-checkbox');
+			const privacyCheckbox = document.getElementById('privacy-checkbox');
 			const signInBtn = document.getElementById('sign-in-btn');
 			const signOutBtn = document.getElementById('sign-out-btn');
 			const retryBtn = document.getElementById('retry-btn');
-			const modelSelect = document.getElementById('copilot-model-select');
+			const initRulesBtn = document.getElementById('init-rules-btn');
+			const resetRulesBtn = document.getElementById('reset-rules-btn');
 
 			function updateSignInEnabled() {
-				if (!signInBtn || !termsCheckbox || !analyticsCheckbox) {
+				if (!signInBtn || !termsCheckbox || !privacyCheckbox) {
 					return;
 				}
-				signInBtn.disabled = !(termsCheckbox.checked && analyticsCheckbox.checked);
+				signInBtn.disabled = !(termsCheckbox.checked && privacyCheckbox.checked);
 			}
 
 			termsCheckbox?.addEventListener('change', updateSignInEnabled);
-			analyticsCheckbox?.addEventListener('change', updateSignInEnabled);
+			privacyCheckbox?.addEventListener('change', updateSignInEnabled);
 			updateSignInEnabled();
 
 			signInBtn?.addEventListener('click', () => {
-				if (!termsCheckbox?.checked || !analyticsCheckbox?.checked) {
+				if (!termsCheckbox?.checked || !privacyCheckbox?.checked) {
 					return;
 				}
 				vscode.postMessage({
 					type: 'github-sign-in',
 					termsAccepted: true,
-					analyticsConsent: true,
+					privacyAccepted: true,
 				});
 			});
 
@@ -588,11 +682,18 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				vscode.postMessage({ type: 'github-auth-refresh' });
 			});
 
-			modelSelect?.addEventListener('change', () => {
-				vscode.postMessage({
-					type: 'update-copilot-model',
-					model: modelSelect.value,
-				});
+			initRulesBtn?.addEventListener('click', () => {
+				if (initRulesBtn.disabled) {
+					return;
+				}
+				vscode.postMessage({ type: 'init-rule-scripts' });
+			});
+
+			resetRulesBtn?.addEventListener('click', () => {
+				if (resetRulesBtn.disabled) {
+					return;
+				}
+				vscode.postMessage({ type: 'reset-rule-scripts' });
 			});
 
 			window.addEventListener('message', (event) => {

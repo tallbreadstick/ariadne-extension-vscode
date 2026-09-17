@@ -68,6 +68,10 @@
         "title": "Ariadne: Terms of Use"
       },
       {
+        "command": "ariadne-extension-vscode.openPrivacyPolicy",
+        "title": "Ariadne: Privacy Policy"
+      },
+      {
         "command": "ariadne-extension-vscode.debugLifecycles",
         "title": "Ariadne: Debug — Show Lifecycle Data"
       },
@@ -82,6 +86,10 @@
       {
         "command": "ariadne-extension-vscode.debugResetSaveScanState",
         "title": "Ariadne: Debug — Reset Save Scan State"
+      },
+      {
+        "command": "ariadne-extension-vscode.triggerHourlyRollover",
+        "title": "Ariadne: Debug — Trigger Hourly Session Rollover"
       }
     ],
     "viewsContainers": {
@@ -105,7 +113,7 @@
         {
           "type": "webview",
           "id": "ariadne.sidebar.signIn",
-          "name": "Account",
+          "name": "Settings",
           "icon": "$(account)"
         }
       ],
@@ -129,22 +137,25 @@
     "configuration": {
       "title": "Ariadne",
       "properties": {
-        "ariadne.copilot.model": {
-          "type": "string",
-          "default": "gemini-3.5-flash",
-          "enum": [
-            "gpt-5-mini",
-            "claude-haiku-4.5",
-            "gemini-3.5-flash",
-            "gpt-5.4-mini",
-            "gpt-5.5"
-          ],
-          "markdownDescription": "GitHub Copilot model for vulnerability explanations. Lightweight models (gpt-5-mini, claude-haiku-4.5, gemini-3.5-flash) are fastest for plain-English feedback."
-        },
         "ariadne.executable": {
           "type": "string",
           "default": "ariadne",
           "markdownDescription": "Path to the `ariadne` binary. Leave as `ariadne` to use PATH, or a cargo `target/debug/ariadne` build in the open workspace."
+        },
+        "ariadne.notifications.level": {
+          "type": "string",
+          "default": "milestones",
+          "enum": [
+            "milestones",
+            "all",
+            "quiet"
+          ],
+          "enumDescriptions": [
+            "Only show notifications for meaningful lifecycle milestones (new candidates, fixes applied, initial persisting status, recurrences, resolutions).",
+            "Show all notifications, including repeating reminders for steady-state persisting issues.",
+            "Suppress all popup toast notifications. Metrics and issues remain visible in the sidebar, squiggles, and status bar."
+          ],
+          "markdownDescription": "Controls the verbosity of Ariadne popup toast notifications."
         }
       }
     },

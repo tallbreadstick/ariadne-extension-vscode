@@ -73,14 +73,14 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
 // SESSION ANALYSIS BUILDER
 // ══════════════════════════════════════════════════════════════════════
 
+export interface BuildSessionAnalysisOptions {
+	/** True if this is the session's first checkpoint. */
+	isInitialCheckpoint?: boolean;
+}
+
 /**
  * Builds a SessionAnalysis from lifecycle classifications and the
  * current scan snapshot.
- *
- * This replaces the old `analyzeSession(snapshots)` function.
- * The lifecycle engine has already processed the observation and
- * produced classifications — this function maps them to the shape
- * the UI expects.
  *
  * @param classifications - Output from lifecycleEngine.processObservation()
  * @param currentScan - The current scan snapshot (for active findings)
@@ -88,6 +88,7 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
  * @param lifecycles - Current lifecycle records (for F/P computation)
  * @param trendComparisonByKey - Frozen comparison set from prior session (for T computation)
  * @param sessionStartedAt - Start timestamp of the current active session (for scoping resolutions)
+ * @param options - Additional options including initial checkpoint flags
  */
 export function buildSessionAnalysis(
 	classifications: FindingClassification[],
@@ -95,9 +96,45 @@ export function buildSessionAnalysis(
 	previousScan: ScanSnapshot | null,
 	lifecycles?: FindingLifecycleRecord[],
 	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null,
-	sessionStartedAt?: number | null,
+	sessionStartedAtOrOptions?: number | null | BuildSessionAnalysisOptions,
+	options?: BuildSessionAnalysisOptions,
 ): SessionAnalysis {
+	let sessionStartedAt: number | null | undefined = null;
+	let resolvedOptions = options;
+
+	if (typeof sessionStartedAtOrOptions === 'number' || sessionStartedAtOrOptions === null) {
+		sessionStartedAt = sessionStartedAtOrOptions;
+	} else if (sessionStartedAtOrOptions && typeof sessionStartedAtOrOptions === 'object') {
+		resolvedOptions = sessionStartedAtOrOptions;
+	}
+	void resolvedOptions;
 	const activeFindings = currentScan.vulnerabilities;
+
+	const newCandidateFindings = classifications.filter((c) => {
+		if (c.isNewCandidate !== undefined) {
+			return c.isNewCandidate;
+		}
+		return c.status === 'candidate' && c.previousState === undefined;
+	});
+
+	const absentCandidateFindings = classifications.filter((c) => {
+		if (c.isAbsentCandidate !== undefined) {
+			return c.isAbsentCandidate;
+		}
+		return (
+			c.status === 'candidate' &&
+			c.previousState !== undefined &&
+			c.previousState !== 'candidate' &&
+			c.previousState !== 'resolved'
+		);
+	});
+
+	const newPersistingFindings = classifications.filter((c) => {
+		if (c.isNewPersisting !== undefined) {
+			return c.isNewPersisting;
+		}
+		return c.status === 'persisting' && c.previousState !== 'persisting';
+	});
 
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
@@ -243,6 +280,9 @@ export function buildSessionAnalysis(
 		totalInSessionToggles,
 		scores,
 		typeScores,
+		newCandidateFindings,
+		absentCandidateFindings,
+		newPersistingFindings,
 	};
 }
 

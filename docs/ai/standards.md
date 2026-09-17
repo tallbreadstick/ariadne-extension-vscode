@@ -169,7 +169,7 @@ src/
       analysis/                   # Snapshot analyzer, session metrics types
       storage/                    # SessionStore (workspaceState persistence)
       views/                      # Session Metrics panel, status bar, toast notifications
-    rules/                        # .ariadne rule file diagnostics
+    rules/                        # .ariadne rule file diagnostics, init/reset CLI argv
   test/                           # Test files
 ```
 
