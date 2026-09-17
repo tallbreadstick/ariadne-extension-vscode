@@ -9,6 +9,7 @@ import {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
 	determinePrioritizedToast,
+	determineStackedToasts,
 } from '../modules/tracker/analysis/candidateToasts.js';
 import type {
 	ObservedFinding,
@@ -515,6 +516,44 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(plan.type, 'improving', 'Improving trend milestone must take precedence over candidate fix feedback');
 			assert.strictEqual(plan.severity, 'info');
 			assert.ok(plan.message.includes('1 vulnerability pattern is improving — fewer occurrences detected!'));
+		});
+
+		it('allows multiple eligible toasts to stack (e.g. absent candidate and improving trend)', () => {
+			const dummyAbsent: FindingClassification = {
+				...processObservation([createMockObserved('XSS', 'CWE-79', 'Web.java', 20)], [], 1000, true).classifications[0],
+				status: 'candidate',
+				isAbsentCandidate: true,
+			};
+
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				improvingTrends: 1,
+				absentCandidateFindings: [dummyAbsent],
+			};
+
+			const plans = determineStackedToasts(analysis, 'milestones');
+			assert.strictEqual(plans.length, 2, 'Both improving and absentCandidate should be returned for stacked notifications');
+			assert.strictEqual(plans[0].type, 'improving');
+			assert.strictEqual(plans[1].type, 'absentCandidate');
+		});
+
+		it('suppresses steady-state persisting issues in stacked mode when under milestones level', () => {
+			const dummyNewCandidate: FindingClassification = {
+				...processObservation([createMockObserved('SQLi', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'candidate',
+				isNewCandidate: true,
+			};
+
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				persistingPatterns: 3, // steady state (no newPersistingFindings)
+				newPersistingFindings: [],
+				newCandidateFindings: [dummyNewCandidate],
+			};
+
+			const plans = determineStackedToasts(analysis, 'milestones');
+			assert.strictEqual(plans.length, 1, 'Only newCandidate should fire; steady-state persisting should not repeat');
+			assert.strictEqual(plans[0].type, 'newCandidate');
 		});
 	});
 });

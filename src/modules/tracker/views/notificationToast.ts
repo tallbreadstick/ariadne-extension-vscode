@@ -36,6 +36,7 @@ import {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
 	determinePrioritizedToast,
+	determineStackedToasts,
 	type NotificationLevel,
 	type ToastType,
 	type ToastPlan,
@@ -45,6 +46,7 @@ export {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
 	determinePrioritizedToast,
+	determineStackedToasts,
 	type NotificationLevel,
 	type ToastType,
 	type ToastPlan,
@@ -199,16 +201,9 @@ export function resetToastCooldowns(): void {
 // PUBLIC API
 
 /**
- * Evaluates the session analysis and fires at most ONE prioritized VS Code toast
- * notification per save scan, respecting notification level and cooldowns.
- *
- * Priority order (most urgent / significant first):
- *   1. Recurring patterns (warning) — critical regressions
- *   2. Improving trends (info) — milestone: fewer occurrences detected
- *   3. Resolved patterns (info) — milestone completion
- *   4. Absent candidates (info) — fix applied feedback
- *   5. Newly detected candidates (info) — initial discovery
- *   6. Newly persisting (warning) — escalation to persisting
+ * Evaluates the session analysis and fires eligible VS Code toast notifications
+ * for each triggered category, respecting notification level, delta-transitions,
+ * and category cooldowns (allowing natural stacked notifications).
  *
  * @param analysis - The computed SessionAnalysis from buildSessionAnalysis()
  * @param levelOverride - Optional level override (e.g. for testing)
@@ -223,17 +218,14 @@ export function showSessionToasts(
 	}
 
 	try {
-		const plan = determinePrioritizedToast(analysis, level, (type) => tryAcquire(type));
-		if (!plan) {
-			return false;
-		}
-
-		if (plan.severity === 'warning') {
-			vscode.window.showWarningMessage(plan.message);
-		} else {
-			vscode.window.showInformationMessage(plan.message);
-		}
-		return true;
+		let anyFired = false;
+		if (showRecurringToast(analysis)) { anyFired = true; }
+		if (showImprovingToast(analysis)) { anyFired = true; }
+		if (showResolvedToast(analysis)) { anyFired = true; }
+		if (showAbsentCandidateToast(analysis)) { anyFired = true; }
+		if (showNewCandidateToast(analysis)) { anyFired = true; }
+		if (showPersistingToast(analysis, level)) { anyFired = true; }
+		return anyFired;
 	} catch (error) {
 		console.warn(
 			'[Ariadne] Toast notification error (non-fatal):',
