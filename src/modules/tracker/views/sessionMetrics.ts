@@ -119,7 +119,7 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 				? 'progress-clear'
 				: 'progress-major';
 		const deltaText = item.progressDelta === 'N/A'
-			? ''
+			? ' (N/A)'
 			: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		return /* html */ `
 			<div class="trend-sub-item">
