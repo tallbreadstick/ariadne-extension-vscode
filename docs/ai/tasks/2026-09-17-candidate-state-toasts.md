@@ -35,6 +35,7 @@
 - [x] Commit 2: Add previously detected vulnerability -> Candidate toast on absence
 - [x] Commit 2: Add unit tests for absence -> Candidate toast
 - [x] Commit 2: Verify typecheck, lint, and tests, then commit
+- [x] Fix: Ensure Candidate toasts fire reliably on every state transition across back-to-back saves (remove 60s cooldown for candidate transitions, add isNewCandidate / isAbsentCandidate lifecycle flags)
 
 ## Scope
 

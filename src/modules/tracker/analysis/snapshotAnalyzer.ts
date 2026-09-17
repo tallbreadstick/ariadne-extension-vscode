@@ -98,17 +98,24 @@ export function buildSessionAnalysis(
 
 	const newCandidateFindings = options?.isInitialCheckpoint
 		? []
-		: classifications.filter(
-			(c) => c.status === 'candidate' && c.previousState === undefined,
-		);
+		: classifications.filter((c) => {
+			if (c.isNewCandidate !== undefined) {
+				return c.isNewCandidate;
+			}
+			return c.status === 'candidate' && c.previousState === undefined;
+		});
 
-	const absentCandidateFindings = classifications.filter(
-		(c) =>
+	const absentCandidateFindings = classifications.filter((c) => {
+		if (c.isAbsentCandidate !== undefined) {
+			return c.isAbsentCandidate;
+		}
+		return (
 			c.status === 'candidate' &&
 			c.previousState !== undefined &&
 			c.previousState !== 'candidate' &&
-			c.previousState !== 'resolved',
-	);
+			c.previousState !== 'resolved'
+		);
+	});
 
 	let persistingPatterns = 0;
 	let improvingTrends = 0;

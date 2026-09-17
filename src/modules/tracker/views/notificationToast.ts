@@ -38,15 +38,13 @@ const COOLDOWN_MS = 60_000; // 60 seconds
  * Tracks the last time a toast was fired for each notification category.
  * In-memory only - resets when the extension host restarts.
  */
-type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'recurring' | 'newCandidate' | 'absentCandidate';
+type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'recurring';
 
 const lastFiredAt: Record<ToastCategory, number> = {
 	persisting: 0,
 	improving: 0,
 	resolved: 0,
 	recurring: 0,
-	newCandidate: 0,
-	absentCandidate: 0,
 };
 
 /**
@@ -171,9 +169,6 @@ export function showNewCandidateToast(analysis: SessionAnalysis): void {
 	if (findings.length === 0) {
 		return;
 	}
-	if (!tryAcquire('newCandidate')) {
-		return;
-	}
 
 	const message = formatNewCandidateMessage(findings);
 	if (message) {
@@ -188,9 +183,6 @@ export function showNewCandidateToast(analysis: SessionAnalysis): void {
 export function showAbsentCandidateToast(analysis: SessionAnalysis): void {
 	const findings = analysis.absentCandidateFindings ?? [];
 	if (findings.length === 0) {
-		return;
-	}
-	if (!tryAcquire('absentCandidate')) {
 		return;
 	}
 

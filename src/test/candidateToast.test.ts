@@ -285,4 +285,109 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(formatAbsentCandidateMessage([]), '');
 		});
 	});
+
+	describe('5. Robust back-to-back Candidate transitions across scans', () => {
+		it('accurately triggers toast on successive scans when removing vulnerabilities one by one', () => {
+			const vuln1 = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const vuln2 = createMockObserved('Command Injection', 'CWE-78', 'Exec.java', 20);
+			const t0 = 1_000_000;
+
+			// Scan 1 (baseline): Both vulnerabilities detected
+			const scan1 = processObservation([vuln1, vuln2], [], t0, true);
+			// Scan 2 (confirmation): Both confirmed active
+			const scan2 = processObservation([vuln1, vuln2], scan1.lifecycles, t0 + 10_000, true);
+			assert.strictEqual(scan2.classifications.length, 2);
+
+			// Scan 3: Remove vuln1 only (vuln2 remains)
+			const scan3 = processObservation([vuln2], scan2.lifecycles, t0 + 20_000, true);
+			const analysis3 = buildSessionAnalysis(scan3.classifications, createEmptySnapshot(), null, scan3.lifecycles);
+			assert.strictEqual(analysis3.absentCandidateFindings?.length, 1, 'Scan 3 should detect vuln1 absent');
+			assert.strictEqual(analysis3.absentCandidateFindings[0].lifecycle.type, 'SQL Injection');
+			const msg3 = formatAbsentCandidateMessage(analysis3.absentCandidateFindings);
+			assert.ok(msg3.includes('SQL Injection'));
+
+			// Scan 4 (just 5 seconds later in same cycle): Remove vuln2 as well
+			const scan4 = processObservation([], scan3.lifecycles, t0 + 25_000, true);
+			const analysis4 = buildSessionAnalysis(scan4.classifications, createEmptySnapshot(), null, scan4.lifecycles);
+			assert.strictEqual(analysis4.absentCandidateFindings?.length, 1, 'Scan 4 must detect vuln2 absent without being suppressed by previous toast');
+			assert.strictEqual(analysis4.absentCandidateFindings[0].lifecycle.type, 'Command Injection');
+			const msg4 = formatAbsentCandidateMessage(analysis4.absentCandidateFindings);
+			assert.ok(msg4.includes('Command Injection'));
+
+			// Scan 5: No changes (both still absent)
+			const scan5 = processObservation([], scan4.lifecycles, t0 + 30_000, true);
+			const analysis5 = buildSessionAnalysis(scan5.classifications, createEmptySnapshot(), null, scan5.lifecycles);
+			assert.strictEqual(analysis5.absentCandidateFindings?.length ?? 0, 0, 'Scan 5 must NOT re-toast absent candidates');
+		});
+
+		it('triggers absent Candidate toast when removing a vulnerability that was still in Candidate state', () => {
+			const finding = createMockObserved('Hardcoded Credentials', 'CWE-798', 'Auth.java', 15);
+			const t0 = 1_000_000;
+
+			// Scan 1: Newly introduced (Candidate state, not yet active)
+			const scan1 = processObservation([finding], [], t0, true);
+			assert.strictEqual(scan1.classifications[0].status, 'candidate');
+
+			// Scan 2: Immediately removed in next scan
+			const scan2 = processObservation([], scan1.lifecycles, t0 + 10_000, true);
+			assert.strictEqual(scan2.classifications[0].status, 'candidate');
+			assert.strictEqual(scan2.classifications[0].isAbsentCandidate, true);
+
+			const analysis = buildSessionAnalysis(scan2.classifications, createEmptySnapshot(), null, scan2.lifecycles);
+			assert.strictEqual(analysis.absentCandidateFindings?.length, 1, 'Should trigger absent Candidate toast even if previously Candidate');
+			assert.strictEqual(analysis.absentCandidateFindings[0].lifecycle.type, 'Hardcoded Credentials');
+		});
+
+		it('accurately triggers new Candidate toast on successive scans when introducing vulnerabilities one by one', () => {
+			const vuln1 = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const vuln2 = createMockObserved('XSS', 'CWE-79', 'Web.java', 20);
+			const t0 = 1_000_000;
+
+			// Initial session established with no vulnerabilities
+			const scan1 = processObservation([], [], t0, true);
+
+			// Scan 2: Add vuln1
+			const scan2 = processObservation([vuln1], scan1.lifecycles, t0 + 10_000, true);
+			const analysis2 = buildSessionAnalysis(scan2.classifications, createEmptySnapshot(), null, scan2.lifecycles, null, { isInitialCheckpoint: false });
+			assert.strictEqual(analysis2.newCandidateFindings?.length, 1);
+			assert.strictEqual(analysis2.newCandidateFindings[0].lifecycle.type, 'SQL Injection');
+
+			// Scan 3 (5 seconds later): Add vuln2 as well
+			const scan3 = processObservation([vuln1, vuln2], scan2.lifecycles, t0 + 15_000, true);
+			const analysis3 = buildSessionAnalysis(scan3.classifications, createEmptySnapshot(), null, scan3.lifecycles, null, { isInitialCheckpoint: false });
+			assert.strictEqual(analysis3.newCandidateFindings?.length, 1, 'Scan 3 must detect vuln2 as new candidate');
+			assert.strictEqual(analysis3.newCandidateFindings[0].lifecycle.type, 'XSS');
+
+			// Scan 4: Both still present, no new vulnerabilities
+			const scan4 = processObservation([vuln1, vuln2], scan3.lifecycles, t0 + 20_000, true);
+			const analysis4 = buildSessionAnalysis(scan4.classifications, createEmptySnapshot(), null, scan4.lifecycles, null, { isInitialCheckpoint: false });
+			assert.strictEqual(analysis4.newCandidateFindings?.length ?? 0, 0, 'Scan 4 must not re-trigger new candidate toast');
+		});
+
+		it('supports full back-and-forth cycles (add -> remove -> restore -> remove)', () => {
+			const vuln = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const t0 = 1_000_000;
+
+			// 1. Add
+			const s1 = processObservation([vuln], [], t0, true);
+			assert.strictEqual(s1.classifications[0].isNewCandidate, true);
+
+			// 2. Confirm
+			const s2 = processObservation([vuln], s1.lifecycles, t0 + 10_000, true);
+
+			// 3. Remove -> absent candidate
+			const s3 = processObservation([], s2.lifecycles, t0 + 20_000, true);
+			assert.strictEqual(s3.classifications[0].isAbsentCandidate, true);
+
+			// 4. Restore -> reappears
+			const s4 = processObservation([vuln], s3.lifecycles, t0 + 30_000, true);
+			assert.strictEqual(s4.classifications[0].isAbsentCandidate, undefined);
+
+			// 5. Remove again -> absent candidate triggers again!
+			const s5 = processObservation([], s4.lifecycles, t0 + 40_000, true);
+			assert.strictEqual(s5.classifications[0].isAbsentCandidate, true);
+			const analysis5 = buildSessionAnalysis(s5.classifications, createEmptySnapshot(), null, s5.lifecycles);
+			assert.strictEqual(analysis5.absentCandidateFindings?.length, 1);
+		});
+	});
 });

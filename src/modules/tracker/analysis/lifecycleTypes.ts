@@ -246,6 +246,18 @@ export interface FindingClassification {
 	 * Measurement-integrity flag (Section 11.2).
 	 */
 	isIdenticalRestoration?: boolean;
+
+	/**
+	 * True if this finding was newly introduced and recorded with Candidate status
+	 * in this observation.
+	 */
+	isNewCandidate?: boolean;
+
+	/**
+	 * True if this finding was previously active/detected and transitioned to absent
+	 * Candidate status in this observation.
+	 */
+	isAbsentCandidate?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════

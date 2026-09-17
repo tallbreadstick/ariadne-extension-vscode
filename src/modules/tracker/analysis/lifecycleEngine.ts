@@ -102,11 +102,15 @@ export function processObservation(
 	// Track which lifecycles were matched to avoid duplicates
 	const matchedFingerprints = new Set<string>();
 	const restoredFingerprints = new Set<string>();
+	const newlyCreatedFingerprints = new Set<string>();
+	const newlyAbsentFingerprints = new Set<string>();
 
 	// Record previous state of existing lifecycles before mutation
 	const previousStateByFingerprint = new Map<string, FindingLifecycleState | undefined>();
+	const wasMissingMap = new Map<string, boolean>();
 	for (const lifecycle of existingLifecycles) {
 		previousStateByFingerprint.set(lifecycle.logicalFingerprint, lifecycle.lifecycleState);
+		wasMissingMap.set(lifecycle.logicalFingerprint, lifecycle.missingSince !== null);
 	}
 
 	// ── Update existing lifecycles ──────────────────────────────────
@@ -120,7 +124,11 @@ export function processObservation(
 				restoredFingerprints.add(lifecycle.logicalFingerprint);
 			}
 		} else {
+			const wasMissing = wasMissingMap.get(lifecycle.logicalFingerprint) ?? false;
 			updateAbsentLifecycle(lifecycle, timestamp, policy, isSettled, fileContentProvider);
+			if (isSettled && !wasMissing && lifecycle.missingSince !== null && lifecycle.durableResolutionAt === null) {
+				newlyAbsentFingerprints.add(lifecycle.logicalFingerprint);
+			}
 		}
 	}
 
@@ -128,6 +136,7 @@ export function processObservation(
 	for (const [fp, finding] of observedMap) {
 		if (!matchedFingerprints.has(fp)) {
 			existingLifecycles.push(createLifecycleRecord(finding, timestamp));
+			newlyCreatedFingerprints.add(fp);
 		}
 	}
 
@@ -139,6 +148,8 @@ export function processObservation(
 			policy,
 			restoredFingerprints.has(lifecycle.logicalFingerprint),
 			previousStateByFingerprint.get(lifecycle.logicalFingerprint),
+			newlyCreatedFingerprints.has(lifecycle.logicalFingerprint),
+			newlyAbsentFingerprints.has(lifecycle.logicalFingerprint),
 		),
 	);
 
@@ -415,6 +426,8 @@ function classifyLifecycle(
 	policy: LifecyclePolicy,
 	isIdenticalRestoration: boolean = false,
 	previousState?: FindingLifecycleState,
+	isNewCandidate: boolean = false,
+	isAbsentCandidate: boolean = false,
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
 	lifecycle.lifecycleState = status;
@@ -426,6 +439,8 @@ function classifyLifecycle(
 		currentOccurrenceCount: lifecycle.currentOccurrenceCount,
 		previousState,
 		...(isIdenticalRestoration ? { isIdenticalRestoration: true } : {}),
+		...(isNewCandidate ? { isNewCandidate: true } : {}),
+		...(isAbsentCandidate ? { isAbsentCandidate: true } : {}),
 	};
 }
 
