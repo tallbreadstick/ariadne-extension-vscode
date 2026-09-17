@@ -95,7 +95,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(analysis.newCandidateFindings[0].lifecycle.type, 'SQL Injection');
 		});
 
-		it('suppresses newCandidateFindings during the initial session checkpoint', () => {
+		it('includes newCandidateFindings during the initial session checkpoint', () => {
 			const finding = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
 			const obsResult = processObservation([finding], [], Date.now(), true);
 
@@ -109,7 +109,8 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			);
 
 			assert.ok(analysis.newCandidateFindings);
-			assert.strictEqual(analysis.newCandidateFindings.length, 0, 'Should not toast on initial baseline load');
+			assert.strictEqual(analysis.newCandidateFindings.length, 1, 'Should include candidate findings on initial checkpoint');
+			assert.strictEqual(analysis.newCandidateFindings[0].lifecycle.type, 'SQL Injection');
 		});
 
 		it('does not include findings that were already active or persisting as new candidates', () => {

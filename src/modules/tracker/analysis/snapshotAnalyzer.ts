@@ -74,7 +74,7 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
 // ══════════════════════════════════════════════════════════════════════
 
 export interface BuildSessionAnalysisOptions {
-	/** True if this is the session's first checkpoint (suppresses initial new-candidate toast). */
+	/** True if this is the session's first checkpoint. */
 	isInitialCheckpoint?: boolean;
 }
 
@@ -95,15 +95,14 @@ export function buildSessionAnalysis(
 	options?: BuildSessionAnalysisOptions,
 ): SessionAnalysis {
 	const activeFindings = currentScan.vulnerabilities;
+	void options;
 
-	const newCandidateFindings = options?.isInitialCheckpoint
-		? []
-		: classifications.filter((c) => {
-			if (c.isNewCandidate !== undefined) {
-				return c.isNewCandidate;
-			}
-			return c.status === 'candidate' && c.previousState === undefined;
-		});
+	const newCandidateFindings = classifications.filter((c) => {
+		if (c.isNewCandidate !== undefined) {
+			return c.isNewCandidate;
+		}
+		return c.status === 'candidate' && c.previousState === undefined;
+	});
 
 	const absentCandidateFindings = classifications.filter((c) => {
 		if (c.isAbsentCandidate !== undefined) {
