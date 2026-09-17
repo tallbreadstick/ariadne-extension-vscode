@@ -102,6 +102,14 @@ export function buildSessionAnalysis(
 			(c) => c.status === 'candidate' && c.previousState === undefined,
 		);
 
+	const absentCandidateFindings = classifications.filter(
+		(c) =>
+			c.status === 'candidate' &&
+			c.previousState !== undefined &&
+			c.previousState !== 'candidate' &&
+			c.previousState !== 'resolved',
+	);
+
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
 	let resolvedThisSession = 0;
@@ -233,6 +241,7 @@ export function buildSessionAnalysis(
 		scores,
 		typeScores,
 		newCandidateFindings,
+		absentCandidateFindings,
 	};
 }
 

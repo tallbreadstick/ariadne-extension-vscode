@@ -38,7 +38,7 @@ const COOLDOWN_MS = 60_000; // 60 seconds
  * Tracks the last time a toast was fired for each notification category.
  * In-memory only - resets when the extension host restarts.
  */
-type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'recurring' | 'newCandidate';
+type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'recurring' | 'newCandidate' | 'absentCandidate';
 
 const lastFiredAt: Record<ToastCategory, number> = {
 	persisting: 0,
@@ -46,6 +46,7 @@ const lastFiredAt: Record<ToastCategory, number> = {
 	resolved: 0,
 	recurring: 0,
 	newCandidate: 0,
+	absentCandidate: 0,
 };
 
 /**
@@ -153,8 +154,11 @@ function showRecurringToast(analysis: SessionAnalysis): void {
 
 // ── Candidate state transitions ──────────────────────────────────────
 
-import { formatNewCandidateMessage } from '../analysis/candidateToasts.js';
-export { formatNewCandidateMessage };
+import {
+	formatNewCandidateMessage,
+	formatAbsentCandidateMessage,
+} from '../analysis/candidateToasts.js';
+export { formatNewCandidateMessage, formatAbsentCandidateMessage };
 
 /**
  * Shows an informational toast for newly detected candidate vulnerabilities.
@@ -172,6 +176,25 @@ export function showNewCandidateToast(analysis: SessionAnalysis): void {
 	}
 
 	const message = formatNewCandidateMessage(findings);
+	if (message) {
+		vscode.window.showInformationMessage(message);
+	}
+}
+
+/**
+ * Shows an informational toast when previously active vulnerabilities are no longer detected
+ * (transition: Active/Persisting/Recurring/Improving -> Candidate).
+ */
+export function showAbsentCandidateToast(analysis: SessionAnalysis): void {
+	const findings = analysis.absentCandidateFindings ?? [];
+	if (findings.length === 0) {
+		return;
+	}
+	if (!tryAcquire('absentCandidate')) {
+		return;
+	}
+
+	const message = formatAbsentCandidateMessage(findings);
 	if (message) {
 		vscode.window.showInformationMessage(message);
 	}
@@ -200,6 +223,7 @@ export function resetToastCooldowns(): void {
  *   3. Improving trends (info)
  *   4. Resolved patterns (info)
  *   5. Newly detected candidates (info)
+ *   6. Absent candidates pending resolution (info)
  *
  * @param analysis - The computed SessionAnalysis from buildSessionAnalysis()
  */
@@ -211,6 +235,7 @@ export function showSessionToasts(analysis: SessionAnalysis): void {
 		showImprovingToast(analysis);
 		showResolvedToast(analysis);
 		showNewCandidateToast(analysis);
+		showAbsentCandidateToast(analysis);
 	} catch (error) {
 		// If the toast notification API is unavailable or throws,
 		// log internally and continue — the panel update is unaffected.

@@ -7,6 +7,7 @@ import {
 } from '../modules/tracker/analysis/snapshotAnalyzer.js';
 import {
 	formatNewCandidateMessage,
+	formatAbsentCandidateMessage,
 } from '../modules/tracker/analysis/candidateToasts.js';
 import type {
 	ObservedFinding,
@@ -170,6 +171,118 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 				msg,
 				'Ariadne: 4 new vulnerabilities detected (Type A, Type B, Type C and 1 more). Checking validity...',
 			);
+		});
+	});
+
+	describe('4. Commit 2: Previously detected vulnerability → Candidate on absence', () => {
+		it('detects transition to Candidate when an active vulnerability is no longer detected', () => {
+			const finding = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const t0 = 1_000_000;
+
+			// Step 1: None -> Candidate
+			const step1 = processObservation([finding], [], t0, true);
+			// Step 2: Candidate -> Active
+			const step2 = processObservation([finding], step1.lifecycles, t0 + 10_000, true);
+			assert.strictEqual(step2.classifications[0].status, 'active');
+
+			// Step 3: Finding disappears in settled scan -> transitions to Candidate
+			const step3 = processObservation([], step2.lifecycles, t0 + 20_000, true);
+			assert.strictEqual(step3.classifications[0].status, 'candidate');
+			assert.strictEqual(step3.classifications[0].previousState, 'active');
+
+			const analysis = buildSessionAnalysis(
+				step3.classifications,
+				createEmptySnapshot(),
+				null,
+				step3.lifecycles,
+				null,
+				{ isInitialCheckpoint: false },
+			);
+
+			assert.ok(analysis.absentCandidateFindings);
+			assert.strictEqual(analysis.absentCandidateFindings.length, 1);
+			assert.strictEqual(analysis.absentCandidateFindings[0].lifecycle.type, 'SQL Injection');
+			assert.strictEqual(analysis.absentCandidateFindings[0].previousState, 'active');
+		});
+
+		it('does NOT repeatedly trigger absentCandidateFindings on subsequent scans while remaining absent', () => {
+			const finding = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const t0 = 1_000_000;
+
+			const step1 = processObservation([finding], [], t0, true);
+			const step2 = processObservation([finding], step1.lifecycles, t0 + 10_000, true);
+
+			// First absence: Active -> Candidate (triggers toast)
+			const step3 = processObservation([], step2.lifecycles, t0 + 20_000, true);
+			const analysis1 = buildSessionAnalysis(step3.classifications, createEmptySnapshot(), null, step3.lifecycles);
+			assert.strictEqual(analysis1.absentCandidateFindings?.length, 1);
+
+			// Second absence: Candidate -> Candidate (previousState is now 'candidate')
+			const step4 = processObservation([], step3.lifecycles, t0 + 25_000, true);
+			const analysis2 = buildSessionAnalysis(step4.classifications, createEmptySnapshot(), null, step4.lifecycles);
+			assert.strictEqual(
+				analysis2.absentCandidateFindings?.length ?? 0,
+				0,
+				'Must not re-trigger toast while finding remains in Candidate state',
+			);
+		});
+
+		it('detects transition to Candidate from persisting and recurring states', () => {
+			const finding = createMockObserved('Command Injection', 'CWE-78', 'Exec.java', 50);
+			const t0 = 1_000_000;
+
+			// Step 1: None -> Candidate
+			const step1 = processObservation([finding], [], t0, true);
+			// Step 2: Confirmation 1
+			const step2 = processObservation([finding], step1.lifecycles, t0 + 10_000, true);
+			// Step 3: Confirmation 2 + duration >= 30s -> Persisting
+			const step3 = processObservation([finding], step2.lifecycles, t0 + 35_000, true);
+			assert.strictEqual(step3.classifications[0].status, 'persisting');
+
+			// Absence scan: Persisting -> Candidate
+			const step4 = processObservation([], step3.lifecycles, t0 + 40_000, true);
+			assert.strictEqual(step4.classifications[0].status, 'candidate');
+			assert.strictEqual(step4.classifications[0].previousState, 'persisting');
+
+			const analysis = buildSessionAnalysis(step4.classifications, createEmptySnapshot(), null, step4.lifecycles);
+			assert.strictEqual(analysis.absentCandidateFindings?.length, 1);
+			assert.strictEqual(analysis.absentCandidateFindings[0].lifecycle.type, 'Command Injection');
+		});
+
+		it('formats single absent candidate finding with neutral wording', () => {
+			const finding = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const t0 = 1_000_000;
+			const step1 = processObservation([finding], [], t0, true);
+			const step2 = processObservation([finding], step1.lifecycles, t0 + 10_000, true);
+			const step3 = processObservation([], step2.lifecycles, t0 + 20_000, true);
+
+			const msg = formatAbsentCandidateMessage(step3.classifications);
+			assert.strictEqual(
+				msg,
+				'Ariadne: Vulnerability is no longer detected (SQL Injection). Resolution status is being processed...',
+			);
+			assert.ok(!msg.includes('fixed'), 'Should not assume finding was fixed');
+		});
+
+		it('formats multiple absent candidate findings with count and details', () => {
+			const f1 = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const f2 = createMockObserved('Cross-Site Scripting', 'CWE-79', 'Web.java', 20);
+			const t0 = 1_000_000;
+
+			const step1 = processObservation([f1, f2], [], t0, true);
+			const step2 = processObservation([f1, f2], step1.lifecycles, t0 + 10_000, true);
+			// Both removed
+			const step3 = processObservation([], step2.lifecycles, t0 + 20_000, true);
+
+			const msg = formatAbsentCandidateMessage(step3.classifications);
+			assert.strictEqual(
+				msg,
+				'Ariadne: 2 vulnerabilities are no longer detected (SQL Injection, Cross-Site Scripting). Resolution status is being processed...',
+			);
+		});
+
+		it('returns empty string when absent classifications list is empty', () => {
+			assert.strictEqual(formatAbsentCandidateMessage([]), '');
 		});
 	});
 });

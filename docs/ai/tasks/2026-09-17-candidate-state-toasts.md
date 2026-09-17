@@ -21,9 +21,9 @@
 
 ## Current state
 
-- status: in progress
+- status: completed
 - current owner: agent
-- next action: implement Commit 1 (new-vulnerability -> Candidate toast)
+- next action: none
 - blockers: none
 - last checked: 2026-09-17
 
@@ -32,9 +32,9 @@
 - [x] Commit 1: Track previousState in FindingClassification and add new-vulnerability -> Candidate toast
 - [x] Commit 1: Add unit tests for new-vulnerability -> Candidate toast
 - [x] Commit 1: Verify typecheck, lint, and tests, then commit
-- [ ] Commit 2: Add previously detected vulnerability -> Candidate toast on absence
-- [ ] Commit 2: Add unit tests for absence -> Candidate toast
-- [ ] Commit 2: Verify typecheck, lint, and tests, then commit
+- [x] Commit 2: Add previously detected vulnerability -> Candidate toast on absence
+- [x] Commit 2: Add unit tests for absence -> Candidate toast
+- [x] Commit 2: Verify typecheck, lint, and tests, then commit
 
 ## Scope
 
