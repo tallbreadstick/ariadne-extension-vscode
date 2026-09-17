@@ -7,14 +7,21 @@
  * - Persisting patterns — warning toast alerting the student
  * - Improving trends — informational toast encouraging the student
  * - Resolved vulnerabilities — informational toast confirming resolution
+ * - Candidate transitions — new vulnerability detected / fix applied underway
  *
  * -------------------------------
- * ANTI-SPAM DESIGN
+ * ANTI-SPAM & NON-INVASIVE DESIGN
  *
- * 1. Aggregation - multiple findings of the same status category are collapsed into a single summary toast (e.g., "3 persisting patterns detected").
- * 2. Cooldown - a per-category cooldown (default 60 s) prevents the same category from firing again within the window, even if a new scan cycle completes.
+ * 1. Notification Level — configurable via `ariadne.notifications.level`:
+ *    - `milestones` (default): Only alerts on state transitions (new candidate, fix applied,
+ *      first-time persisting, recurring, resolved). No 60s repetitive steady-state spam.
+ *    - `all`: Allows repeating 60s cooldown toasts for steady-state persisting issues (debugging).
+ *    - `quiet`: Suppresses all popup toasts; metrics remain visible in sidebar & status bar.
+ * 2. Single Prioritized Toast — at most ONE toast is shown per save scan to prevent notification
+ *    stacking / clutter.
+ * 3. Cooldowns — per-category cooldowns prevent rapid duplicate alerts.
  *
- * The service is stateless across VS Code restarts — the cooldown timers are in-memory only.
+ * The service is stateless across VS Code restarts — cooldown timers are in-memory only.
  * -------------------------------
  *
  * EXPORTS:
@@ -25,133 +32,161 @@
 import * as vscode from 'vscode';
 import type { SessionAnalysis } from '../analysis/analysisTypes.js';
 
-import type { FindingClassification } from '../analysis/lifecycleTypes.js';
+import {
+	formatNewCandidateMessage,
+	formatAbsentCandidateMessage,
+	determinePrioritizedToast,
+	type NotificationLevel,
+	type ToastType,
+	type ToastPlan,
+} from '../analysis/candidateToasts.js';
+
+export {
+	formatNewCandidateMessage,
+	formatAbsentCandidateMessage,
+	determinePrioritizedToast,
+	type NotificationLevel,
+	type ToastType,
+	type ToastPlan,
+};
 
 // CONFIGURATION
 
-// Minimum interval (in ms) between toasts of the same category. 
-const COOLDOWN_MS = 60_000; // 60 seconds
+const COOLDOWN_MS = 60_000; // 60 seconds for steady-state categories
+const CANDIDATE_COOLDOWN_MS = 2_000; // 2 seconds for event-driven candidate transitions
 
 // COOLDOWN STATE
 
-/**
- * Tracks the last time a toast was fired for each notification category.
- * In-memory only - resets when the extension host restarts.
- */
-type ToastCategory = 'persisting' | 'improving' | 'resolved' | 'recurring';
+export type ToastCategory =
+	| 'persisting'
+	| 'improving'
+	| 'resolved'
+	| 'recurring'
+	| 'newCandidate'
+	| 'absentCandidate';
 
 const lastFiredAt: Record<ToastCategory, number> = {
 	persisting: 0,
 	improving: 0,
 	resolved: 0,
 	recurring: 0,
+	newCandidate: 0,
+	absentCandidate: 0,
 };
 
 /**
  * Returns `true` if the category is off cooldown and records the
  * current timestamp so subsequent calls are throttled.
  */
-function tryAcquire(category: ToastCategory): boolean {
+export function tryAcquire(category: ToastCategory): boolean {
 	const now = Date.now();
-	if (now - lastFiredAt[category] < COOLDOWN_MS) {
+	const cooldown = (category === 'newCandidate' || category === 'absentCandidate')
+		? CANDIDATE_COOLDOWN_MS
+		: COOLDOWN_MS;
+
+	if (now - lastFiredAt[category] < cooldown) {
 		return false; // still within cooldown window
 	}
 	lastFiredAt[category] = now;
 	return true;
 }
 
-// TOAST BUILDERS
+/** Reads the current notification level from VS Code settings. */
+export function getNotificationLevel(): NotificationLevel {
+	try {
+		const config = vscode.workspace.getConfiguration('ariadne.notifications');
+		return config.get<NotificationLevel>('level', 'milestones');
+	} catch {
+		return 'milestones';
+	}
+}
+
+// TOAST BUILDERS (INDIVIDUAL HANDLERS)
 
 /**
  * Shows a warning toast for persisting patterns.
- *
- * Per UC-4.3: "If a persisting pattern is detected, a soft toast
- * notification is triggered to alert the student of the unresolved
- * vulnerability class."
+ * In `milestones` mode, only fires when findings transition to persisting (newPersistingFindings).
+ * In `all` mode, fires for all persisting patterns on 60s cooldown.
  */
-function showPersistingToast(analysis: SessionAnalysis): void {
-	const count = analysis.persistingPatterns;
-	if (count === 0) { return; }
-	if (!tryAcquire('persisting')) { return; }
+export function showPersistingToast(
+	analysis: SessionAnalysis,
+	level: NotificationLevel = 'milestones',
+): boolean {
+	const count = level === 'all'
+		? analysis.persistingPatterns
+		: (analysis.newPersistingFindings?.length ?? 0);
+
+	if (count === 0) { return false; }
+	if (!tryAcquire('persisting')) { return false; }
 
 	vscode.window.showWarningMessage(
 		`Ariadne: ${count} ${count === 1 ? 'issue is still persisting' : 'issues are still persisting'} — unresolved and requires your attention.`,
 	);
+	return true;
 }
 
-// Shows an informational toast for improving trends
-function showImprovingToast(analysis: SessionAnalysis): void {
+/** Shows an informational toast for improving trends. */
+export function showImprovingToast(analysis: SessionAnalysis): boolean {
 	const count = analysis.improvingTrends;
-	if (count === 0) { return; }
-	if (!tryAcquire('improving')) { return; }
+	if (count === 0) { return false; }
+	if (!tryAcquire('improving')) { return false; }
 
 	vscode.window.showInformationMessage(
 		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — great progress, keep it up!`,
 	);
+	return true;
 }
 
-// Shows an informational toast for resolved vulnerabilities
-function showResolvedToast(analysis: SessionAnalysis): void {
+/** Shows an informational toast for resolved vulnerabilities. */
+export function showResolvedToast(analysis: SessionAnalysis): boolean {
 	const count = analysis.resolvedThisSession;
-	if (count === 0) { return; }
-	if (!tryAcquire('resolved')) { return; }
+	if (count === 0) { return false; }
+	if (!tryAcquire('resolved')) { return false; }
 
 	vscode.window.showInformationMessage(
 		`Ariadne: ${count} ${count === 1 ? 'pattern resolved' : 'patterns resolved'} — check Session Metrics for details.`,
 	);
+	return true;
 }
 
-// Shows a warning toast for recurring patterns
-function showRecurringToast(analysis: SessionAnalysis): void {
+/** Shows a warning toast for recurring patterns. */
+export function showRecurringToast(analysis: SessionAnalysis): boolean {
 	const count = analysis.recurringPatterns;
-	if (count === 0) { return; }
-	if (!tryAcquire('recurring')) { return; }
+	if (count === 0) { return false; }
+	if (!tryAcquire('recurring')) { return false; }
 
 	vscode.window.showWarningMessage(
 		`Ariadne: ${count} ${count === 1 ? 'pattern has reappeared! It needs to be addressed again.' : 'patterns have reappeared! They need to be addressed again.'}`,
 	);
+	return true;
 }
 
-// ── Candidate state transitions ──────────────────────────────────────
-
-import {
-	formatNewCandidateMessage,
-	formatAbsentCandidateMessage,
-} from '../analysis/candidateToasts.js';
-export { formatNewCandidateMessage, formatAbsentCandidateMessage };
-
-/**
- * Shows an informational toast for newly detected candidate vulnerabilities.
- *
- * Triggered on full-scan save when a vulnerability is newly detected and its status
- * is initially set to Candidate awaiting confirmation.
- */
-export function showNewCandidateToast(analysis: SessionAnalysis): void {
+/** Shows an informational toast for newly detected candidate vulnerabilities. */
+export function showNewCandidateToast(analysis: SessionAnalysis): boolean {
 	const findings = analysis.newCandidateFindings ?? [];
-	if (findings.length === 0) {
-		return;
-	}
+	if (findings.length === 0) { return false; }
+	if (!tryAcquire('newCandidate')) { return false; }
 
 	const message = formatNewCandidateMessage(findings);
 	if (message) {
 		vscode.window.showInformationMessage(message);
+		return true;
 	}
+	return false;
 }
 
-/**
- * Shows an informational toast when previously active vulnerabilities are no longer detected
- * (transition: Active/Persisting/Recurring/Improving -> Candidate).
- */
-export function showAbsentCandidateToast(analysis: SessionAnalysis): void {
+/** Shows an informational toast when previously active vulnerabilities are no longer detected. */
+export function showAbsentCandidateToast(analysis: SessionAnalysis): boolean {
 	const findings = analysis.absentCandidateFindings ?? [];
-	if (findings.length === 0) {
-		return;
-	}
+	if (findings.length === 0) { return false; }
+	if (!tryAcquire('absentCandidate')) { return false; }
 
 	const message = formatAbsentCandidateMessage(findings);
 	if (message) {
 		vscode.window.showInformationMessage(message);
+		return true;
 	}
+	return false;
 }
 
 /** Resets in-memory cooldown timestamps (primarily for unit tests). */
@@ -164,38 +199,46 @@ export function resetToastCooldowns(): void {
 // PUBLIC API
 
 /**
- * Evaluates the session analysis and fires at most one VS Code toast
- * notification per applicable category, respecting cooldown windows.
- *
- * This is a fire-and-forget function — call it from the scan pipeline
- * after the lifecycle engine has classified findings and the Session
- * Metrics panel has been updated.
+ * Evaluates the session analysis and fires at most ONE prioritized VS Code toast
+ * notification per save scan, respecting notification level and cooldowns.
  *
  * Priority order (most urgent first):
- *   1. Recurring patterns (warning)
- *   2. Persisting patterns (warning)
- *   3. Improving trends (info)
- *   4. Resolved patterns (info)
- *   5. Newly detected candidates (info)
- *   6. Absent candidates pending resolution (info)
+ *   1. Recurring patterns (warning) — critical regressions
+ *   2. Resolved patterns (info) — milestone completion
+ *   3. Absent candidates (info) — fix applied feedback
+ *   4. Newly detected candidates (info) — initial discovery
+ *   5. Newly persisting (warning) — escalation to persisting
+ *   6. Improving trends (info) — progress encouragement
  *
  * @param analysis - The computed SessionAnalysis from buildSessionAnalysis()
+ * @param levelOverride - Optional level override (e.g. for testing)
  */
-export function showSessionToasts(analysis: SessionAnalysis): void {
+export function showSessionToasts(
+	analysis: SessionAnalysis,
+	levelOverride?: NotificationLevel,
+): boolean {
+	const level = levelOverride ?? getNotificationLevel();
+	if (level === 'quiet') {
+		return false;
+	}
+
 	try {
-		// Fire in priority order — each category independently throttled
-		showRecurringToast(analysis);
-		showPersistingToast(analysis);
-		showImprovingToast(analysis);
-		showResolvedToast(analysis);
-		showNewCandidateToast(analysis);
-		showAbsentCandidateToast(analysis);
+		const plan = determinePrioritizedToast(analysis, level, (type) => tryAcquire(type));
+		if (!plan) {
+			return false;
+		}
+
+		if (plan.severity === 'warning') {
+			vscode.window.showWarningMessage(plan.message);
+		} else {
+			vscode.window.showInformationMessage(plan.message);
+		}
+		return true;
 	} catch (error) {
-		// If the toast notification API is unavailable or throws,
-		// log internally and continue — the panel update is unaffected.
 		console.warn(
 			'[Ariadne] Toast notification error (non-fatal):',
 			error instanceof Error ? error.message : String(error),
 		);
+		return false;
 	}
 }

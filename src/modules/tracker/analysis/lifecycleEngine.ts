@@ -430,6 +430,7 @@ function classifyLifecycle(
 	isAbsentCandidate: boolean = false,
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
+	const isNewPersisting = status === 'persisting' && previousState !== 'persisting';
 	lifecycle.lifecycleState = status;
 
 	return {
@@ -441,6 +442,7 @@ function classifyLifecycle(
 		...(isIdenticalRestoration ? { isIdenticalRestoration: true } : {}),
 		...(isNewCandidate ? { isNewCandidate: true } : {}),
 		...(isAbsentCandidate ? { isAbsentCandidate: true } : {}),
+		...(isNewPersisting ? { isNewPersisting: true } : {}),
 	};
 }
 

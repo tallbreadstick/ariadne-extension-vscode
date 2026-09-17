@@ -258,6 +258,12 @@ export interface FindingClassification {
 	 * Candidate status in this observation.
 	 */
 	isAbsentCandidate?: boolean;
+
+	/**
+	 * True if this finding transitioned into Persisting status in this observation
+	 * (graduating from Candidate or Recurring).
+	 */
+	isNewPersisting?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════

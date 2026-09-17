@@ -96,11 +96,19 @@ export function buildSessionAnalysis(
 	previousScan: ScanSnapshot | null,
 	lifecycles?: FindingLifecycleRecord[],
 	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null,
-	sessionStartedAt?: number | null,
+	sessionStartedAtOrOptions?: number | null | BuildSessionAnalysisOptions,
 	options?: BuildSessionAnalysisOptions,
 ): SessionAnalysis {
+	let sessionStartedAt: number | null | undefined = null;
+	let resolvedOptions = options;
+
+	if (typeof sessionStartedAtOrOptions === 'number' || sessionStartedAtOrOptions === null) {
+		sessionStartedAt = sessionStartedAtOrOptions;
+	} else if (sessionStartedAtOrOptions && typeof sessionStartedAtOrOptions === 'object') {
+		resolvedOptions = sessionStartedAtOrOptions;
+	}
+	void resolvedOptions;
 	const activeFindings = currentScan.vulnerabilities;
-	void options;
 
 	const newCandidateFindings = classifications.filter((c) => {
 		if (c.isNewCandidate !== undefined) {
@@ -119,6 +127,13 @@ export function buildSessionAnalysis(
 			c.previousState !== 'candidate' &&
 			c.previousState !== 'resolved'
 		);
+	});
+
+	const newPersistingFindings = classifications.filter((c) => {
+		if (c.isNewPersisting !== undefined) {
+			return c.isNewPersisting;
+		}
+		return c.status === 'persisting' && c.previousState !== 'persisting';
 	});
 
 	let persistingPatterns = 0;
@@ -267,6 +282,7 @@ export function buildSessionAnalysis(
 		typeScores,
 		newCandidateFindings,
 		absentCandidateFindings,
+		newPersistingFindings,
 	};
 }
 

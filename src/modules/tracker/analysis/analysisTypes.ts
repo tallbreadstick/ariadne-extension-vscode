@@ -149,4 +149,8 @@ export interface SessionAnalysis {
 	 * Findings previously active that are no longer detected and transitioned to Candidate.
 	 */
 	absentCandidateFindings?: FindingClassification[];
+	/**
+	 * Findings newly transitioned into Persisting status in this observation.
+	 */
+	newPersistingFindings?: FindingClassification[];
 }
