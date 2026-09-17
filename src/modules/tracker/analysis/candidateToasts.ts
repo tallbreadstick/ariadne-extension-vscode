@@ -55,12 +55,12 @@ export function formatAbsentCandidateMessage(findings: FindingClassification[]):
  * Determines the single prioritized toast to display (pure logic, no vscode dependency).
  *
  * Priority order:
- *   1. Recurring patterns (warning) — critical regressions
- *   2. Resolved patterns (info) — milestone completion
- *   3. Absent candidates (info) — immediate "fix detected" feedback
- *   4. New candidates (info) — immediate "new issue detected" feedback
- *   5. Newly persisting (warning) — graduation to persisting
- *   6. Improving trends (info) — partial progress
+ *   1. Recurring patterns (warning) — regression
+ *   2. Improving trends (info) — milestone: fewer occurrences detected
+ *   3. Resolved patterns (info) — milestone: pattern resolved
+ *   4. Absent candidates (info) — immediate "fix detected" feedback
+ *   5. New candidates (info) — immediate "new issue detected" feedback
+ *   6. Newly persisting (warning) — graduation to persisting
  */
 export function determinePrioritizedToast(
 	analysis: SessionAnalysis,
@@ -77,6 +77,15 @@ export function determinePrioritizedToast(
 			type: 'recurring',
 			severity: 'warning',
 			message: `Ariadne: ${count} ${count === 1 ? 'pattern has reappeared! It needs to be addressed again.' : 'patterns have reappeared! They need to be addressed again.'}`,
+		};
+	}
+
+	if (analysis.improvingTrends > 0 && isEligible('improving')) {
+		const count = analysis.improvingTrends;
+		return {
+			type: 'improving',
+			severity: 'info',
+			message: `Ariadne: ${count} ${count === 1 ? 'vulnerability pattern is improving' : 'vulnerability patterns are improving'} — fewer occurrences detected!`,
 		};
 	}
 
@@ -128,15 +137,6 @@ export function determinePrioritizedToast(
 			type: 'persisting',
 			severity: 'warning',
 			message: `Ariadne: ${persistingCount} ${persistingCount === 1 ? 'issue is still persisting' : 'issues are still persisting'} — unresolved and requires your attention.`,
-		};
-	}
-
-	if (analysis.improvingTrends > 0 && isEligible('improving')) {
-		const count = analysis.improvingTrends;
-		return {
-			type: 'improving',
-			severity: 'info',
-			message: `Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — great progress, keep it up!`,
 		};
 	}
 

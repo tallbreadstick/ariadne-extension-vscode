@@ -202,13 +202,13 @@ export function resetToastCooldowns(): void {
  * Evaluates the session analysis and fires at most ONE prioritized VS Code toast
  * notification per save scan, respecting notification level and cooldowns.
  *
- * Priority order (most urgent first):
+ * Priority order (most urgent / significant first):
  *   1. Recurring patterns (warning) — critical regressions
- *   2. Resolved patterns (info) — milestone completion
- *   3. Absent candidates (info) — fix applied feedback
- *   4. Newly detected candidates (info) — initial discovery
- *   5. Newly persisting (warning) — escalation to persisting
- *   6. Improving trends (info) — progress encouragement
+ *   2. Improving trends (info) — milestone: fewer occurrences detected
+ *   3. Resolved patterns (info) — milestone completion
+ *   4. Absent candidates (info) — fix applied feedback
+ *   5. Newly detected candidates (info) — initial discovery
+ *   6. Newly persisting (warning) — escalation to persisting
  *
  * @param analysis - The computed SessionAnalysis from buildSessionAnalysis()
  * @param levelOverride - Optional level override (e.g. for testing)

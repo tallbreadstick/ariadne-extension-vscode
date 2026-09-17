@@ -496,5 +496,25 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(plan.type, 'recurring', 'Recurring pattern must take precedence as a warning');
 			assert.strictEqual(plan.severity, 'warning');
 		});
+
+		it('prioritizes improving trend toast over absent candidate feedback when an issue count is reduced', () => {
+			const dummyAbsent: FindingClassification = {
+				...processObservation([createMockObserved('XSS', 'CWE-79', 'Web.java', 20)], [], 1000, true).classifications[0],
+				status: 'candidate',
+				isAbsentCandidate: true,
+			};
+
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				improvingTrends: 1,
+				absentCandidateFindings: [dummyAbsent],
+			};
+
+			const plan = determinePrioritizedToast(analysis, 'milestones');
+			assert.ok(plan);
+			assert.strictEqual(plan.type, 'improving', 'Improving trend milestone must take precedence over candidate fix feedback');
+			assert.strictEqual(plan.severity, 'info');
+			assert.ok(plan.message.includes('1 vulnerability pattern is improving — fewer occurrences detected!'));
+		});
 	});
 });
