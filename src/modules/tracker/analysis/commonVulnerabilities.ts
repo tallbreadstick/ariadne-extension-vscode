@@ -133,6 +133,23 @@ export function computeCommonVulnerabilities(
 	}> = [];
 
 	for (const cs of completedSessions) {
+		// Include prior hourly checkpoints from completed sessions so milestones carry forward
+		if (cs.hourlyCheckpoints && cs.hourlyCheckpoints.length > 0) {
+			for (let i = 0; i < cs.hourlyCheckpoints.length; i++) {
+				const cp = cs.hourlyCheckpoints[i];
+				allSessions.push({
+					sessionId: `${cs.sessionId}-hour-${i + 1}`,
+					lifecycleSummaries: cp.findings.map(f => ({
+						cweId: f.cweId,
+						type: f.type,
+						durableResolutionAt: null,
+						missingSince: null,
+						recurrenceCount: 0,
+					})),
+				});
+			}
+		}
+
 		allSessions.push({
 			sessionId: cs.sessionId,
 			lifecycleSummaries: cs.lifecycleSummaries,
