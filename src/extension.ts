@@ -384,7 +384,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					type,
 					instances: persisting,
 					progressLabel: label,
-					progressDelta: delta.toFixed(2),
+					progressDelta: formatTrendDelta(delta),
 				});
 				persistingPatterns = Math.max(0, persistingPatterns - persisting);
 				persistingMap.delete(type);

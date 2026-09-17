@@ -26,6 +26,29 @@ function severityLabel(severity: VulnerabilityMetadata['severity']): string {
 }
 
 /**
+ * Formats a file path for display in the feedback panel header.
+ * Shortens deeply nested or absolute paths to a readable compact form (e.g. ".../controller/LandlordController.java")
+ * while preserving the immediate directory context and filename.
+ */
+export function formatDisplayPath(filePath: string): string {
+    if (!filePath) {
+        return '';
+    }
+    const normalized = filePath.replace(/\\/g, '/');
+    const segments = normalized.split('/').filter(Boolean);
+
+    // Strip Windows drive letter (e.g. 'c:') and current directory references ('.')
+    const cleanSegments = segments.filter(seg => seg !== '.' && !/^[a-zA-Z]:$/.test(seg));
+
+    if (cleanSegments.length <= 2) {
+        return cleanSegments.join('/');
+    }
+
+    // For paths with 3 or more segments, show ".../<parent>/<filename>"
+    return `.../${cleanSegments.slice(-2).join('/')}`;
+}
+
+/**
  * Builds the feedback panel HTML with a loading state.
  *
  * The panel opens immediately with the vulnerability header and animated
@@ -39,7 +62,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
     const severityClass = meta.severity;
     const cweDisplay = escapeHtml(meta.cwe_id);
     const owaspDisplay = escapeHtml(meta.owasp_category);
-    const filePath = escapeHtml(meta.file_path);
+    const fullFilePath = escapeHtml(meta.file_path);
+    const displayFilePath = escapeHtml(formatDisplayPath(meta.file_path));
     const line = meta.line_number;
 
     // The warning SVG for the header box
@@ -79,10 +103,15 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 background: var(--bg);
                 color: var(--text);
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                overflow-x: hidden;
             }
 
             .panel {
                 padding: 24px 0px 28px 0px;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                box-sizing: border-box;
             }
 
             /* --- HEADER LAYOUT --- */
@@ -93,6 +122,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 padding-bottom: 24px;
                 border-bottom: 1px solid var(--border);
                 margin-bottom: 24px;
+                min-width: 0;
+                max-width: 100%;
             }
 
             .header-icon-box {
@@ -136,6 +167,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 flex-direction: column;
                 gap: 8px;
                 min-width: 0; /* Important for flex children containing text */
+                flex: 1 1 auto;
+                max-width: 100%;
             }
 
             .header-content h1 {
@@ -155,6 +188,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 gap: 10px;
                 font-size: 13px;
                 flex-wrap: wrap;
+                min-width: 0;
+                max-width: 100%;
             }
 
             /* Ensure children don't shrink inside nowrap container */
@@ -162,6 +197,15 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 flex: 0 0 auto;
                 white-space: normal;
                 word-break: break-word;
+            }
+
+            .header-sub > span.meta-file {
+                flex: 0 1 auto;
+                min-width: 0;
+                max-width: 100%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
 
             .severity-pill {
@@ -182,12 +226,25 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
 
             .meta-cwe { font-weight: 600px; color: var(--section-orange); }
             .meta-dot { color: var(--muted); }
-            .meta-file { color: var(--file-green); }
+            .meta-file {
+                color: var(--file-green);
+                cursor: default;
+            }
 
             /* --- BODY SECTIONS --- */
             .content {
-                display: grid;
+                display: flex;
+                flex-direction: column;
                 gap: 28px;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .info-section {
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
             }
 
             .section-heading {
@@ -195,6 +252,8 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 align-items: center;
                 gap: 12px;
                 margin-bottom: 12px;
+                min-width: 0;
+                max-width: 100%;
             }
 
             .section-number {
@@ -223,6 +282,9 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 letter-spacing: 0.02em;
                 text-transform: uppercase;
                 color: var(--muted);
+                min-width: 0;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .section-box {
@@ -233,10 +295,21 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 font-size: 14px;
                 color: var(--text);
                 border-radius: 4px;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                box-sizing: border-box;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .section-box p {
                 margin: 0 0 10px 0;
+                min-width: 0;
+                max-width: 100%;
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                white-space: normal;
             }
             
             .section-box p:last-child {
@@ -250,6 +323,9 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 color: var(--section-orange);
                 font-family: Consolas, "Courier New", monospace;
                 font-size: 0.95em;
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                white-space: pre-wrap;
             }
 
             /* --- SKELETON LOADING ANIMATION --- */
@@ -285,6 +361,12 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 font-size: 14px;
                 line-height: 1.6;
                 display: none;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                box-sizing: border-box;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .error-box.visible { display: block; }
@@ -295,6 +377,11 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 border-top: 1px solid var(--border);
                 font-size: 13px;
                 color: var(--muted);
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             @media (max-width: 350px) {
@@ -317,7 +404,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                         <span class="severity-pill ${severityClass}">${severity}</span>
                         <span class="meta-cwe">${cweDisplay} &middot; ${owaspDisplay}</span>
                         <span class="meta-dot">&middot;</span>
-                        <span class="meta-file">${filePath}:${line}</span>
+                        <span class="meta-file" title="${fullFilePath}:${line}">${displayFilePath}:${line}</span>
                     </div>
                 </div>
             </header>
