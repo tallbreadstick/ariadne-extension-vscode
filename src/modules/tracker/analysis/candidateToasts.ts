@@ -16,8 +16,8 @@ export function formatNewCandidateMessage(findings: FindingClassification[]): st
 	}
 
 	return findings.length === 1
-		? 'Ariadne: 1 new vulnerability detected — checking validity...'
-		: `Ariadne: ${findings.length} new vulnerabilities detected — checking validity...`;
+		? 'Ariadne: 1 new vulnerability detected — verification in progress...'
+		: `Ariadne: ${findings.length} new vulnerabilities detected — verification in progress...`;
 }
 
 /**
@@ -30,6 +30,6 @@ export function formatAbsentCandidateMessage(findings: FindingClassification[]):
 	}
 
 	return findings.length === 1
-		? 'Ariadne: 1 issue fixed — validating resolution...'
-		: `Ariadne: ${findings.length} issues fixed — validating resolution...`;
+		? 'Ariadne: 1 issue fixed — resolution status is being processed...'
+		: `Ariadne: ${findings.length} issues fixed — resolution status is being processed...`;
 }

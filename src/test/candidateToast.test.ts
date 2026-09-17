@@ -144,7 +144,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatNewCandidateMessage(obs.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: 1 new vulnerability detected — checking validity...',
+				'Ariadne: 1 new vulnerability detected — verification in progress...',
 			);
 		});
 
@@ -156,7 +156,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatNewCandidateMessage(obs.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: 2 new vulnerabilities detected — checking validity...',
+				'Ariadne: 2 new vulnerabilities detected — verification in progress...',
 			);
 		});
 	});
@@ -246,7 +246,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatAbsentCandidateMessage(step3.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: 1 issue fixed — validating resolution...',
+				'Ariadne: 1 issue fixed — resolution status is being processed...',
 			);
 		});
 
@@ -263,7 +263,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatAbsentCandidateMessage(step3.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: 2 issues fixed — validating resolution...',
+				'Ariadne: 2 issues fixed — resolution status is being processed...',
 			);
 		});
 
@@ -290,7 +290,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(analysis3.absentCandidateFindings?.length, 1, 'Scan 3 should detect vuln1 absent');
 			assert.strictEqual(analysis3.absentCandidateFindings[0].lifecycle.type, 'SQL Injection');
 			const msg3 = formatAbsentCandidateMessage(analysis3.absentCandidateFindings);
-			assert.strictEqual(msg3, 'Ariadne: 1 issue fixed — validating resolution...');
+			assert.strictEqual(msg3, 'Ariadne: 1 issue fixed — resolution status is being processed...');
 
 			// Scan 4 (just 5 seconds later in same cycle): Remove vuln2 as well
 			const scan4 = processObservation([], scan3.lifecycles, t0 + 25_000, true);
@@ -298,7 +298,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(analysis4.absentCandidateFindings?.length, 1, 'Scan 4 must detect vuln2 absent without being suppressed by previous toast');
 			assert.strictEqual(analysis4.absentCandidateFindings[0].lifecycle.type, 'Command Injection');
 			const msg4 = formatAbsentCandidateMessage(analysis4.absentCandidateFindings);
-			assert.strictEqual(msg4, 'Ariadne: 1 issue fixed — validating resolution...');
+			assert.strictEqual(msg4, 'Ariadne: 1 issue fixed — resolution status is being processed...');
 
 			// Scan 5: No changes (both still absent)
 			const scan5 = processObservation([], scan4.lifecycles, t0 + 30_000, true);

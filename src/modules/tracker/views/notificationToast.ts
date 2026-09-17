@@ -75,7 +75,7 @@ function showPersistingToast(analysis: SessionAnalysis): void {
 	if (!tryAcquire('persisting')) { return; }
 
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} ${count === 1 ? 'issue is persisting' : 'issues are persisting'} — review and address in Session Metrics.`,
+		`Ariadne: ${count} ${count === 1 ? 'issue is still persisting' : 'issues are still persisting'} — unresolved and requires attention.`,
 	);
 }
 
@@ -86,7 +86,7 @@ function showImprovingToast(analysis: SessionAnalysis): void {
 	if (!tryAcquire('improving')) { return; }
 
 	vscode.window.showInformationMessage(
-		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — check Session Metrics for details.`,
+		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — great progress, keep it up!`,
 	);
 }
 
@@ -108,7 +108,7 @@ function showRecurringToast(analysis: SessionAnalysis): void {
 	if (!tryAcquire('recurring')) { return; }
 
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} recurring ${count === 1 ? 'pattern' : 'patterns'} detected — review recurring issues in Session Metrics.`,
+		`Ariadne: ${count} previously resolved ${count === 1 ? 'issue has reappeared' : 'issues have reappeared'}!`,
 	);
 }
 
