@@ -144,7 +144,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatNewCandidateMessage(obs.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: A new vulnerability has been detected (Hardcoded Credentials). Checking validity...',
+				'Ariadne: 1 new vulnerability detected — checking validity...',
 			);
 		});
 
@@ -156,21 +156,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatNewCandidateMessage(obs.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: 2 new vulnerabilities detected (Hardcoded Credentials, SQL Injection). Checking validity...',
-			);
-		});
-
-		it('truncates to summary when more than 3 distinct types are detected', () => {
-			const f1 = createMockObserved('Type A', 'CWE-1', 'A.java', 1);
-			const f2 = createMockObserved('Type B', 'CWE-2', 'B.java', 2);
-			const f3 = createMockObserved('Type C', 'CWE-3', 'C.java', 3);
-			const f4 = createMockObserved('Type D', 'CWE-4', 'D.java', 4);
-			const obs = processObservation([f1, f2, f3, f4], [], Date.now(), true);
-
-			const msg = formatNewCandidateMessage(obs.classifications);
-			assert.strictEqual(
-				msg,
-				'Ariadne: 4 new vulnerabilities detected (Type A, Type B, Type C and 1 more). Checking validity...',
+				'Ariadne: 2 new vulnerabilities detected — checking validity...',
 			);
 		});
 	});
@@ -250,7 +236,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(analysis.absentCandidateFindings[0].lifecycle.type, 'Command Injection');
 		});
 
-		it('formats single absent candidate finding with neutral wording', () => {
+		it('formats single absent candidate finding with user-focused fixed wording', () => {
 			const finding = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
 			const t0 = 1_000_000;
 			const step1 = processObservation([finding], [], t0, true);
@@ -260,12 +246,11 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatAbsentCandidateMessage(step3.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: Vulnerability is no longer detected (SQL Injection). Resolution status is being processed...',
+				'Ariadne: 1 issue fixed — validating resolution...',
 			);
-			assert.ok(!msg.includes('fixed'), 'Should not assume finding was fixed');
 		});
 
-		it('formats multiple absent candidate findings with count and details', () => {
+		it('formats multiple absent candidate findings with count', () => {
 			const f1 = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
 			const f2 = createMockObserved('Cross-Site Scripting', 'CWE-79', 'Web.java', 20);
 			const t0 = 1_000_000;
@@ -278,7 +263,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			const msg = formatAbsentCandidateMessage(step3.classifications);
 			assert.strictEqual(
 				msg,
-				'Ariadne: 2 vulnerabilities are no longer detected (SQL Injection, Cross-Site Scripting). Resolution status is being processed...',
+				'Ariadne: 2 issues fixed — validating resolution...',
 			);
 		});
 
@@ -305,7 +290,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(analysis3.absentCandidateFindings?.length, 1, 'Scan 3 should detect vuln1 absent');
 			assert.strictEqual(analysis3.absentCandidateFindings[0].lifecycle.type, 'SQL Injection');
 			const msg3 = formatAbsentCandidateMessage(analysis3.absentCandidateFindings);
-			assert.ok(msg3.includes('SQL Injection'));
+			assert.strictEqual(msg3, 'Ariadne: 1 issue fixed — validating resolution...');
 
 			// Scan 4 (just 5 seconds later in same cycle): Remove vuln2 as well
 			const scan4 = processObservation([], scan3.lifecycles, t0 + 25_000, true);
@@ -313,7 +298,7 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(analysis4.absentCandidateFindings?.length, 1, 'Scan 4 must detect vuln2 absent without being suppressed by previous toast');
 			assert.strictEqual(analysis4.absentCandidateFindings[0].lifecycle.type, 'Command Injection');
 			const msg4 = formatAbsentCandidateMessage(analysis4.absentCandidateFindings);
-			assert.ok(msg4.includes('Command Injection'));
+			assert.strictEqual(msg4, 'Ariadne: 1 issue fixed — validating resolution...');
 
 			// Scan 5: No changes (both still absent)
 			const scan5 = processObservation([], scan4.lifecycles, t0 + 30_000, true);

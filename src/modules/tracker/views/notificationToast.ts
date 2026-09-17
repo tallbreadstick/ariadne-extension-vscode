@@ -74,79 +74,41 @@ function showPersistingToast(analysis: SessionAnalysis): void {
 	if (count === 0) { return; }
 	if (!tryAcquire('persisting')) { return; }
 
-	// Build a human-readable list of the persisting vulnerability types
-	const persistingTypes = analysis.deltas
-		.filter((d) => d.status === 'persisting')
-		.map((d) => d.vulnerability.type);
-
-	// Collapse into a summary when there are many
-	const detail = persistingTypes.length <= 3
-		? persistingTypes.join(', ')
-		: `${persistingTypes.slice(0, 3).join(', ')} and ${persistingTypes.length - 3} more`;
-
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} ${count === 1 ? 'issue is persisting' : 'issues are persisting'} — ${detail}`,
+		`Ariadne: ${count} ${count === 1 ? 'issue is persisting' : 'issues are persisting'} — review and address in Session Metrics.`,
 	);
 }
 
-
 // Shows an informational toast for improving trends
-
 function showImprovingToast(analysis: SessionAnalysis): void {
 	const count = analysis.improvingTrends;
 	if (count === 0) { return; }
 	if (!tryAcquire('improving')) { return; }
 
-	const improvingTypes = analysis.deltas
-		.filter((d) => d.status === 'improving')
-		.map((d) => d.vulnerability.type);
-
-	const detail = improvingTypes.length <= 3
-		? improvingTypes.join(', ')
-		: `${improvingTypes.slice(0, 3).join(', ')} and ${improvingTypes.length - 3} more`;
-
 	vscode.window.showInformationMessage(
-		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — ${detail}`,
+		`Ariadne: ${count} ${count === 1 ? 'issue is' : 'issues are'} improving — check Session Metrics for details.`,
 	);
 }
 
 // Shows an informational toast for resolved vulnerabilities
-
 function showResolvedToast(analysis: SessionAnalysis): void {
 	const count = analysis.resolvedThisSession;
 	if (count === 0) { return; }
 	if (!tryAcquire('resolved')) { return; }
 
-	const resolvedTypes = analysis.deltas
-		.filter((d) => d.status === 'resolved')
-		.map((d) => d.vulnerability.type);
-
-	const detail = resolvedTypes.length <= 3
-		? resolvedTypes.join(', ')
-		: `${resolvedTypes.slice(0, 3).join(', ')} and ${resolvedTypes.length - 3} more`;
-
 	vscode.window.showInformationMessage(
-		`Ariadne: ${count} ${count === 1 ? 'pattern' : 'patterns'} resolved — ${detail}`,
+		`Ariadne: ${count} ${count === 1 ? 'pattern resolved' : 'patterns resolved'} — check Session Metrics for details.`,
 	);
 }
 
 // Shows a warning toast for recurring patterns
-
 function showRecurringToast(analysis: SessionAnalysis): void {
 	const count = analysis.recurringPatterns;
 	if (count === 0) { return; }
 	if (!tryAcquire('recurring')) { return; }
 
-	const recurringTypes = analysis.deltas
-		.filter((d) => d.status === 'recurring')
-		.map((d) => d.vulnerability.type);
-
-	const detail = recurringTypes.length <= 3
-		? recurringTypes.join(', ')
-		: `${recurringTypes.slice(0, 3).join(', ')} and ${recurringTypes.length - 3} more`;
-
 	vscode.window.showWarningMessage(
-		`Ariadne: ${count} recurring ${count === 1 ? 'pattern' : 'patterns'} detected — ${detail}`,
+		`Ariadne: ${count} recurring ${count === 1 ? 'pattern' : 'patterns'} detected — review recurring issues in Session Metrics.`,
 	);
 }
 

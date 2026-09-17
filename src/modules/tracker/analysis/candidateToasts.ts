@@ -15,14 +15,9 @@ export function formatNewCandidateMessage(findings: FindingClassification[]): st
 		return '';
 	}
 
-	const types = Array.from(new Set(findings.map((f) => f.lifecycle.type)));
-	const detail = types.length <= 3
-		? types.join(', ')
-		: `${types.slice(0, 3).join(', ')} and ${types.length - 3} more`;
-
 	return findings.length === 1
-		? `Ariadne: A new vulnerability has been detected (${detail}). Checking validity...`
-		: `Ariadne: ${findings.length} new vulnerabilities detected (${detail}). Checking validity...`;
+		? 'Ariadne: 1 new vulnerability detected — checking validity...'
+		: `Ariadne: ${findings.length} new vulnerabilities detected — checking validity...`;
 }
 
 /**
@@ -34,12 +29,7 @@ export function formatAbsentCandidateMessage(findings: FindingClassification[]):
 		return '';
 	}
 
-	const types = Array.from(new Set(findings.map((f) => f.lifecycle.type)));
-	const detail = types.length <= 3
-		? types.join(', ')
-		: `${types.slice(0, 3).join(', ')} and ${types.length - 3} more`;
-
 	return findings.length === 1
-		? `Ariadne: Vulnerability is no longer detected (${detail}). Resolution status is being processed...`
-		: `Ariadne: ${findings.length} vulnerabilities are no longer detected (${detail}). Resolution status is being processed...`;
+		? 'Ariadne: 1 issue fixed — validating resolution...'
+		: `Ariadne: ${findings.length} issues fixed — validating resolution...`;
 }
