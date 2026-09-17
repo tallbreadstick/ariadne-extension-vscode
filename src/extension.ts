@@ -338,7 +338,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		// can detect "improving" at the type level (some instances fixed,
 		// some still active).
 		const typeResolvedCount = new Map<string, number>();
-		const typeActiveCount = new Map<string, number>();
+		const typePersistingCount = new Map<string, number>();
 		const typeTotalCount = new Map<string, number>();
 
 		for (const flc of lifecycles) {
@@ -348,30 +348,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (flc.lifecycleState === 'recurring') {
 				recurringPatterns++;
 				recurringMap.set(flc.type, (recurringMap.get(flc.type) ?? 0) + 1);
-				typeActiveCount.set(flc.type, (typeActiveCount.get(flc.type) ?? 0) + 1);
 			} else if (flc.lifecycleState === 'resolved' || flc.durableResolutionAt !== null) {
-				resolvedThisSession++;
-				resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
-				typeResolvedCount.set(flc.type, (typeResolvedCount.get(flc.type) ?? 0) + 1);
+				const isResolvedInActiveSession = activeSession !== null
+					&& flc.durableResolutionAt !== null
+					&& flc.durableResolutionAt >= activeSession.startedAt;
+				if (isResolvedInActiveSession) {
+					resolvedThisSession++;
+					resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
+					typeResolvedCount.set(flc.type, (typeResolvedCount.get(flc.type) ?? 0) + 1);
+				}
 			} else if (flc.lifecycleState === 'persisting') {
 				persistingPatterns++;
 				persistingMap.set(flc.type, (persistingMap.get(flc.type) ?? 0) + 1);
-				typeActiveCount.set(flc.type, (typeActiveCount.get(flc.type) ?? 0) + 1);
-			} else {
-				// 'active', 'candidate', 'improving' (FLC-level)
-				typeActiveCount.set(flc.type, (typeActiveCount.get(flc.type) ?? 0) + 1);
+				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
+			} else if (flc.lifecycleState === 'improving') {
+				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
 			}
 		}
 
 		// ── Type-level improving detection ───────────────────────────
 		// A vulnerability type is "improving" when it has at least one
-		// resolved instance AND at least one still-active instance.
-		// This means partial progress has been made on this type.
+		// resolved instance AND at least one still-persisting instance.
+		// Recurring findings are regressions (relapses), never improving trends.
 		for (const [type, resolved] of typeResolvedCount.entries()) {
-			const active = typeActiveCount.get(type) ?? 0;
+			const persisting = typePersistingCount.get(type) ?? 0;
 			const total = typeTotalCount.get(type) ?? 0;
-			if (resolved > 0 && active > 0) {
-				improvingTrends++; // count improving TYPES (not instances)
+			if (resolved > 0 && persisting > 0) {
+				improvingTrends += persisting; // count improving instances
 				const progressRatio = resolved / total;
 				const delta = Math.round(progressRatio * 10 * 100) / 100;
 				const label = progressRatio >= 0.7 ? 'Major progress'
@@ -379,10 +382,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					: 'Some progress';
 				improvingMap.set(type, {
 					type,
-					instances: active,
+					instances: persisting,
 					progressLabel: label,
 					progressDelta: formatTrendDelta(delta),
 				});
+				persistingPatterns = Math.max(0, persistingPatterns - persisting);
+				persistingMap.delete(type);
 			}
 		}
 
@@ -752,6 +757,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					previousScanSnapshot,
 					lifecycles,
 					activeSession?.trendComparisonByKey,
+					activeSession?.startedAt,
 				);
 				latestSessionAnalysis = sessionAnalysis;
 

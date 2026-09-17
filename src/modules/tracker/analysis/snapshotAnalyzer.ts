@@ -87,6 +87,7 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
  * @param previousScan - The previous scan snapshot, or null
  * @param lifecycles - Current lifecycle records (for F/P computation)
  * @param trendComparisonByKey - Frozen comparison set from prior session (for T computation)
+ * @param sessionStartedAt - Start timestamp of the current active session (for scoping resolutions)
  */
 export function buildSessionAnalysis(
 	classifications: FindingClassification[],
@@ -94,6 +95,7 @@ export function buildSessionAnalysis(
 	previousScan: ScanSnapshot | null,
 	lifecycles?: FindingLifecycleRecord[],
 	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null,
+	sessionStartedAt?: number | null,
 ): SessionAnalysis {
 	const activeFindings = currentScan.vulnerabilities;
 
@@ -108,7 +110,7 @@ export function buildSessionAnalysis(
 
 	// ── Per-type aggregation for type-level improving detection ──
 	const typeResolvedCount = new Map<string, number>();
-	const typeActiveCount = new Map<string, number>();
+	const typePersistingCount = new Map<string, number>();
 	const typeTotalCount = new Map<string, number>();
 
 	for (const classification of classifications) {
@@ -122,6 +124,19 @@ export function buildSessionAnalysis(
 
 		const status = classification.status as VulnerabilityStatus;
 		const type = classification.lifecycle.type;
+
+		// Check if resolved finding was resolved in this session.
+		// Historical resolutions from prior sessions must not count toward this session's
+		// resolved count or trigger type-level improving trends on reintroduced instances.
+		const isResolvedThisSession = status === 'resolved' && (
+			sessionStartedAt === undefined || sessionStartedAt === null ||
+			(classification.lifecycle.durableResolutionAt !== null && classification.lifecycle.durableResolutionAt >= sessionStartedAt) ||
+			(classification.lifecycle.provisionalResolutionAt !== null && classification.lifecycle.provisionalResolutionAt >= sessionStartedAt)
+		);
+
+		if (status === 'resolved' && !isResolvedThisSession) {
+			continue;
+		}
 
 		// Find the matching Vulnerability in the current scan for the delta
 		const matchedVuln = findMatchingVulnerability(
@@ -145,12 +160,12 @@ export function buildSessionAnalysis(
 		switch (status) {
 			case 'persisting':
 				persistingPatterns++;
-				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
+				typePersistingCount.set(type, (typePersistingCount.get(type) ?? 0) + 1);
 				break;
 			case 'improving':
 				// FLC-level improving (occurrence count reduction) — still count
 				improvingTrends++;
-				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
+				typePersistingCount.set(type, (typePersistingCount.get(type) ?? 0) + 1);
 				break;
 			case 'resolved':
 				resolvedThisSession++;
@@ -158,22 +173,23 @@ export function buildSessionAnalysis(
 				break;
 			case 'recurring':
 				recurringPatterns++;
-				typeActiveCount.set(type, (typeActiveCount.get(type) ?? 0) + 1);
 				break;
 		}
 	}
 
 	// ── Type-level improving detection ───────────────────────────
 	// A vulnerability type is "improving" when it has at least one
-	// resolved instance AND at least one still-active instance.
+	// resolved instance AND at least one still-persisting instance.
+	// Recurring findings are regressions (relapses), never improving trends.
 	for (const [type, resolved] of typeResolvedCount.entries()) {
-		const active = typeActiveCount.get(type) ?? 0;
-		if (resolved > 0 && active > 0) {
-			improvingTrends++;
-			// Mark the still-active deltas for this type as 'improving'
+		const persisting = typePersistingCount.get(type) ?? 0;
+		if (resolved > 0 && persisting > 0) {
+			// Mark the still-persisting deltas for this type as 'improving'
 			for (const d of deltas) {
 				if (d.vulnerability.type === type && d.status === 'persisting') {
 					(d as { status: VulnerabilityStatus }).status = 'improving';
+					improvingTrends++;
+					persistingPatterns = Math.max(0, persistingPatterns - 1);
 				}
 			}
 		}
@@ -400,7 +416,7 @@ export function toSessionMetrics(
 		low: analysis.severityCounts.low,
 		trends: {
 			persistingPatterns: analysis.persistingPatterns,
-			improvingTrends: analysis.improvingTrends,
+			improvingTrends: improvingItems.reduce((sum, item) => sum + item.instances, 0),
 			resolvedThisSession: analysis.resolvedThisSession,
 			recurringPatterns: analysis.recurringPatterns,
 			persistingItems: persistingItems.length > 0 ? persistingItems : undefined,
