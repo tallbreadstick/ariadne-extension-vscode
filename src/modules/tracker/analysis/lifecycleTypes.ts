@@ -395,6 +395,12 @@ export interface SessionRecord {
 	lifecycleSummaries: FindingLifecycleRecord[];
 
 	/**
+	 * Hourly full scan checkpoints captured during this session without ending the session.
+	 * Used by Common Vulnerabilities to detect multi-hour persistence during lab sessions.
+	 */
+	hourlyCheckpoints?: SessionCheckpoint[];
+
+	/**
 	 * The session ID of the prior completed session used as the baseline for Trend (T),
 	 * or null if no prior completed session existed (e.g. first session or prior incomplete).
 	 */

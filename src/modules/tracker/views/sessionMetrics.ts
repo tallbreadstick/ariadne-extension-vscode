@@ -9,6 +9,7 @@
 import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
+import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
@@ -118,10 +119,11 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 				? 'progress-clear'
 				: 'progress-major';
 		const deltaText = item.progressDelta === 'N/A'
-			? ''
+			? ' (N/A)'
 			: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		return /* html */ `
 			<div class="trend-sub-item">
+				<span class="sub-label">${item.type || 'Unknown'}</span>
 				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
@@ -210,7 +212,7 @@ function buildCommonVulnerabilitiesPanel(
 
 	if (!items || items.length === 0) {
 		const totalSessions = totalSessionsAnalyzed ?? items?.[0]?.totalSessions ?? 0;
-		const emptyMessage = totalSessions < 2
+		const emptyMessage = totalSessions < COMMON_VULN_POLICY.K
 			? 'Not enough session data yet'
 			: 'No common vulnerabilities';
 		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;
@@ -676,6 +678,48 @@ const CSS = /* css */ `
 		overflow: hidden;
 	}
 
+	.signin-state {
+		display: grid;
+		gap: 10px;
+		align-content: center;
+		justify-items: center;
+		min-height: 220px;
+		padding: 32px 20px;
+		text-align: center;
+	}
+
+	.signin-title {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.signin-copy {
+		margin: 0;
+		font-size: 12px;
+		line-height: 1.5;
+		max-width: 340px;
+		color: var(--muted);
+	}
+
+	.signin-cta {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-top: 6px;
+		padding: 7px 14px;
+		border-radius: 2px;
+		background: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
+		text-decoration: none;
+		font-size: 13px;
+	}
+
+	.signin-cta:hover {
+		background: var(--vscode-button-hoverBackground);
+	}
+
 	@media (max-width: 520px) {
 		body { padding: 12px; }
 		.metrics-grid { grid-template-columns: 1fr; gap: 8px; }
@@ -698,7 +742,32 @@ const CSS = /* css */ `
  * @param metrics - Aggregated session metrics from the current scan session.
  * @returns A complete HTML string ready to be set on a VS Code webview.
  */
-export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
+export function buildSessionMetricsHtml(
+	metrics: SessionMetrics,
+	options: { signedIn?: boolean } = {},
+): string {
+	if (options.signedIn === false) {
+		return /* html */ `<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Session Metrics</title>
+		<style>${CSS}</style>
+	</head>
+	<body>
+		<section class="signin-state" role="status">
+			<p class="signin-title">Sign in required</p>
+			<p class="signin-copy">
+				GitHub sign-in is needed to run scans and show session metrics for
+				this workspace.
+			</p>
+			<a class="signin-cta" href="command:ariadne-extension-vscode.openSignInPanel">Sign in to Ariadne</a>
+		</section>
+	</body>
+</html>`;
+	}
+
 	const { critical, high, medium, low, trends } = metrics;
 
 	const persistingSubItems = buildBasicSubItems(trends.persistingItems, trends.persistingPatterns);

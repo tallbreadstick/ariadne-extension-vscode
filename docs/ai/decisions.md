@@ -17,7 +17,7 @@ Within each section, newest decision at the top.
 - status: accepted
 - context: The SRS initially specified a direct external LLM API with independent API key management. However, the VS Code ecosystem provides native Copilot integration via the `@github/copilot-sdk`. Using the Copilot SDK simplifies authentication (leverages existing GitHub OAuth) and avoids requiring students to manage separate API keys.
 - decision: Use `@github/copilot-sdk` for LLM-powered conceptual explanations instead of a standalone OpenAI API integration.
-- consequences: Requires users to have GitHub Copilot access. Adds a GitHub OAuth sign-in flow to the extension. Removes the need for API key configuration. Model selection is configurable via `ariadne.copilot.model` setting.
+- consequences: Requires users to have GitHub Copilot access. Adds a GitHub OAuth sign-in flow to the extension. Removes the need for API key configuration. Explanations are locked to Gemini Flash.
 - source: Implementation decision during development; `package.json` dependency
 
 ### Diagnostic-only design — never generate, suggest, or complete code
@@ -117,6 +117,19 @@ Within each section, newest decision at the top.
 - supersedes: <title of previous decision> (if applicable)
 -->
 
+### Hourly auto full scan with seamless session rollover and K=3 policy
+
+- date: 2026-09-16
+- status: accepted
+- context: Students attend a single 3-hour lab session per week. Previously, observation session boundaries were tied strictly to VS Code window open/close. Under that model, students took 2–3 weeks (2–3 lab sessions) to generate enough session records to unlock the Common Vulnerabilities panel (which required $K=2$ or $K=3$). Mentor feedback indicated that students should be able to see their Common Vulnerabilities within a single 3-hour lab class. Furthermore, university computer labs face tight turnover schedules where the room must be vacated immediately at the end of Hour 3 for the next class; surfacing common vulnerabilities during Hour 3 provides students with a dedicated remediation and reflection window with instructor guidance before class dismissal.
+- decision:
+  1. Add an hourly timer (`HOURLY_SCAN_INTERVAL_MS = 60 * 60 * 1000`) that triggers an automatic workspace-wide full scan (`Analyze`) every 60 minutes while an active session is running.
+  2. Finalize the current observation session cleanly as `completed` and seamlessly roll over into the next session using the latest observation state as the new baseline checkpoint.
+  3. Align the Common Vulnerabilities entry threshold to $K=3$ (`COMMON_VULN_POLICY.K = 3`), corresponding to the 3 hourly checkpoints of a 3-hour lab class.
+  4. Sort Common Vulnerabilities descending by `sessionCount` then `activeFindingCount` so the most persistent and active security gaps appear at the top.
+- consequences: Students generate 3 full session checkpoints during a 3-hour lab session, unlocking Common Vulnerabilities as they enter Hour 3 rather than after class ends. This ensures students have actionable instructional feedback while still in the lab environment. Rollover requires zero user interaction and creates cleanly completed sessions in `completedSessions`.
+- task: docs/ai/tasks/2026-09-16-hourly-auto-full-scan.md
+
 ### Replace raw scan snapshots with finding lifecycle records
 
 - date: 2026-09-03
@@ -180,6 +193,15 @@ Within each section, newest decision at the top.
 - decision: Implement a backward-searching "Skip Rule" in `SessionStore.loadPriorCompletedSession()`. When a new session initializes its baseline, the store traverses `completedSessions` in reverse chronological order, skipping any session where `status !== 'completed'`. The first session with `status === 'completed'` is returned. Its final checkpoint findings and lifecycle summaries are frozen into `activeSession.trendComparisonByKey` via `extractTrendComparisonBaseline()`. If no completed session exists in storage (e.g., Session 1 or all prior sessions were incomplete), `null` is returned and $T$ gracefully evaluates to `N/A`.
 - consequences: Incomplete sessions remain preserved for auditing and debugging, but never corrupt cross-session metrics. When Ervin and Kenn implement the $T$ formula, they receive a clean, pre-calculated, frozen comparison baseline ($C$) and denominator without having to navigate storage, handle incomplete edge cases, or risk runtime division-by-zero errors.
 - task: docs/ai/tasks/2026-09-12-pull-previous-completed-session.md
+
+### GitHub sign-in required for all extension features
+
+- date: 2026-09-14
+- status: accepted
+- context: Upcoming anonymous activity collection needs explicit consent before students use Ariadne. Previously only Ask Ariadne required GitHub sign-in; the SAST engine spawned on activation regardless of auth.
+- decision: Gate the entire product on GitHub OAuth plus terms and analytics consent. The `ariadne session` process starts only after a valid signed-in state, and is killed on sign-out (diagnostics cleared). The sidebar is an Account / Scripting / Session accordion. AI explanations are locked to Gemini Flash (`gemini-3.5-flash`); other Copilot models are not selectable. Rule scripts are initialized with `ariadne init` and reset with `ariadne init --force` after a modal confirmation.
+- consequences: Unsigned users see no live scan results. Existing GitHub sessions still need current terms version (`1.1`) because the terms now cover scanning, not only AI feedback. Session accordion remains a placeholder.
+- task: docs/ai/tasks/2026-09-14-sidebar-settings-auth-gate.md
 
 ### Common Vulnerabilities — Cross-Session Type-Level Awareness Metric
 

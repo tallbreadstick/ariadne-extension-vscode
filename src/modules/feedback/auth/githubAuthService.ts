@@ -72,11 +72,11 @@ export class GitHubAuthService {
 		analyticsConsent: boolean;
 	}): Promise<void> {
 		if (!options.termsAccepted) {
-			throw new Error('You must accept the Terms and Conditions to sign in.');
+			throw new Error('You must accept the Terms of Use to sign in.');
 		}
 		if (!options.analyticsConsent) {
 			throw new Error(
-				'You must consent to anonymous activity collection to use AI feedback.',
+				'You must accept the Privacy Policy to sign in.',
 			);
 		}
 
@@ -93,7 +93,7 @@ export class GitHubAuthService {
 			{
 				createIfNone: {
 					detail:
-						'Ariadne uses your GitHub account to power AI vulnerability explanations via GitHub Copilot.',
+						'Ariadne requires a GitHub account to enable scanning, rule scripts, and AI explanations.',
 				},
 				clearSessionPreference: false,
 			},

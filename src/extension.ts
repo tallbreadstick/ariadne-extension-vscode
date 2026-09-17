@@ -27,13 +27,14 @@ import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics'
 import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
 import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
 import { buildTermsOfUseHtml } from './modules/feedback/views/termsOfUsePanel.js';
+import { buildPrivacyPolicyHtml } from './modules/feedback/views/privacyPolicyPanel.js';
 import { GitHubAuthService } from './modules/feedback/auth/githubAuthService.js';
 import type { AuthPanelState, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
 import {
-	COPILOT_MODEL_OPTIONS,
 	DEFAULT_COPILOT_MODEL,
 	type SidebarSettingsViewModel,
 } from './modules/feedback/settings/extensionSettings.js';
+import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
 import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js';
 import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
@@ -70,6 +71,12 @@ import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.j
 import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Default interval (ms) for the hourly auto full scan and session rollover.
+ * Set to 60 minutes (3,600,000 ms) to align with 1-hour instructional lab milestones.
+ */
+export const HOURLY_SCAN_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Maps a presentation-layer Vulnerability to the VulnerabilityMetadata
@@ -125,16 +132,26 @@ function copilotRuntimeOptions(
 	};
 }
 
+function getWorkspaceRoot(): string | undefined {
+	return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
 function getSidebarSettings(): SidebarSettingsViewModel {
-	const config = vscode.workspace.getConfiguration('ariadne');
+	const root = getWorkspaceRoot();
 	return {
-		copilotModel: config.get<string>('copilot.model', DEFAULT_COPILOT_MODEL),
-		copilotModelOptions: COPILOT_MODEL_OPTIONS,
+		copilotModel: DEFAULT_COPILOT_MODEL,
+		rulesPresent: Boolean(root && fs.existsSync(join(root, 'rules', 'main.ariadne'))),
 	};
 }
 
-function isCopilotModel(value: string): value is typeof COPILOT_MODEL_OPTIONS[number] {
-	return (COPILOT_MODEL_OPTIONS as readonly string[]).includes(value);
+function requireWorkspaceRoot(): string | undefined {
+	const root = getWorkspaceRoot();
+	if (!root) {
+		vscode.window.showErrorMessage(
+			'Ariadne: Open a folder to manage rule scripts.',
+		);
+	}
+	return root;
 }
 function resolveExpandedVulnKey(
 	vulns: Vulnerability[],
@@ -152,9 +169,14 @@ function resolveExpandedVulnKey(
 	return stored;
 }
 
-function buildVulnsHtml(vulns: Vulnerability[], store: SessionStore): string {
+function buildVulnsHtml(
+	vulns: Vulnerability[],
+	store: SessionStore,
+	signedIn: boolean,
+): string {
 	return buildActiveVulnerabilitiesHtml(vulns, {
 		expandedKey: resolveExpandedVulnKey(vulns, store),
+		signedIn,
 	});
 }
 
@@ -167,6 +189,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const store = new SessionStore(context);
 	const githubAuth = new GitHubAuthService(context);
 	const copilotManager = new CopilotClientManager();
+	const session = runSession();
+	let rulesLanguageRegistered = false;
+	let featuresUnlocked = false;
+	let startScanner: () => void = () => undefined;
+	let stopScanner: () => void = () => undefined;
 
 	// ── Migrate from legacy snapshot storage ───────────────────────────
 	void store.migrateFromLegacy();
@@ -449,11 +476,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	function refreshSessionMetricsPanel(): void {
 		const metrics = buildCurrentSessionMetrics();
-		sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(metrics));
+		sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(metrics, {
+			signedIn: featuresUnlocked,
+		}));
 	}
 
-	let initialVulnsHtml = buildVulnsHtml([], store);
-	let initialMetricsHtml = buildSessionMetricsHtml(buildCurrentSessionMetrics());
+	let initialVulnsHtml = buildVulnsHtml([], store, false);
+	let initialMetricsHtml = buildSessionMetricsHtml(buildCurrentSessionMetrics(), {
+		signedIn: false,
+	});
 
 	// Restore UI from lifecycle data if available
 	if (lifecycles.length > 0) {
@@ -473,7 +504,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildVulnsHtml(latestVulnerabilities, store),
+		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -485,7 +516,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 	sessionMetricsProvider.setResolveHtml(() =>
-		buildSessionMetricsHtml(buildCurrentSessionMetrics()),
+		buildSessionMetricsHtml(buildCurrentSessionMetrics(), {
+			signedIn: featuresUnlocked,
+		}),
 	);
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
@@ -505,7 +538,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				try {
 					await githubAuth.signIn({
 						termsAccepted: msg.termsAccepted === true,
-						analyticsConsent: msg.analyticsConsent === true,
+						analyticsConsent: msg.privacyAccepted === true || msg.analyticsConsent === true,
 					});
 					await refreshSignInPanel(signInProvider);
 					const token = await githubAuth.getAccessToken();
@@ -513,8 +546,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						copilotManager.prewarm(copilotRuntimeOptions(context, token));
 					}
 					vscode.window.showInformationMessage(
-						'Ariadne: Signed in to GitHub. AI feedback will use your Copilot allowance.',
+						'Ariadne: Signed in to GitHub. Scanning and AI feedback are enabled.',
 					);
+					startScanner();
 				} catch (error: unknown) {
 					const message =
 						error instanceof Error ? error.message : 'GitHub sign-in failed.';
@@ -535,8 +569,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				try {
 					await githubAuth.signOut();
 					await copilotManager.dispose();
+					stopScanner();
 					await refreshSignInPanel(signInProvider);
-					vscode.window.showInformationMessage('Ariadne: Signed out of GitHub.');
+					vscode.window.showInformationMessage(
+						'Ariadne: Signed out of GitHub. Scanning is paused until you sign in.',
+					);
 				} catch (error: unknown) {
 					const message =
 						error instanceof Error ? error.message : 'GitHub sign-out failed.';
@@ -550,16 +587,73 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
-			if (msg.type === 'update-copilot-model' && typeof msg.model === 'string') {
-				if (isCopilotModel(msg.model)) {
-					const config = vscode.workspace.getConfiguration('ariadne');
-					await config.update(
-						'copilot.model',
-						msg.model,
-						vscode.ConfigurationTarget.Global,
+			if (msg.type === 'init-rule-scripts') {
+				if (!(await githubAuth.isAuthenticated())) {
+					await focusSignInSidebar();
+					vscode.window.showInformationMessage(
+						'Ariadne: Sign in to GitHub to use the extension.',
 					);
+					return;
 				}
-				await refreshSignInPanel(signInProvider);
+				const root = requireWorkspaceRoot();
+				if (!root) {
+					return;
+				}
+				try {
+					await vscode.window.withProgress(
+						{
+							location: vscode.ProgressLocation.Notification,
+							title: 'Ariadne: initializing rule scripts…',
+						},
+						() => initRuleScripts(root),
+					);
+					session.restart();
+					await refreshSignInPanel(signInProvider);
+					vscode.window.showInformationMessage('Ariadne: Rule scripts initialized.');
+				} catch (error: unknown) {
+					const message = error instanceof Error ? error.message : String(error);
+					vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				}
+				return;
+			}
+
+			if (msg.type === 'reset-rule-scripts') {
+				if (!(await githubAuth.isAuthenticated())) {
+					await focusSignInSidebar();
+					vscode.window.showInformationMessage(
+						'Ariadne: Sign in to GitHub to use the extension.',
+					);
+					return;
+				}
+				const root = requireWorkspaceRoot();
+				if (!root) {
+					return;
+				}
+				const confirmed = await vscode.window.showWarningMessage(
+					'Reset Ariadne rule scripts to the default set? This overwrites the current scripts in this workspace.',
+					{ modal: true },
+					'Reset',
+				);
+				if (confirmed !== 'Reset') {
+					return;
+				}
+				try {
+					await vscode.window.withProgress(
+						{
+							location: vscode.ProgressLocation.Notification,
+							title: 'Ariadne: resetting rule scripts…',
+						},
+						() => resetRuleScripts(root),
+					);
+					session.restart();
+					await refreshSignInPanel(signInProvider);
+					vscode.window.showInformationMessage(
+						'Ariadne: Rule scripts restored to defaults.',
+					);
+				} catch (error: unknown) {
+					const message = error instanceof Error ? error.message : String(error);
+					vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				}
 			}
 		},
 	);
@@ -576,25 +670,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		githubAuth.onDidChangeAuth(() => {
-			void refreshSignInPanel(signInProvider);
-		}),
-		vscode.workspace.onDidChangeConfiguration((event) => {
-			if (event.affectsConfiguration('ariadne.copilot.model')) {
-				void refreshSignInPanel(signInProvider);
-			}
+			void (async () => {
+				await refreshSignInPanel(signInProvider);
+				if (await githubAuth.isAuthenticated()) {
+					startScanner();
+				} else {
+					stopScanner();
+				}
+			})();
 		}),
 		{ dispose: () => { void copilotManager.dispose(); } },
 	);
-
-	void githubAuth.isAuthenticated().then(async (signedIn) => {
-		if (!signedIn) {
-			return;
-		}
-		const token = await githubAuth.getAccessToken();
-		if (token) {
-			copilotManager.prewarm(copilotRuntimeOptions(context, token));
-		}
-	});
 
 	// ── Diagnostic / inline highlight manager ───────────────────────────
 	const diagnosticManager = new DiagnosticManager(context);
@@ -619,8 +705,106 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	}
 
+	// ── Hourly Auto Full Scan & Session Rollover ────────────────────────
+	let hourlyScanTimer: ReturnType<typeof setInterval> | null = null;
+	let hourlySessionCount = 1;
+
+	function startHourlyScanTimer(): void {
+		if (hourlyScanTimer !== null) {
+			return;
+		}
+		console.log('[Ariadne] Started hourly auto full scan timer (60m interval).');
+		hourlyScanTimer = setInterval(async () => {
+			await performHourlySessionRollover();
+		}, HOURLY_SCAN_INTERVAL_MS);
+	}
+
+	function stopHourlyScanTimer(): void {
+		if (hourlyScanTimer !== null) {
+			clearInterval(hourlyScanTimer);
+			hourlyScanTimer = null;
+			console.log('[Ariadne] Stopped hourly auto full scan timer.');
+		}
+	}
+
+	async function performHourlySessionRollover(): Promise<void> {
+		if (!activeSession || !featuresUnlocked) {
+			return;
+		}
+
+		console.log(`[Ariadne] Hourly auto full scan checkpoint triggered for session ${activeSession.sessionId}...`);
+
+		// Cancel any pending save settlement timer
+		cancelSettlement('hourly session rollover');
+
+		// Flush pending editor buffers so engine's forest has latest content
+		flushAllPendingUpdates(session);
+
+		try {
+			const rolloverFindings = await new Promise<VulnerabilityMetadata[]>((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					reject(new Error('Hourly auto scan timed out (5000ms)'));
+				}, 5000);
+
+				const sub = session.onFindings((findings) => {
+					clearTimeout(timeout);
+					sub.dispose();
+					resolve(findings);
+				});
+
+				session.send({ type: 'Analyze', path: null });
+			});
+
+			const timestamp = Date.now();
+			const observed = metadataToObservedFindings(rolloverFindings);
+			updateSessionLatest(activeSession, observed, timestamp);
+
+			const result = processObservation(
+				observed,
+				lifecycles,
+				timestamp,
+				true,
+				getWorkspaceFileContent,
+			);
+			lifecycles = result.lifecycles;
+			void store.saveFindingLifecycles(lifecycles);
+
+			// Record hourly checkpoint on active session without ending or resetting the session
+			hourlySessionCount++;
+			if (!activeSession.hourlyCheckpoints) {
+				activeSession.hourlyCheckpoints = [];
+			}
+			activeSession.hourlyCheckpoints.push({
+				timestamp,
+				findings: observed,
+			});
+			void store.saveActiveSession(activeSession);
+			console.log(`[Ariadne] Recorded hourly full scan checkpoint #${hourlySessionCount} for session ${activeSession.sessionId}.`);
+
+			const currentSnapshot = metadataToScanSnapshot(rolloverFindings, await store.nextScanId());
+			const sessionAnalysis = buildSessionAnalysis(
+				result.classifications,
+				currentSnapshot,
+				previousScanSnapshot,
+				lifecycles,
+				activeSession.trendComparisonByKey,
+			);
+			latestSessionAnalysis = sessionAnalysis;
+			previousScanSnapshot = currentSnapshot;
+
+			refreshSessionMetricsPanel();
+			updateStatusBar(sessionAnalysis);
+
+			vscode.window.setStatusBarMessage(
+				`$(check) Ariadne: Hourly checkpoint completed (Hour ${hourlySessionCount})`,
+				5000,
+			);
+		} catch (err) {
+			console.warn('[Ariadne] Hourly auto full scan rollover failed:', err);
+		}
+	}
+
 	// ── Ariadne engine session ───────────────────────────────────────────
-	const session = runSession();
 	registerDocumentEvents(
 		context,
 		session,
@@ -638,14 +822,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 		},
 	);
-	registerRuleLanguage(context);
+
+	startScanner = () => {
+		featuresUnlocked = true;
+		session.start();
+		if (!rulesLanguageRegistered) {
+			registerRuleLanguage(context);
+			rulesLanguageRegistered = true;
+		}
+		activeVulnsProvider.updateHtml(
+			buildVulnsHtml(latestVulnerabilities, store, true),
+		);
+		refreshSessionMetricsPanel();
+		if (activeSession) {
+			startHourlyScanTimer();
+		}
+	};
+
+	stopScanner = () => {
+		featuresUnlocked = false;
+		stopHourlyScanTimer();
+		session.kill();
+		diagnosticManager.clearAll();
+		latestVulnerabilities = [];
+		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false));
+		activeVulnsProvider.setBadgeCount(0);
+		refreshSessionMetricsPanel();
+		console.log('[Ariadne] Scanner stopped (signed out).');
+	};
+
+	void githubAuth.isAuthenticated().then(async (signedIn) => {
+		if (!signedIn) {
+			return;
+		}
+		startScanner();
+		const token = await githubAuth.getAccessToken();
+		if (token) {
+			copilotManager.prewarm(copilotRuntimeOptions(context, token));
+		}
+	});
 
 	// ── Wire findings from the engine to every UI surface ───────────────
 	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
 		// ── 1. Active Vulnerabilities panel (always updated) ────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
-		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store));
+		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
 		// ── 2. Session Metrics panel (always updated on live scan) ──────
@@ -719,6 +941,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				setSessionBaseline(activeSession, observedFindings, timestamp);
 				updateSessionLatest(activeSession, observedFindings, timestamp);
 				saveScanState.initialCheckpointDoneAt = timestamp;
+				startHourlyScanTimer();
 				const priorInfo = priorCompletedSession
 					? ` (prior completed baseline: ${priorCompletedSession.sessionId})`
 					: ' (no prior completed baseline; T=N/A)';
@@ -853,6 +1076,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				{ enableScripts: false },
 			);
 			panel.webview.html = buildTermsOfUseHtml();
+		},
+	);
+
+	const openPrivacyPolicy = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openPrivacyPolicy',
+		() => {
+			const panel = vscode.window.createWebviewPanel(
+				'ariadne.privacyPolicy',
+				'Ariadne: Privacy Policy',
+				vscode.ViewColumn.One,
+				{ enableScripts: false },
+			);
+			panel.webview.html = buildPrivacyPolicyHtml();
 		},
 	);
 
@@ -1065,6 +1301,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				settlementTimer = null;
 				pendingSettlementFindings = null;
 			}
+			stopHourlyScanTimer();
 			pendingSaveRevision = null;
 			await store.clearSaveScanState();
 			saveScanState = store.loadSaveScanState();
@@ -1078,6 +1315,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			vscode.window.showInformationMessage(
 				'Ariadne Debug: Save scan state reset. Next settled save will re-trigger the initial checkpoint.',
 			);
+		},
+	);
+
+	const triggerHourlyRollover = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.triggerHourlyRollover',
+		async () => {
+			await performHourlySessionRollover();
 		},
 	);
 
@@ -1104,7 +1348,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (!isSignedIn) {
 				await focusSignInSidebar();
 				vscode.window.showInformationMessage(
-					'Ariadne: Sign in to GitHub to use AI vulnerability explanations.',
+					'Ariadne: Sign in to GitHub to use the extension.',
 				);
 				return;
 			}
@@ -1116,9 +1360,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 				return;
 			}
-
-			const config = vscode.workspace.getConfiguration('ariadne');
-			const model = config.get<string>('copilot.model', 'gemini-3.5-flash');
 
 			const panel = vscode.window.createWebviewPanel(
 				'ariadne.feedback',
@@ -1137,7 +1378,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					vulnMetadata,
 					activeFileContent,
 					activeFilePath,
-					model,
+					DEFAULT_COPILOT_MODEL,
 				);
 				const rawResponse = await callLLM(requestBody, {
 					...copilotRuntimeOptions(context, gitHubToken),
@@ -1178,11 +1419,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		signInDisposable,
 		openSignInPanel,
 		openTermsOfUse,
+		openPrivacyPolicy,
 		openFeedbackPanel,
 		debugLifecycles,
 		debugResetLifecycles,
 		debugShowSaveScanState,
 		debugResetSaveScanState,
+		triggerHourlyRollover,
 	);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
@@ -1190,6 +1433,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		console.log('[Ariadne] Deactivating extension...');
 
 		// 1. Cancel active timers
+		stopHourlyScanTimer();
 		cancelSettlement('extension deactivation');
 		cancelAllPendingUpdates();
 
