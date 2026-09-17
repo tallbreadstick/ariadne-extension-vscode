@@ -117,10 +117,13 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 			: item.progressLabel === 'Clear progress'
 				? 'progress-clear'
 				: 'progress-major';
+		const deltaText = item.progressDelta === 'N/A'
+			? ''
+			: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		return /* html */ `
 			<div class="trend-sub-item">
 				<span class="sub-label">${item.type}</span>
-				<span class="sub-progress ${progressClass}">${item.progressLabel} (+${item.progressDelta})</span>
+				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');

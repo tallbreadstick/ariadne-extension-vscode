@@ -510,6 +510,153 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			assert.ok(html.includes('SQL Injection'));
 			assert.ok(!html.includes('class="trend-sub-item trend-sub-placeholder"'));
 		});
+
+		it('ignores historical resolutions from prior sessions and does not trigger false improving trend on reintroduction', () => {
+			const historicalResolvedFlc: FindingLifecycleRecord = {
+				logicalFingerprint: 'fp-sql-historical',
+				contentFingerprint: 'content-sql-1',
+				scopeFingerprint: 'scope-sql',
+				ruleId: 'rule-sql',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				severity: 'high',
+				instanceName: 'executeQuery1',
+				filePath: 'src/db.ts',
+				firstConfirmedAt: 1000,
+				lastConfirmedAt: 2000,
+				confirmationCount: 2,
+				missingSince: 3000,
+				provisionalResolutionAt: 3000,
+				durableResolutionAt: 4000, // Resolved at t=4000 in Session 1
+				recurrenceCount: 0,
+				lastRecurredAt: null,
+				inSessionToggleCount: 0,
+				identicalRestorationCount: 0,
+				baselineOccurrenceCount: 1,
+				currentOccurrenceCount: 0,
+				isCommentedOut: false,
+				lifecycleState: 'resolved',
+			};
+
+			const reintroducedPersistingFlc: FindingLifecycleRecord = {
+				logicalFingerprint: 'fp-sql-reintroduced',
+				contentFingerprint: 'content-sql-2',
+				scopeFingerprint: 'scope-sql',
+				ruleId: 'rule-sql',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				severity: 'high',
+				instanceName: 'executeQuery2',
+				filePath: 'src/db.ts',
+				firstConfirmedAt: 10000,
+				lastConfirmedAt: 15000,
+				confirmationCount: 3,
+				missingSince: null,
+				provisionalResolutionAt: null,
+				durableResolutionAt: null,
+				recurrenceCount: 1,
+				lastRecurredAt: 10000,
+				inSessionToggleCount: 0,
+				identicalRestorationCount: 0,
+				baselineOccurrenceCount: 1,
+				currentOccurrenceCount: 1,
+				isCommentedOut: false,
+				lifecycleState: 'persisting',
+			};
+
+			const classifications: FindingClassification[] = [
+				{
+					lifecycle: historicalResolvedFlc,
+					status: 'resolved',
+					previousOccurrenceCount: 1,
+					currentOccurrenceCount: 0,
+				},
+				{
+					lifecycle: reintroducedPersistingFlc,
+					status: 'persisting',
+					previousOccurrenceCount: 1,
+					currentOccurrenceCount: 1,
+				},
+			];
+
+			const mockScan = {
+				scan_id: 'scan-current',
+				timestamp: 15000,
+				vulnerabilities: [
+					{
+						id: 'vuln-sql-reintroduced',
+						rule_id: 'rule-sql',
+						cwe_id: 'CWE-89',
+						owasp_category: 'A03:2021 - Injection',
+						type: 'SQL Injection',
+						severity: 'high' as const,
+						message: 'SQL Injection',
+						file_path: 'src/db.ts',
+						line_number: 20,
+						instances: [
+							{
+								name: 'executeQuery2',
+								kind: 'method' as const,
+								occurrences: [],
+							},
+						],
+					},
+				],
+			};
+
+			// Active session started at t=10000 (after historical resolution at t=4000)
+			const activeSessionStartedAt = 10000;
+			const analysis = buildSessionAnalysis(
+				classifications,
+				mockScan,
+				null,
+				undefined,
+				null,
+				activeSessionStartedAt,
+			);
+
+			// Historical resolution should be excluded from this session
+			assert.strictEqual(analysis.resolvedThisSession, 0, 'Prior session resolution must not count toward resolvedThisSession');
+			assert.strictEqual(analysis.improvingTrends, 0, 'Prior session resolution must not pair with reintroduced finding to trigger improving');
+			assert.strictEqual(analysis.persistingPatterns, 1, 'Reintroduced finding should remain persisting');
+
+			const metrics = toSessionMetrics(analysis);
+			assert.strictEqual(metrics.trends.resolvedThisSession, 0);
+			assert.strictEqual(metrics.trends.improvingTrends, 0);
+			assert.strictEqual(metrics.trends.persistingPatterns, 1);
+		});
+
+		it('formats improving progress delta cleanly without duplicate +- signs and matches header instance count', () => {
+			const metrics: SessionMetrics = {
+				critical: 0,
+				high: 2,
+				medium: 0,
+				low: 0,
+				trends: {
+					persistingPatterns: 0,
+					improvingTrends: 2, // 2 instances across improving items
+					resolvedThisSession: 1,
+					recurringPatterns: 0,
+					improvingItems: [
+						{
+							type: 'SQL Injection',
+							instances: 2,
+							progressLabel: 'Some progress',
+							progressDelta: '+2.00', // Already signed delta
+						},
+					],
+				},
+			};
+
+			const html = buildSessionMetricsHtml(metrics);
+			// Check that duplicate (+- or (++ does not occur
+			assert.ok(!html.includes('(+-'), 'Should not contain (+- sign');
+			assert.ok(!html.includes('(++'), 'Should not contain (++ sign');
+			assert.ok(html.includes('Some progress (+2.00)'));
+			// Check that header instance count displays 2, matching instances
+			assert.ok(html.includes('Instances :  <span style="color: var(--text); font-weight: 700;">2</span>'));
+		});
 	});
 });
+
 

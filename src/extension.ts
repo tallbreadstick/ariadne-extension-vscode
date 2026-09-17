@@ -349,9 +349,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				recurringPatterns++;
 				recurringMap.set(flc.type, (recurringMap.get(flc.type) ?? 0) + 1);
 			} else if (flc.lifecycleState === 'resolved' || flc.durableResolutionAt !== null) {
-				resolvedThisSession++;
-				resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
-				typeResolvedCount.set(flc.type, (typeResolvedCount.get(flc.type) ?? 0) + 1);
+				const isResolvedInActiveSession = activeSession !== null
+					&& flc.durableResolutionAt !== null
+					&& flc.durableResolutionAt >= activeSession.startedAt;
+				if (isResolvedInActiveSession) {
+					resolvedThisSession++;
+					resolvedMap.set(flc.type, (resolvedMap.get(flc.type) ?? 0) + 1);
+					typeResolvedCount.set(flc.type, (typeResolvedCount.get(flc.type) ?? 0) + 1);
+				}
 			} else if (flc.lifecycleState === 'persisting') {
 				persistingPatterns++;
 				persistingMap.set(flc.type, (persistingMap.get(flc.type) ?? 0) + 1);
@@ -369,7 +374,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const persisting = typePersistingCount.get(type) ?? 0;
 			const total = typeTotalCount.get(type) ?? 0;
 			if (resolved > 0 && persisting > 0) {
-				improvingTrends++; // count improving TYPES (not instances)
+				improvingTrends += persisting; // count improving instances
 				const progressRatio = resolved / total;
 				const delta = Math.round(progressRatio * 10 * 100) / 100;
 				const label = progressRatio >= 0.7 ? 'Major progress'
@@ -752,6 +757,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					previousScanSnapshot,
 					lifecycles,
 					activeSession?.trendComparisonByKey,
+					activeSession?.startedAt,
 				);
 				latestSessionAnalysis = sessionAnalysis;
 
