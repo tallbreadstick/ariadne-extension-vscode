@@ -145,6 +145,14 @@ export function buildSessionAnalysis(
 
 	const deltas: VulnerabilityDelta[] = [];
 
+	/**
+	 * Indices of deltas for findings first detected in this session
+	 * (firstConfirmedAt >= sessionStartedAt). These are new problems
+	 * and must NOT be reclassified as "improving" even if another
+	 * finding of the same type was resolved.
+	 */
+	const newlyPersistingIndices = new Set<number>();
+
 	// ── Per-type aggregation for type-level improving detection ──
 	const typeResolvedCount = new Map<string, number>();
 	const typePersistingCount = new Map<string, number>();
@@ -184,6 +192,7 @@ export function buildSessionAnalysis(
 		// For resolved findings, we need a placeholder since they're not active
 		const vuln = matchedVuln ?? createResolvedPlaceholder(classification);
 
+		const deltaIdx = deltas.length;
 		deltas.push({
 			vulnerability: vuln,
 			status,
@@ -198,6 +207,16 @@ export function buildSessionAnalysis(
 			case 'persisting':
 				persistingPatterns++;
 				typePersistingCount.set(type, (typePersistingCount.get(type) ?? 0) + 1);
+				// Tag findings first detected in this session — they are new
+				// problems, not partially-fixed old ones. This is stable across
+				// multiple saves within the same session (unlike previousState).
+				if (
+					sessionStartedAt != null &&
+					classification.lifecycle.firstConfirmedAt != null &&
+					classification.lifecycle.firstConfirmedAt >= sessionStartedAt
+				) {
+					newlyPersistingIndices.add(deltaIdx);
+				}
 				break;
 			case 'improving':
 				// FLC-level improving (occurrence count reduction) — still count
@@ -218,12 +237,16 @@ export function buildSessionAnalysis(
 	// A vulnerability type is "improving" when it has at least one
 	// resolved instance AND at least one still-persisting instance.
 	// Recurring findings are regressions (relapses), never improving trends.
+	// Newly-persisting findings (just introduced this session) are excluded —
+	// they are new problems, not evidence of partial fixing.
 	for (const [type, resolved] of typeResolvedCount.entries()) {
 		const persisting = typePersistingCount.get(type) ?? 0;
 		if (resolved > 0 && persisting > 0) {
-			// Mark the still-persisting deltas for this type as 'improving'
-			for (const d of deltas) {
-				if (d.vulnerability.type === type && d.status === 'persisting') {
+			// Mark the still-persisting deltas for this type as 'improving',
+			// but skip newly-persisting ones (they aren't improvements)
+			for (let i = 0; i < deltas.length; i++) {
+				const d = deltas[i];
+				if (d.vulnerability.type === type && d.status === 'persisting' && !newlyPersistingIndices.has(i)) {
 					(d as { status: VulnerabilityStatus }).status = 'improving';
 					improvingTrends++;
 					persistingPatterns = Math.max(0, persistingPatterns - 1);
@@ -371,6 +394,7 @@ function mapCommonVulns(
 			cweId: entry.cweId,
 			sessionCount: entry.sessionCount,
 			totalSessions: entry.totalSessions,
+			totalInstanceCount: entry.totalInstanceCount,
 			activeFindingCount: entry.activeFindingCount,
 		});
 	}

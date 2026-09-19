@@ -212,5 +212,16 @@ Within each section, newest decision at the top.
 - consequences: Students see a "Common Vulnerabilities" panel in Session Metrics showing which categories they encounter repeatedly, with session frequency and active finding count. The panel dynamically reflects graduation — types drop off when students demonstrate sustained mastery. The session-count reset on re-entry prevents a single slip from immediately re-labeling a graduated type. New workspaceState key adds ~100 bytes per graduated type. Cleared alongside other lifecycle data on debug reset.
 - task: docs/ai/tasks/2026-09-14-common-vulnerabilities.md
 
+### Common Vulnerabilities — Prevention-aware counting and graduation
+
+- date: 2026-09-19
+- status: accepted
+- context: An alignment review revealed two misalignments in the Common Vulnerabilities engine. (1) Session counting was based on type *presence* — if a single finding persisted across 3 hourly checkpoints, it reached K=3 by itself, falsely labeling a one-time occurrence as "common." The intended behavior was to count only sessions where a *new* instance was created. (2) Graduation only required all instances to be resolved, not that the student stopped *creating* new ones — conflating "learned to fix" with "learned to prevent."
+- decision: Two changes to `commonVulnerabilities.ts`. **Counting**: Replace session-presence counting with a cumulative seen-fingerprint set. A milestone only increments the session count if it contains a `logicalFingerprint` not yet seen (new instance). Persisting findings do not inflate the count. **Graduation**: Require BOTH (a) all current FLCs of the type are durably resolved AND (b) no new instances were created for G=2 consecutive completed sessions. The `csNewTypes` array tracks which completed sessions had new instances, and graduation walks backwards through this array.
+- consequences: A single persisting finding no longer self-qualifies as Common (sessionCount=1 instead of 3). Students must demonstrate both fixing AND prevention competence before a type graduates. No storage migration required — `TypeGraduationState` shape and `graduatedAfterSessionIndex` semantics are unchanged. The new-instance counting also correctly handles recurring findings (same fingerprint reappearing after absence) — they are not counted as new.
+- supersedes: Common Vulnerabilities — Cross-Session Type-Level Awareness Metric (counting and graduation logic only; entry threshold K=3 and panel rendering unchanged)
+- task: docs/ai/tasks/2026-09-19-common-vuln-realignment.md
+
 <!-- Add new post-MVP decisions above this line -->
+
 
