@@ -145,6 +145,7 @@ function buildCollapsibleTrendRow(
 	label: string,
 	count: number,
 	subItems: string,
+	instanceLabel: string,
 ): string {
 	return /* html */ `
 		<div class="trend-group" data-trend-id="${id}">
@@ -155,7 +156,7 @@ function buildCollapsibleTrendRow(
 					<span class="trend-header-label">${label}</span>
 				</span>
 				<span class="trend-header-right">
-					<span class="trend-instance-count">Instances :  <span style="color: var(--text); font-weight: 700;">${count}</span></span>
+					<span class="trend-instance-count">${instanceLabel} :  <span style="color: var(--text); font-weight: 700;">${count}</span></span>
 					<svg class="chevron-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 						<path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"
 							stroke-linecap="round" stroke-linejoin="round" />
@@ -218,15 +219,18 @@ function buildCommonVulnerabilitiesPanel(
 		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;
 	} else {
 		content = items.map(item => {
-			const activeLabel = item.activeFindingCount > 0
+			const statusLabel = item.activeFindingCount > 0
 				? /* html */ `<span class="cv-active">${item.activeFindingCount} active</span>`
 				: /* html */ `<span class="cv-resolved">all resolved</span>`;
 			return /* html */ `
 				<div class="cv-card">
-					<span class="cv-type">${item.type}</span>
+					<div class="cv-card-left">
+						<span class="cv-type">${item.type}</span>
+						${statusLabel}
+					</div>
 					<div class="cv-card-body">
 						<span class="cv-cwe">${item.cweId}</span>
-						${activeLabel}
+						<span class="cv-instances">found ${item.totalInstanceCount} time${item.totalInstanceCount !== 1 ? 's' : ''}</span>
 					</div>
 				</div>`;
 		}).join('');
@@ -561,6 +565,14 @@ const CSS = /* css */ `
 
 	.cv-card:last-child { border-bottom: none; }
 
+	.cv-card-left {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		flex: 1;
+	}
+
 	.cv-type {
 		font-size: 12px;
 		font-weight: 600;
@@ -568,9 +580,6 @@ const CSS = /* css */ `
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		align-self: center;
-		flex: 1;
-		min-width: 0;
 	}
 
 	.cv-card-body {
@@ -586,14 +595,20 @@ const CSS = /* css */ `
 		color: var(--muted);
 	}
 
-	.cv-active {
+	.cv-instances {
 		font-size: 11px;
-		font-weight: 600;
+		font-weight: 700;
+		color: var(--accent);
+	}
+
+	.cv-active {
+		font-size: 10px;
+		font-weight: 500;
 		color: #E24B4A;
 	}
 
 	.cv-resolved {
-		font-size: 11px;
+		font-size: 10px;
 		font-weight: 500;
 		color: var(--accent);
 	}
@@ -812,6 +827,7 @@ export function buildSessionMetricsHtml(
 		'Persisting Patterns',
 		trends.persistingPatterns,
 		persistingSubItems,
+		'Instances Open',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -820,6 +836,7 @@ export function buildSessionMetricsHtml(
 		'Improving Trends',
 		trends.improvingTrends,
 		improvingSubItems,
+		'Instances Remaining',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -828,6 +845,7 @@ export function buildSessionMetricsHtml(
 		'Recurring Patterns',
 		trends.recurringPatterns,
 		recurringSubItems,
+		'Instances Returned',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -836,6 +854,7 @@ export function buildSessionMetricsHtml(
 		'Resolved',
 		trends.resolvedThisSession,
 		resolvedSubItems,
+		'Instances Fixed',
 	)}
 			</div>
 			
