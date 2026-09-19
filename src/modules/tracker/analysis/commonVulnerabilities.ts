@@ -12,8 +12,9 @@
  * detected increment the session count. Persisting findings (the same
  * instance carried across milestones) do not inflate the count.
  *
- * Graduation: Requires **both** all instances resolved AND no new instances
- * created for G consecutive completed sessions — proving the student can
+ * Graduation: Requires **both** all instances durably resolved AND a
+ * post-fix probation period of G consecutive clean completed sessions
+ * (no active instances and no new instances) — proving the student can
  * fix the vulnerability AND has learned to prevent it.
  *
  * Reference: docs/handoff/common_vuln_implementation_plan.md
@@ -185,12 +186,19 @@ export function computeCommonVulnerabilities(
 		}
 
 		// Completed session final state
-		milestones.push({
-			findings: cs.lifecycleSummaries.map(flc => ({
+		// Only include findings that were present in this session (not resolved or missing prior to session start)
+		const csFindings = cs.lifecycleSummaries
+			.filter(flc => cs.startedAt <= 0 || (
+				(flc.durableResolutionAt === null || flc.durableResolutionAt >= cs.startedAt) &&
+				(flc.missingSince === null || flc.missingSince >= cs.startedAt)
+			))
+			.map(flc => ({
 				cweId: flc.cweId,
 				type: flc.type,
 				logicalFingerprint: flc.logicalFingerprint,
-			})),
+			}));
+		milestones.push({
+			findings: csFindings,
 			completedSessionIdx: csIdx,
 		});
 	}
@@ -211,12 +219,19 @@ export function computeCommonVulnerabilities(
 		}
 
 		// Active session current live state
-		milestones.push({
-			findings: currentLifecycles.map(flc => ({
+		// Only include findings present in active session (not resolved or missing prior to session start)
+		const activeFindings = currentLifecycles
+			.filter(flc => activeSession.startedAt <= 0 || (
+				(flc.durableResolutionAt === null || flc.durableResolutionAt >= activeSession.startedAt) &&
+				(flc.missingSince === null || flc.missingSince >= activeSession.startedAt)
+			))
+			.map(flc => ({
 				cweId: flc.cweId,
 				type: flc.type,
 				logicalFingerprint: flc.logicalFingerprint,
-			})),
+			}));
+		milestones.push({
+			findings: activeFindings,
 			completedSessionIdx: -1,
 		});
 	}
@@ -302,8 +317,11 @@ export function computeCommonVulnerabilities(
 	//
 	// A type graduates when BOTH conditions are met simultaneously:
 	// 1. All current FLCs of this type are durably resolved (can fix)
-	// 2. No new instances were created in the G most recent completed
-	//    sessions (can prevent)
+	// 2. A post-fix probation period of G consecutive clean completed
+	//    sessions has elapsed (can prevent):
+	//    - No new instances created during the completed session
+	//    - No active instances at completed session end (in lifecycleSummaries)
+	//    - No active instances during completed session hourly checkpoints
 
 	const common = new Map<string, CommonVulnerabilityEntry>();
 
@@ -319,17 +337,52 @@ export function computeCommonVulnerabilities(
 			flc => flc.durableResolutionAt !== null,
 		);
 
-		// Count consecutive completed sessions (from most recent backwards)
-		// with no new instances of this type
-		let consecutiveNoNew = 0;
-		if (allResolved) {
-			for (let i = completedSessions.length - 1; i >= 0; i--) {
-				if (csNewTypes[i].has(key)) { break; }
-				consecutiveNoNew++;
+		// Find the first milestone where this vulnerability type appeared (post-graduation)
+		let firstSeenCompletedSessionIdx = -1;
+		const gradState = graduationHistory[key];
+		const countFrom = gradState?.graduatedAfterSessionIndex ?? -1;
+
+		for (let mIdx = 0; mIdx < milestones.length; mIdx++) {
+			if (mIdx <= countFrom) { continue; }
+			if (milestones[mIdx].findings.some(f => typeKey(f.cweId, f.type) === key)) {
+				firstSeenCompletedSessionIdx = milestones[mIdx].completedSessionIdx;
+				break;
 			}
 		}
 
-		const graduated = allResolved && consecutiveNoNew >= G;
+		// Count consecutive clean completed sessions (from most recent backwards)
+		// A completed session is clean for this type if:
+		// 1. It completed AFTER the session where the vulnerability was first introduced
+		// 2. No new instances of this type were created during the session
+		// 3. No active (unresolved) instances of this type existed at session end
+		// 4. No active instances of this type were detected in hourly checkpoints
+		let consecutiveClean = 0;
+		if (allResolved && firstSeenCompletedSessionIdx >= 0) {
+			for (let i = completedSessions.length - 1; i >= 0; i--) {
+				// Only sessions completed AFTER the introduction session can count as probation
+				if (i <= firstSeenCompletedSessionIdx) {
+					break;
+				}
+
+				const cs = completedSessions[i];
+				const hasNew = csNewTypes[i].has(key);
+				const hasActiveInSummary = cs.lifecycleSummaries.some(
+					flc => typeKey(flc.cweId, flc.type) === key
+						&& flc.durableResolutionAt === null
+						&& flc.missingSince === null,
+				);
+				const hasActiveInCheckpoints = (cs.hourlyCheckpoints ?? []).some(
+					cp => cp.findings.some(f => typeKey(f.cweId, f.type) === key),
+				);
+
+				if (hasNew || hasActiveInSummary || hasActiveInCheckpoints) {
+					break;
+				}
+				consecutiveClean++;
+			}
+		}
+
+		const graduated = allResolved && consecutiveClean >= G;
 
 		if (graduated) {
 			// Record graduation point for future session-count reset
@@ -346,6 +399,13 @@ export function computeCommonVulnerabilities(
 		const activeFindingCount = typeFLCs.filter(
 			flc => flc.missingSince === null && flc.durableResolutionAt === null,
 		).length;
+
+		// A type that has already graduated and currently has 0 active findings (all resolved)
+		// remains graduated. It must NEVER re-appear in Common Vulnerabilities as "All Resolved".
+		const isPreviouslyGraduated = gradState?.graduatedAfterSessionIndex !== null && gradState?.graduatedAfterSessionIndex !== undefined;
+		if (isPreviouslyGraduated && activeFindingCount === 0) {
+			continue;
+		}
 
 		common.set(key, {
 			type: data.type,

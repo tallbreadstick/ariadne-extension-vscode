@@ -92,6 +92,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 					cweId: 'CWE-89',
 					sessionCount: 2,
 					totalSessions: 2,
+					totalInstanceCount: 1,
 					activeFindingCount: 1,
 				},
 				{
@@ -99,6 +100,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 					cweId: 'CWE-22',
 					sessionCount: 2,
 					totalSessions: 2,
+					totalInstanceCount: 1,
 					activeFindingCount: 0,
 				},
 			];
@@ -157,6 +159,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 					totalSessions: 3,
 					isGraduated: false,
 					totalRecurrences: 0,
+					totalInstanceCount: 1,
 					activeFindingCount: 1,
 				}],
 			]);
@@ -1161,6 +1164,284 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 
 			// Session-presence: present in s1 and s3 = sessionCount 2 (< K=3) → NOT common
 			assert.strictEqual(common.size, 0, 'Recurring finding present in 2 of 3 sessions should NOT reach K=3');
+		});
+
+		it('does NOT graduate when a persisting finding is finally resolved after G sessions of inaction', () => {
+			// Session 1: SQL Injection created (persisting finding fp-sq1)
+			const activeFLC = makeFLC({ logicalFingerprint: 'fp-sq1', cweId: 'CWE-89', type: 'SQL Injection' });
+			const s1 = makeSession('s1', [activeFLC]);
+			// Session 2: User did nothing, fp-sq1 remained active
+			const s2 = makeSession('s2', [activeFLC]);
+			// Session 3: User did nothing, fp-sq1 remained active
+			const s3 = makeSession('s3', [activeFLC]);
+
+			// Session 4 (active session): User finally resolves fp-sq1
+			const resolvedFLC = makeFLC({
+				logicalFingerprint: 'fp-sq1',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				durableResolutionAt: 5000,
+				missingSince: 5000,
+				currentOccurrenceCount: 0,
+			});
+
+			const gradHistory: Record<string, any> = {};
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3],
+				null,
+				[resolvedFLC],
+				gradHistory,
+			);
+
+			// In s2 and s3, fp-sq1 was ACTIVE. Inaction while a bug is active does NOT count as probation.
+			// Therefore, consecutive clean sessions = 0.
+			assert.strictEqual(common.size, 1, 'Should NOT graduate immediately upon resolution without a post-fix probation period');
+			const sql = common.get('CWE-89::SQL Injection');
+			assert.ok(sql);
+			assert.strictEqual(sql?.activeFindingCount, 0, 'Active finding count is 0 (all resolved)');
+			assert.strictEqual(gradHistory['CWE-89::SQL Injection'], undefined, 'Must not be recorded in graduation history');
+		});
+
+		it('graduates after G clean completed sessions following the fix', () => {
+			const activeFLC = makeFLC({ logicalFingerprint: 'fp-sq1', cweId: 'CWE-89', type: 'SQL Injection' });
+			const s1 = makeSession('s1', [activeFLC]);
+			const s2 = makeSession('s2', [activeFLC]);
+			const s3 = makeSession('s3', [activeFLC]);
+
+			const resolvedFLC = makeFLC({
+				logicalFingerprint: 'fp-sq1',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				durableResolutionAt: 5000,
+				missingSince: 5000,
+				currentOccurrenceCount: 0,
+			});
+			// Session 4: Fixed during session, finalized with resolvedFLC (clean at session end)
+			const s4 = makeSession('s4', [resolvedFLC]);
+			// Session 5: Clean session (all resolved, no new instances)
+			const s5 = makeSession('s5', [resolvedFLC]);
+
+			const gradHistory: Record<string, any> = {};
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3, s4, s5],
+				null,
+				[resolvedFLC],
+				gradHistory,
+			);
+
+			// s4 and s5 both had all resolved and no new instances (2 clean completed sessions post-fix)
+			assert.strictEqual(common.size, 0, 'Should graduate after G=2 clean completed sessions');
+			assert.ok(gradHistory['CWE-89::SQL Injection']);
+		});
+
+		it('does NOT graduate if an hourly checkpoint within a completed session had the vulnerability active', () => {
+			const activeFLC = makeFLC({ logicalFingerprint: 'fp-sq1', cweId: 'CWE-89', type: 'SQL Injection' });
+			const s1 = makeSession('s1', [activeFLC]);
+			const s2 = makeSession('s2', [activeFLC]);
+
+			const resolvedFLC = makeFLC({
+				logicalFingerprint: 'fp-sq1',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				durableResolutionAt: 5000,
+				missingSince: 5000,
+				currentOccurrenceCount: 0,
+			});
+
+			// Session 3 had an active hourly checkpoint before being resolved at session end
+			const s3WithCheckpoint: SessionRecord = {
+				...makeSession('s3', [resolvedFLC]),
+				hourlyCheckpoints: [
+					{
+						timestamp: 2500,
+						findings: [{
+							logicalFingerprint: 'fp-sq1',
+							contentFingerprint: 'c1',
+							scopeFingerprint: 's1',
+							ruleId: 'r1',
+							cweId: 'CWE-89',
+							type: 'SQL Injection',
+							severity: 'high',
+							instanceName: 'inst1',
+							filePath: 'src/db.ts',
+							occurrenceCount: 1,
+						}],
+					},
+				],
+			};
+
+			// Session 4 is completely clean
+			const s4 = makeSession('s4', [resolvedFLC]);
+
+			const gradHistory: Record<string, any> = {};
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3WithCheckpoint, s4],
+				null,
+				[resolvedFLC],
+				gradHistory,
+			);
+
+			// s3 had an active hourly checkpoint, so only s4 is clean (1 clean session < G=2)
+			assert.strictEqual(common.size, 1, 'Should NOT graduate because s3 had an active hourly checkpoint');
+			assert.strictEqual(gradHistory['CWE-89::SQL Injection'], undefined);
+		});
+
+		it('does NOT graduate when a new unique vulnerability is born in the active session and resolved within the same session', () => {
+			// Prior completed sessions exist (e.g. s1, s2 with XSS only)
+			const s1 = makeSession('s1', [makeFLC({ logicalFingerprint: 'fp-xss-1', cweId: 'CWE-79', type: 'XSS' })]);
+			const s2 = makeSession('s2', [makeFLC({ logicalFingerprint: 'fp-xss-2', cweId: 'CWE-79', type: 'XSS' })]);
+
+			const ldapFinding = {
+				logicalFingerprint: 'fp-ldap-1',
+				contentFingerprint: 'c-ldap',
+				scopeFingerprint: 's-ldap',
+				ruleId: 'r-ldap',
+				cweId: 'CWE-90',
+				type: 'LDAP Injection',
+				severity: 'high' as const,
+				instanceName: 'inst-ldap',
+				filePath: 'src/ldap.ts',
+				occurrenceCount: 1,
+			};
+
+			// Active session has 2 hourly checkpoints with LDAP Injection
+			const activeSession: SessionRecord = {
+				sessionId: 'session-active',
+				status: 'active',
+				startedAt: 1000,
+				endedAt: null,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [],
+				hourlyCheckpoints: [
+					{ timestamp: 2000, findings: [ldapFinding] },
+					{ timestamp: 3000, findings: [ldapFinding] },
+				],
+			};
+
+			// Still within the same active session, LDAP Injection is resolved
+			const resolvedLdapFLC = makeFLC({
+				logicalFingerprint: 'fp-ldap-1',
+				cweId: 'CWE-90',
+				type: 'LDAP Injection',
+				durableResolutionAt: 4000,
+				missingSince: 4000,
+				currentOccurrenceCount: 0,
+			});
+
+			const gradHistory: Record<string, any> = {};
+			const common = computeCommonVulnerabilities(
+				[s1, s2],
+				activeSession,
+				[resolvedLdapFLC],
+				gradHistory,
+			);
+
+			// Reaches K=3 via 2 hourly checkpoints + live milestone
+			assert.strictEqual(common.size, 1, 'Should stay on panel as All Resolved, not graduate immediately');
+			const ldap = common.get('CWE-90::LDAP Injection');
+			assert.ok(ldap);
+			assert.strictEqual(ldap?.activeFindingCount, 0, 'Active finding count must be 0 (All Resolved)');
+			assert.strictEqual(ldap?.sessionCount, 3, 'Present in 3 milestones of the active session');
+			assert.strictEqual(gradHistory['CWE-90::LDAP Injection'], undefined, 'Must not be recorded in graduation history');
+		});
+
+		it('does NOT resurrect a graduated vulnerability as All Resolved in subsequent clean sessions', () => {
+			// SQL Injection was introduced and resolved in s1, then s2 and s3 were clean probation sessions
+			const resolvedSqlFLC = makeFLC({
+				logicalFingerprint: 'fp-sql-1',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				firstConfirmedAt: 1000,
+				durableResolutionAt: 1500,
+				missingSince: 1500,
+				currentOccurrenceCount: 0,
+			});
+
+			const s1 = makeSession('s1', [resolvedSqlFLC]);
+			s1.startedAt = 1000;
+			s1.endedAt = 2000;
+
+			// s2 is clean probation session
+			const s2: SessionRecord = {
+				sessionId: 's2',
+				status: 'completed',
+				startedAt: 3000,
+				endedAt: 4000,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [resolvedSqlFLC], // historical lifecycles are carried over
+			};
+
+			// s3 is clean probation session
+			const s3: SessionRecord = {
+				sessionId: 's3',
+				status: 'completed',
+				startedAt: 5000,
+				endedAt: 6000,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [resolvedSqlFLC],
+			};
+
+			const gradHistory: Record<string, any> = {
+				'CWE-89::SQL Injection': {
+					graduatedAfterSessionIndex: 2,
+				},
+			};
+
+			// Subsequent sessions s4, s5, s6 with the resolved FLC still in lifecycle store
+			const s4: SessionRecord = {
+				sessionId: 's4',
+				status: 'completed',
+				startedAt: 7000,
+				endedAt: 8000,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [resolvedSqlFLC],
+			};
+
+			const s5: SessionRecord = {
+				sessionId: 's5',
+				status: 'completed',
+				startedAt: 9000,
+				endedAt: 10000,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [resolvedSqlFLC],
+			};
+
+			const s6: SessionRecord = {
+				sessionId: 's6',
+				status: 'completed',
+				startedAt: 11000,
+				endedAt: 12000,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: [resolvedSqlFLC],
+			};
+
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3, s4, s5, s6],
+				null,
+				[resolvedSqlFLC],
+				gradHistory,
+			);
+
+			// SQL Injection must NOT resurrect as "All Resolved"
+			assert.strictEqual(common.has('CWE-89::SQL Injection'), false, 'Graduated type must not resurrect as All Resolved');
 		});
 	});
 });

@@ -304,6 +304,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			lifecycles,
 			graduationHistory,
 		);
+		void store.saveGraduationHistory(graduationHistory);
 
 		if (latestSessionAnalysis) {
 			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed);

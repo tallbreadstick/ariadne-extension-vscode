@@ -21,20 +21,25 @@
 
 ## Current state
 
-- status: in progress
+- status: completed
 - current owner: Antigravity
-- next action: Validate test results
+- next action: Review walkthrough with user
 - blockers: none
-- last checked: 2026-09-19
+- last checked: 2026-09-20
 
 ## Progress checklist
 
-- [x] Rewrite computeCommonVulnerabilities() with fingerprint-based counting
-- [x] Implement prevention-aware graduation (allResolved + noNewInstancesForG)
+- [x] Rewrite computeCommonVulnerabilities() with hybrid presence counting & totalInstanceCount
+- [x] Implement post-fix probation graduation (allResolved + G clean completed sessions)
+- [x] Enforce clean completed session check (no active findings in summaries or checkpoints, no new instances)
+- [x] Prevent active-session born & resolved findings from prematurely graduating before G clean completed sessions
+- [x] Exclude findings resolved prior to session start from milestone presence counting
+- [x] Guard against resurrection of graduated vulnerabilities as "All Resolved"
+- [x] Persist graduation history in buildCurrentSessionMetrics()
 - [x] Update module doc comments and strategy description
-- [x] Update unit tests (persisting doesn't inflate, new instances count, graduation tests)
+- [x] Update unit tests (reproduction test for inaction, post-fix probation, checkpoint awareness, active-session born/resolved, resurrection prevention)
 - [x] Record ADR in decisions.md
-- [ ] Validate: check-types, lint, test (in progress)
+- [x] Validate: check-types, compile-tests, lint, test execution
 
 ## Scope
 
@@ -61,11 +66,12 @@
 
 ## Acceptance criteria
 
-- A single persisting finding across 3 milestones does NOT reach K=3
-- Three distinct fingerprints across 3 milestones DO reach K=3
-- Graduation requires BOTH allResolved AND consecutiveNoNew >= G
-- Active instances prevent graduation even with clean sessions
-- Recurring findings (same fingerprint) do not inflate count
+- [x] Milestone presence counts toward K=3 threshold
+- [x] Distinct FLC count tracked in totalInstanceCount without inflation
+- [x] Graduation requires BOTH allResolved AND consecutiveClean >= G
+- [x] Active instances in summaries or checkpoints prevent graduation even across inactive sessions
+- [x] Resolving after G sessions of inaction does NOT graduate immediately
+- [x] Recurring findings (same fingerprint) do not inflate count
 
 ## Validation
 
