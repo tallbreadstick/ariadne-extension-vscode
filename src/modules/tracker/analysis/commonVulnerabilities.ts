@@ -5,8 +5,16 @@
  * frequently encounters across coding sessions. A type-level awareness
  * metric that operates independently of instance-level lifecycle statuses.
  *
- * Strategy: Session-Boundary Threshold (K) + Resolution-Aware Decay (G)
- * + Session-Count Reset on Graduation Revocation.
+ * Strategy: New-Instance Session Threshold (K) + Prevention-Aware Graduation (G)
+ * + Session-Count Reset on Re-entry after Graduation.
+ *
+ * Counting: Only sessions where a **new** instance of a type was first
+ * detected increment the session count. Persisting findings (the same
+ * instance carried across milestones) do not inflate the count.
+ *
+ * Graduation: Requires **both** all instances resolved AND no new instances
+ * created for G consecutive completed sessions — proving the student can
+ * fix the vulnerability AND has learned to prevent it.
  *
  * Reference: docs/handoff/common_vuln_implementation_plan.md
  *
@@ -29,20 +37,23 @@ import type { FindingLifecycleRecord, SessionRecord } from './lifecycleTypes.js'
  */
 export const COMMON_VULN_POLICY = {
 	/**
-	 * Entry threshold: minimum number of sessions a vulnerability type
-	 * must appear in to be classified as Common.
+	 * Entry threshold: minimum number of milestones in which a vulnerability
+	 * type must have a **new** instance first detected to be classified as
+	 * Common.
 	 *
 	 * Set to 3 to align with a 3-hour weekly laboratory session
 	 * where hourly full-scan checkpoints occur at hours 1, 2, and 3.
+	 * A single persisting finding does NOT reach this threshold on its own.
 	 */
 	K: 3,
 
 	/**
-	 * Graduation threshold: minimum consecutive clean sessions
-	 * (all FLCs resolved, no new instances) required to graduate.
+	 * Graduation threshold: minimum consecutive completed sessions with
+	 * no new instances of this type AND all existing instances resolved.
 	 *
-	 * One clean session could be coincidence; two across spaced
-	 * intervals suggests internalization.
+	 * Proves the student can both **fix** the vulnerability and **prevent**
+	 * creating new ones. One clean session could be coincidence; two across
+	 * spaced intervals suggests internalization.
 	 */
 	G: 2,
 } as const;
@@ -59,7 +70,7 @@ export const COMMON_VULN_POLICY = {
  */
 export interface TypeGraduationState {
 	/**
-	 * Index into completedSessions after which this type last graduated.
+	 * Index into the milestones array after which this type last graduated.
 	 * Null if the type has never graduated.
 	 */
 	graduatedAfterSessionIndex: number | null;
@@ -71,16 +82,42 @@ export interface CommonVulnerabilityEntry {
 	type: string;
 	/** CWE identifier (e.g. "CWE-89"). */
 	cweId: string;
-	/** Number of sessions this type appeared in (post-graduation). */
+	/** Number of milestones this type was present in (post-graduation). */
 	sessionCount: number;
-	/** Total sessions analyzed. */
+	/** Total milestones analyzed. */
 	totalSessions: number;
 	/** Whether this type has graduated (always false in returned results). */
 	isGraduated: boolean;
 	/** Sum of recurrenceCount across all FLCs of this type. */
 	totalRecurrences: number;
+	/**
+	 * Total finding instances of this type (active + resolved + missing).
+	 * Represents how many times the student has encountered this pattern.
+	 */
+	totalInstanceCount: number;
 	/** Count of active (unresolved, not missing) findings of this type. */
 	activeFindingCount: number;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// INTERNAL TYPES
+// ══════════════════════════════════════════════════════════════════════
+
+/** Minimal finding shape carried through each milestone. */
+interface MilestoneFinding {
+	cweId: string;
+	type: string;
+	logicalFingerprint: string;
+}
+
+/** A single milestone in the chronological session timeline. */
+interface Milestone {
+	findings: MilestoneFinding[];
+	/**
+	 * Index into the `completedSessions` array that this milestone belongs to,
+	 * or -1 for milestones from the active session (not yet finalized).
+	 */
+	completedSessionIdx: number;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -99,15 +136,16 @@ function typeKey(cweId: string, type: string): string {
 /**
  * Computes Common Vulnerabilities across all sessions.
  *
- * A vulnerability TYPE is "Common" if it appeared in >= K sessions
- * (counting only from the last graduation point) and has not graduated
- * (all findings resolved for >= G consecutive recent sessions).
+ * A vulnerability TYPE is "Common" if **new** instances of it were first
+ * detected in >= K milestones (counting only from the last graduation
+ * point) and it has not graduated. Graduation requires both all instances
+ * resolved AND no new instances for >= G consecutive completed sessions.
  *
  * @param completedSessions  All completed SessionRecords (chronological)
  * @param activeSession      The current active session (null if none)
  * @param currentLifecycles  Live FindingLifecycleRecord[] for active session
  * @param graduationHistory  Per-type graduation state (persisted, mutated in-place)
- * @param K                  Session-presence threshold (default: 3)
+ * @param K                  New-instance session threshold (default: 3)
  * @param G                  Graduation threshold (default: 2)
  * @returns Map of type key → CommonVulnerabilityEntry for qualifying types
  */
@@ -120,99 +158,153 @@ export function computeCommonVulnerabilities(
 	G: number = COMMON_VULN_POLICY.G,
 ): Map<string, CommonVulnerabilityEntry> {
 
-	// Build list of all session milestones (completed sessions + active session hourly checkpoints + current active state)
-	const allSessions: Array<{
-		sessionId: string;
-		lifecycleSummaries: Array<{
-			cweId: string;
-			type: string;
-			durableResolutionAt?: number | null;
-			missingSince?: number | null;
-			recurrenceCount?: number;
-		}>;
-	}> = [];
+	// ── Phase 1: Build milestone list with fingerprints ─────────────
+	//
+	// Each completed session expands into:
+	//   hourlyCheckpoint[0], hourlyCheckpoint[1], ..., sessionFinal
+	// Each carries logicalFingerprint so Phase 2 can distinguish
+	// new instances from persisting ones.
 
-	for (const cs of completedSessions) {
-		// Include prior hourly checkpoints from completed sessions so milestones carry forward
+	const milestones: Milestone[] = [];
+
+	for (let csIdx = 0; csIdx < completedSessions.length; csIdx++) {
+		const cs = completedSessions[csIdx];
+
+		// Hourly checkpoints within this completed session
 		if (cs.hourlyCheckpoints && cs.hourlyCheckpoints.length > 0) {
-			for (let i = 0; i < cs.hourlyCheckpoints.length; i++) {
-				const cp = cs.hourlyCheckpoints[i];
-				allSessions.push({
-					sessionId: `${cs.sessionId}-hour-${i + 1}`,
-					lifecycleSummaries: cp.findings.map(f => ({
+			for (const cp of cs.hourlyCheckpoints) {
+				milestones.push({
+					findings: cp.findings.map(f => ({
 						cweId: f.cweId,
 						type: f.type,
-						durableResolutionAt: null,
-						missingSince: null,
-						recurrenceCount: 0,
+						logicalFingerprint: f.logicalFingerprint,
 					})),
+					completedSessionIdx: csIdx,
 				});
 			}
 		}
 
-		allSessions.push({
-			sessionId: cs.sessionId,
-			lifecycleSummaries: cs.lifecycleSummaries,
+		// Completed session final state
+		milestones.push({
+			findings: cs.lifecycleSummaries.map(flc => ({
+				cweId: flc.cweId,
+				type: flc.type,
+				logicalFingerprint: flc.logicalFingerprint,
+			})),
+			completedSessionIdx: csIdx,
 		});
 	}
 
 	if (activeSession) {
-		// Include prior hourly full scan checkpoints in active session without needing session rollovers
+		// Hourly checkpoints within the active session
 		if (activeSession.hourlyCheckpoints && activeSession.hourlyCheckpoints.length > 0) {
-			for (let i = 0; i < activeSession.hourlyCheckpoints.length; i++) {
-				const cp = activeSession.hourlyCheckpoints[i];
-				allSessions.push({
-					sessionId: `${activeSession.sessionId}-hour-${i + 1}`,
-					lifecycleSummaries: cp.findings.map(f => ({
+			for (const cp of activeSession.hourlyCheckpoints) {
+				milestones.push({
+					findings: cp.findings.map(f => ({
 						cweId: f.cweId,
 						type: f.type,
-						durableResolutionAt: null,
-						missingSince: null,
-						recurrenceCount: 0,
+						logicalFingerprint: f.logicalFingerprint,
 					})),
+					completedSessionIdx: -1,
 				});
 			}
 		}
 
-		allSessions.push({
-			sessionId: activeSession.sessionId,
-			lifecycleSummaries: currentLifecycles,
+		// Active session current live state
+		milestones.push({
+			findings: currentLifecycles.map(flc => ({
+				cweId: flc.cweId,
+				type: flc.type,
+				logicalFingerprint: flc.logicalFingerprint,
+			})),
+			completedSessionIdx: -1,
 		});
 	}
 
-	const totalSessions = allSessions.length;
+	const totalMilestones = milestones.length;
 
-	// Step 1: Count session presence per type (from last graduation point)
+	// ── Phase 2: Session-presence counting + new-instance tracking ──
+	//
+	// Session-presence counting for K: a type's session count increments
+	// when it is present in a milestone (regardless of whether the
+	// instance is new or persisting). This aligns with the lab model.
+	//
+	// New-instance tracking for G: a cumulative fingerprint set tracks
+	// which instances are genuinely new. Only used by the graduation
+	// check (csNewTypes) to determine if the student stopped creating
+	// new instances.
+
 	const typeData = new Map<string, {
 		type: string;
 		cweId: string;
 		sessionCount: number;
 	}>();
 
-	for (const [sessionIdx, session] of allSessions.entries()) {
-		const typesInSession = new Set<string>();
+	/** Per-type cumulative fingerprints already seen (since graduation). */
+	const seenByType = new Map<string, Set<string>>();
 
-		for (const flc of session.lifecycleSummaries) {
-			const key = typeKey(flc.cweId, flc.type);
-			if (typesInSession.has(key)) { continue; }
-			typesInSession.add(key);
+	/**
+	 * Per completed session: which types had at least one new instance
+	 * in any of the session's milestones (hourly checkpoints + final).
+	 * Used by the graduation G-check.
+	 */
+	const csNewTypes: Array<Set<string>> = completedSessions.map(() => new Set());
 
-			// Only count sessions AFTER the last graduation point
+	for (const [mIdx, milestone] of milestones.entries()) {
+		const typesPresent = new Set<string>();
+		const newTypesHere = new Set<string>();
+
+		for (const f of milestone.findings) {
+			const key = typeKey(f.cweId, f.type);
+
+			// Skip milestones at or before the graduation point for this type
 			const gradState = graduationHistory[key];
 			const countFrom = gradState?.graduatedAfterSessionIndex ?? -1;
-			if (sessionIdx <= countFrom) { continue; }
+			if (mIdx <= countFrom) { continue; }
 
+			// Session-presence for K threshold
+			typesPresent.add(key);
+
+			// New-instance tracking for G graduation check
+			if (!seenByType.has(key)) {
+				seenByType.set(key, new Set());
+			}
+			const seen = seenByType.get(key)!;
+			if (!seen.has(f.logicalFingerprint)) {
+				seen.add(f.logicalFingerprint);
+				newTypesHere.add(key);
+			}
+		}
+
+		// Update session counts (presence-based for K)
+		for (const key of typesPresent) {
+			const sample = milestone.findings.find(
+				f => typeKey(f.cweId, f.type) === key,
+			)!;
 			const entry = typeData.get(key) ?? {
-				type: flc.type,
-				cweId: flc.cweId,
+				type: sample.type,
+				cweId: sample.cweId,
 				sessionCount: 0,
 			};
 			entry.sessionCount++;
 			typeData.set(key, entry);
 		}
+
+		// Track per-completed-session new types (for graduation only)
+		for (const key of newTypesHere) {
+			if (milestone.completedSessionIdx >= 0) {
+				csNewTypes[milestone.completedSessionIdx].add(key);
+			}
+		}
 	}
 
-	// Step 2: Check graduation and build result
+	// ── Phase 3: Graduation check and result ────────────────────────
+	//
+	// A type graduates when BOTH conditions are met simultaneously:
+	// 1. All current FLCs of this type are durably resolved (can fix)
+	// 2. No new instances were created in the G most recent completed
+	//    sessions (can prevent)
+
 	const common = new Map<string, CommonVulnerabilityEntry>();
 
 	for (const [key, data] of typeData) {
@@ -227,26 +319,22 @@ export function computeCommonVulnerabilities(
 			flc => flc.durableResolutionAt !== null,
 		);
 
-		// Count consecutive recent clean sessions (walk backwards through completed only)
-		let consecutiveClean = 0;
+		// Count consecutive completed sessions (from most recent backwards)
+		// with no new instances of this type
+		let consecutiveNoNew = 0;
 		if (allResolved) {
 			for (let i = completedSessions.length - 1; i >= 0; i--) {
-				const hasActive = completedSessions[i].lifecycleSummaries.some(
-					flc => typeKey(flc.cweId, flc.type) === key
-						&& flc.durableResolutionAt === null
-						&& flc.missingSince === null,
-				);
-				if (hasActive) { break; }
-				consecutiveClean++;
+				if (csNewTypes[i].has(key)) { break; }
+				consecutiveNoNew++;
 			}
 		}
 
-		const graduated = allResolved && consecutiveClean >= G;
+		const graduated = allResolved && consecutiveNoNew >= G;
 
 		if (graduated) {
 			// Record graduation point for future session-count reset
 			graduationHistory[key] = {
-				graduatedAfterSessionIndex: allSessions.length - 1,
+				graduatedAfterSessionIndex: milestones.length - 1,
 			};
 			continue; // Graduated types are not Common
 		}
@@ -254,6 +342,7 @@ export function computeCommonVulnerabilities(
 		const totalRecurrences = typeFLCs.reduce(
 			(sum, flc) => sum + flc.recurrenceCount, 0,
 		);
+		const totalInstanceCount = typeFLCs.length;
 		const activeFindingCount = typeFLCs.filter(
 			flc => flc.missingSince === null && flc.durableResolutionAt === null,
 		).length;
@@ -262,20 +351,21 @@ export function computeCommonVulnerabilities(
 			type: data.type,
 			cweId: data.cweId,
 			sessionCount: data.sessionCount,
-			totalSessions,
+			totalSessions: totalMilestones,
 			isGraduated: false,
 			totalRecurrences,
+			totalInstanceCount,
 			activeFindingCount,
 		});
 	}
 
-	// Step 3: Sort common vulnerabilities descending:
-	// Primary: highest activeFindingCount first (most urgent unaddressed issues at the top)
-	// Secondary: highest sessionCount (frequently occurring across sessions)
+	// ── Sort descending ─────────────────────────────────────────────
+	// Primary: highest totalInstanceCount (most frequently encountered)
+	// Secondary: highest sessionCount (spread across sessions)
 	// Tertiary: alphabetical by type
 	const sortedEntries = Array.from(common.entries()).sort(([, a], [, b]) => {
-		if (b.activeFindingCount !== a.activeFindingCount) {
-			return b.activeFindingCount - a.activeFindingCount;
+		if (b.totalInstanceCount !== a.totalInstanceCount) {
+			return b.totalInstanceCount - a.totalInstanceCount;
 		}
 		if (b.sessionCount !== a.sessionCount) {
 			return b.sessionCount - a.sessionCount;

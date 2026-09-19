@@ -126,6 +126,11 @@ export interface CommonVulnerabilityItem {
 	sessionCount: number;
 	/** Total sessions analyzed. */
 	totalSessions: number;
+	/**
+	 * Total finding instances of this type (active + resolved + missing).
+	 * Represents how many times the student has encountered this pattern.
+	 */
+	totalInstanceCount: number;
 	/** Active findings of this type still present. */
 	activeFindingCount: number;
 }
