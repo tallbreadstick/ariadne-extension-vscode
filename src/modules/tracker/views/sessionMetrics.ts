@@ -851,7 +851,7 @@ export function buildSessionMetricsHtml(
 				${buildCollapsibleTrendRow(
 		'resolved',
 		RESOLVED_SVG,
-		'Resolved',
+		'Resolved This Session',
 		trends.resolvedThisSession,
 		resolvedSubItems,
 		'Instances Fixed',
