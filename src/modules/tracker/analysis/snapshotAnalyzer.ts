@@ -136,6 +136,13 @@ export function buildSessionAnalysis(
 		return c.status === 'persisting' && c.previousState !== 'persisting';
 	});
 
+	const newResolvedFindings = classifications.filter((c) => {
+		if (c.isNewResolved !== undefined) {
+			return c.isNewResolved;
+		}
+		return c.status === 'resolved' && c.previousState !== 'resolved';
+	});
+
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
 	let resolvedThisSession = 0;
@@ -211,8 +218,10 @@ export function buildSessionAnalysis(
 				// problems, not partially-fixed old ones. This is stable across
 				// multiple saves within the same session (unlike previousState).
 				if (
-					sessionStartedAt != null &&
-					classification.lifecycle.firstConfirmedAt != null &&
+					sessionStartedAt !== null &&
+					sessionStartedAt !== undefined &&
+					classification.lifecycle.firstConfirmedAt !== null &&
+					classification.lifecycle.firstConfirmedAt !== undefined &&
 					classification.lifecycle.firstConfirmedAt >= sessionStartedAt
 				) {
 					newlyPersistingIndices.add(deltaIdx);
@@ -306,6 +315,7 @@ export function buildSessionAnalysis(
 		newCandidateFindings,
 		absentCandidateFindings,
 		newPersistingFindings,
+		newResolvedFindings,
 	};
 }
 

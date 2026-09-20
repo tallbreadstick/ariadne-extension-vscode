@@ -264,6 +264,12 @@ export interface FindingClassification {
 	 * (graduating from Candidate or Recurring).
 	 */
 	isNewPersisting?: boolean;
+
+	/**
+	 * True if this finding transitioned into Resolved status in this observation
+	 * (transitioning from Candidate or absent to durable resolution).
+	 */
+	isNewResolved?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════

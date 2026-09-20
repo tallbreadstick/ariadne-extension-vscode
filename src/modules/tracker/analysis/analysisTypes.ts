@@ -153,4 +153,8 @@ export interface SessionAnalysis {
 	 * Findings newly transitioned into Persisting status in this observation.
 	 */
 	newPersistingFindings?: FindingClassification[];
+	/**
+	 * Findings newly transitioned into Resolved status in this observation.
+	 */
+	newResolvedFindings?: FindingClassification[];
 }
