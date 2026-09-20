@@ -70,7 +70,8 @@ export const COMMON_VULN_POLICY = {
  */
 export interface TypeGraduationState {
 	/**
-	 * Index into the milestones array after which this type last graduated.
+	 * Completed session index after which this type last graduated.
+	 * Milestones at or before this session are skipped on re-entry.
 	 * Null if the type has never graduated.
 	 */
 	graduatedAfterSessionIndex: number | null;
@@ -257,10 +258,17 @@ export function computeCommonVulnerabilities(
 		for (const f of milestone.findings) {
 			const key = typeKey(f.cweId, f.type);
 
-			// Skip milestones at or before the graduation point for this type
+			// Skip milestones at or before the graduated session for this type,
+			// but still seed the fingerprint tracker so post-graduation milestones
+			// don't treat these already-known instances as "new".
 			const gradState = graduationHistory[key];
-			const countFrom = gradState?.graduatedAfterSessionIndex ?? -1;
-			if (mIdx <= countFrom) { continue; }
+			const gradAfterSession = gradState?.graduatedAfterSessionIndex ?? -1;
+			if (milestone.completedSessionIdx >= 0 && milestone.completedSessionIdx <= gradAfterSession) {
+				if (!seenByType.has(key)) { seenByType.set(key, new Set()); }
+				seenByType.get(key)!.add(f.logicalFingerprint);
+				continue;
+			}
+			// For active-session milestones (completedSessionIdx === -1), always process
 
 			// Session-presence for K threshold
 			typesPresent.add(key);
@@ -320,10 +328,19 @@ export function computeCommonVulnerabilities(
 		);
 
 		// Count consecutive completed sessions (from most recent backwards)
-		// with no new instances of this type
+		// with no new instances of this type, BUT only sessions that started
+		// AFTER the latest resolution timestamp. This ensures G clean sessions
+		// happen AFTER the student fixed everything, not before.
 		let consecutiveNoNew = 0;
 		if (allResolved) {
+			// Find the latest resolution timestamp across all FLCs of this type
+			const latestResolution = Math.max(
+				...typeFLCs.map(flc => flc.durableResolutionAt ?? 0),
+			);
+
 			for (let i = completedSessions.length - 1; i >= 0; i--) {
+				// Only count sessions that started after the fix was applied
+				if (completedSessions[i].startedAt < latestResolution) { break; }
 				if (csNewTypes[i].has(key)) { break; }
 				consecutiveNoNew++;
 			}
@@ -332,9 +349,10 @@ export function computeCommonVulnerabilities(
 		const graduated = allResolved && consecutiveNoNew >= G;
 
 		if (graduated) {
-			// Record graduation point for future session-count reset
+			// Record graduation using the completed session index (stable
+			// across milestone recalculations, unlike milestone index)
 			graduationHistory[key] = {
-				graduatedAfterSessionIndex: milestones.length - 1,
+				graduatedAfterSessionIndex: completedSessions.length - 1,
 			};
 			continue; // Graduated types are not Common
 		}
