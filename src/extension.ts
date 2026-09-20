@@ -445,6 +445,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				cweId: entry.cweId,
 				sessionCount: entry.sessionCount,
 				totalSessions: entry.totalSessions,
+				totalInstanceCount: entry.totalInstanceCount,
 				activeFindingCount: entry.activeFindingCount,
 			});
 		}
@@ -707,7 +708,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// ── Hourly Auto Full Scan & Session Rollover ────────────────────────
 	let hourlyScanTimer: ReturnType<typeof setInterval> | null = null;
-	let hourlySessionCount = 1;
+	let hourlySessionCount = 0;
 
 	function startHourlyScanTimer(): void {
 		if (hourlyScanTimer !== null) {
@@ -788,6 +789,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				previousScanSnapshot,
 				lifecycles,
 				activeSession.trendComparisonByKey,
+				activeSession.startedAt,
 			);
 			latestSessionAnalysis = sessionAnalysis;
 			previousScanSnapshot = currentSnapshot;

@@ -431,6 +431,7 @@ function classifyLifecycle(
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
 	const isNewPersisting = status === 'persisting' && previousState !== 'persisting';
+	const isNewResolved = status === 'resolved' && previousState !== 'resolved';
 	lifecycle.lifecycleState = status;
 
 	return {
@@ -443,6 +444,7 @@ function classifyLifecycle(
 		...(isNewCandidate ? { isNewCandidate: true } : {}),
 		...(isAbsentCandidate ? { isAbsentCandidate: true } : {}),
 		...(isNewPersisting ? { isNewPersisting: true } : {}),
+		...(isNewResolved ? { isNewResolved: true } : {}),
 	};
 }
 
