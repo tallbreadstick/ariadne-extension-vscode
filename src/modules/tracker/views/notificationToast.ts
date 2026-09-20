@@ -139,9 +139,19 @@ export function showImprovingToast(analysis: SessionAnalysis): boolean {
 	return true;
 }
 
-/** Shows an informational toast for resolved vulnerabilities. */
-export function showResolvedToast(analysis: SessionAnalysis): boolean {
-	const count = analysis.resolvedThisSession;
+/**
+ * Shows an informational toast for resolved vulnerabilities.
+ * In `milestones` mode, only fires when findings transition to resolved (newResolvedFindings).
+ * In `all` mode, fires for all resolved patterns on 60s cooldown.
+ */
+export function showResolvedToast(
+	analysis: SessionAnalysis,
+	level: NotificationLevel = 'milestones',
+): boolean {
+	const count = level === 'all'
+		? analysis.resolvedThisSession
+		: (analysis.newResolvedFindings?.length ?? 0);
+
 	if (count === 0) { return false; }
 	if (!tryAcquire('resolved')) { return false; }
 
@@ -221,7 +231,7 @@ export function showSessionToasts(
 		let anyFired = false;
 		if (showRecurringToast(analysis)) { anyFired = true; }
 		if (showImprovingToast(analysis)) { anyFired = true; }
-		if (showResolvedToast(analysis)) { anyFired = true; }
+		if (showResolvedToast(analysis, level)) { anyFired = true; }
 		if (showAbsentCandidateToast(analysis)) { anyFired = true; }
 		if (showNewCandidateToast(analysis)) { anyFired = true; }
 		if (showPersistingToast(analysis, level)) { anyFired = true; }

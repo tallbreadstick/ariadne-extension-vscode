@@ -92,6 +92,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 					cweId: 'CWE-89',
 					sessionCount: 2,
 					totalSessions: 2,
+					totalInstanceCount: 2,
 					activeFindingCount: 1,
 				},
 				{
@@ -99,6 +100,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 					cweId: 'CWE-22',
 					sessionCount: 2,
 					totalSessions: 2,
+					totalInstanceCount: 2,
 					activeFindingCount: 0,
 				},
 			];
@@ -157,6 +159,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 					totalSessions: 3,
 					isGraduated: false,
 					totalRecurrences: 0,
+					totalInstanceCount: 2,
 					activeFindingCount: 1,
 				}],
 			]);

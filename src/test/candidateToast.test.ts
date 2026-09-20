@@ -556,4 +556,133 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(plans[0].type, 'newCandidate');
 		});
 	});
+
+	describe('4. Non-Invasive Resolved Transitions & Deduplication', () => {
+		it('flags isNewResolved on first transition to resolved, but not on steady-state saves', () => {
+			const vuln = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10);
+			const t0 = 1_000_000;
+
+			// Observation 1: t0 (active finding detected)
+			const s1 = processObservation([vuln], [], t0, true);
+			assert.strictEqual(s1.classifications[0].status, 'candidate');
+			assert.strictEqual(s1.classifications[0].isNewResolved, undefined);
+
+			// Observation 2: t0 + 10s (confirmed active)
+			const s2 = processObservation([vuln], s1.lifecycles, t0 + 10_000, true);
+			assert.strictEqual(s2.classifications[0].status, 'active');
+			assert.strictEqual(s2.classifications[0].isNewResolved, undefined);
+
+			// Observation 3: t0 + 20s (absent, missingSince initialized)
+			const s3 = processObservation([], s2.lifecycles, t0 + 20_000, true);
+			assert.strictEqual(s3.classifications[0].status, 'candidate');
+			assert.strictEqual(s3.classifications[0].isNewResolved, undefined);
+
+			// Observation 4: t0 + 26s (absence grace period exceeded -> provisional resolution)
+			const s4 = processObservation([], s3.lifecycles, t0 + 26_000, true);
+			assert.strictEqual(s4.classifications[0].status, 'candidate');
+			assert.strictEqual(s4.classifications[0].isNewResolved, undefined);
+
+			// Observation 5: t0 + 35s (still absent -> durable resolution confirmed)
+			const s5 = processObservation([], s4.lifecycles, t0 + 35_000, true);
+			assert.strictEqual(s5.classifications[0].status, 'resolved');
+			assert.strictEqual(s5.classifications[0].isNewResolved, true, 'Must flag isNewResolved on initial durable resolution');
+
+			const analysis5 = buildSessionAnalysis(s5.classifications, createEmptySnapshot(), null, s5.lifecycles, undefined, t0);
+			assert.strictEqual(analysis5.newResolvedFindings?.length, 1, 'newResolvedFindings must contain the newly resolved finding');
+			assert.strictEqual(analysis5.resolvedThisSession, 1, 'resolvedThisSession must count the resolved finding');
+
+			// Observation 6: t0 + 45s (still absent in steady state)
+			const s6 = processObservation([], s5.lifecycles, t0 + 45_000, true);
+			assert.strictEqual(s6.classifications[0].status, 'resolved');
+			assert.strictEqual(s6.classifications[0].isNewResolved, undefined, 'Must NOT flag isNewResolved in steady state');
+
+			const analysis6 = buildSessionAnalysis(s6.classifications, createEmptySnapshot(), null, s6.lifecycles, undefined, t0);
+			assert.strictEqual(analysis6.newResolvedFindings?.length ?? 0, 0, 'newResolvedFindings must be empty in steady state');
+			assert.strictEqual(analysis6.resolvedThisSession, 1, 'resolvedThisSession remains 1 for cumulative session metrics');
+		});
+
+		it('suppresses repeating resolved toasts in milestones mode when resolutions are steady-state', () => {
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				resolvedThisSession: 2,
+				newResolvedFindings: [], // steady-state
+			};
+
+			// Default 'milestones' mode: no toast for steady state!
+			const plan = determinePrioritizedToast(analysis, 'milestones');
+			assert.strictEqual(plan, null, 'Must not fire resolved toast in milestones mode without newly resolved findings');
+
+			// 'all' mode: legacy cooldown-based toast allowed
+			const planAll = determinePrioritizedToast(analysis, 'all');
+			assert.ok(planAll);
+			assert.strictEqual(planAll.type, 'resolved');
+			assert.ok(planAll.message.includes('2 patterns resolved'));
+		});
+
+		it('fires resolved toast in milestones mode when newly resolved findings exist', () => {
+			const dummyResolved: FindingClassification = {
+				...processObservation([createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'resolved',
+				isNewResolved: true,
+			};
+
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				resolvedThisSession: 1,
+				newResolvedFindings: [dummyResolved],
+			};
+
+			const plan = determinePrioritizedToast(analysis, 'milestones');
+			assert.ok(plan);
+			assert.strictEqual(plan.type, 'resolved');
+			assert.strictEqual(plan.severity, 'info');
+			assert.ok(plan.message.includes('1 pattern resolved'));
+		});
+
+		it('suppresses steady-state resolved findings in stacked mode when under milestones level', () => {
+			const dummyNewCandidate: FindingClassification = {
+				...processObservation([createMockObserved('SQLi', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'candidate',
+				isNewCandidate: true,
+			};
+
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				resolvedThisSession: 1, // steady state (no newResolvedFindings)
+				newResolvedFindings: [],
+				newCandidateFindings: [dummyNewCandidate],
+			};
+
+			const plans = determineStackedToasts(analysis, 'milestones');
+			assert.strictEqual(plans.length, 1, 'Only newCandidate should fire; steady-state resolved should not repeat');
+			assert.strictEqual(plans[0].type, 'newCandidate');
+		});
+
+		it('includes newly resolved findings in stacked mode when under milestones level', () => {
+			const dummyResolved: FindingClassification = {
+				...processObservation([createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'resolved',
+				isNewResolved: true,
+			};
+
+			const dummyNewCandidate: FindingClassification = {
+				...processObservation([createMockObserved('SQLi', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'candidate',
+				isNewCandidate: true,
+			};
+
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				resolvedThisSession: 1,
+				newResolvedFindings: [dummyResolved],
+				newCandidateFindings: [dummyNewCandidate],
+			};
+
+			const plans = determineStackedToasts(analysis, 'milestones');
+			assert.strictEqual(plans.length, 2, 'Both resolved and newCandidate should be returned in stacked mode');
+			assert.strictEqual(plans[0].type, 'resolved');
+			assert.strictEqual(plans[1].type, 'newCandidate');
+		});
+	});
 });
+

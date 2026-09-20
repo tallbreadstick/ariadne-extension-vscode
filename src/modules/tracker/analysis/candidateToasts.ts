@@ -89,12 +89,15 @@ export function determinePrioritizedToast(
 		};
 	}
 
-	if (analysis.resolvedThisSession > 0 && isEligible('resolved')) {
-		const count = analysis.resolvedThisSession;
+	const resolvedCount = level === 'all'
+		? analysis.resolvedThisSession
+		: (analysis.newResolvedFindings?.length ?? 0);
+
+	if (resolvedCount > 0 && isEligible('resolved')) {
 		return {
 			type: 'resolved',
 			severity: 'info',
-			message: `Ariadne: ${count} ${count === 1 ? 'pattern resolved' : 'patterns resolved'} — check Session Metrics for details.`,
+			message: `Ariadne: ${resolvedCount} ${resolvedCount === 1 ? 'pattern resolved' : 'patterns resolved'} — check Session Metrics for details.`,
 		};
 	}
 
@@ -175,12 +178,15 @@ export function determineStackedToasts(
 		});
 	}
 
-	if (analysis.resolvedThisSession > 0 && isEligible('resolved')) {
-		const count = analysis.resolvedThisSession;
+	const resolvedCount = level === 'all'
+		? analysis.resolvedThisSession
+		: (analysis.newResolvedFindings?.length ?? 0);
+
+	if (resolvedCount > 0 && isEligible('resolved')) {
 		plans.push({
 			type: 'resolved',
 			severity: 'info',
-			message: `Ariadne: ${count} ${count === 1 ? 'pattern resolved' : 'patterns resolved'} — check Session Metrics for details.`,
+			message: `Ariadne: ${resolvedCount} ${resolvedCount === 1 ? 'pattern resolved' : 'patterns resolved'} — check Session Metrics for details.`,
 		});
 	}
 
