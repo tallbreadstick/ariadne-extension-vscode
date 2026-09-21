@@ -46,7 +46,7 @@ import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTy
 
 // ── Tracker (lifecycle engine + views) ────────────────────────────────
 import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
-import { showSessionToasts } from './modules/tracker/views/notificationToast.js';
+import { showSessionToasts, getNotificationLevel } from './modules/tracker/views/notificationToast.js';
 import { buildSessionAnalysis, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import {
 	processObservation,
@@ -69,6 +69,14 @@ import type {
 import type { SessionAnalysis } from './modules/tracker/analysis/analysisTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
 import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
+import {
+	buildAbruptSessionDiagnostics,
+	showAbruptSessionDiagnosticPanel,
+} from './modules/tracker/views/abruptSessionPanel.js';
+import {
+	getAutoScanIntervalMinutes,
+	getAutoScanIntervalMs,
+} from './modules/feedback/settings/extensionSettings.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -266,12 +274,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	if (!pendingFinalized) {
 		const staleSession = store.loadActiveSession();
 		if (staleSession) {
-			const recovered = finalizeSession(staleSession, lifecycles, Date.now(), 'incomplete');
+			const recoveryTime = Date.now();
+			const diagnostics = buildAbruptSessionDiagnostics(staleSession, lifecycles, recoveryTime);
+			const recovered = finalizeSession(staleSession, lifecycles, recoveryTime, 'incomplete');
 			void store.appendCompletedSession(recovered);
 			void store.clearActiveSession();
 			console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
+
+			// Prompt user with modal popup containing diagnostics overview
+			const detail = [
+				`Session: ${staleSession.sessionId}`,
+				`Started: ${new Date(staleSession.startedAt).toLocaleString()}`,
+				`Active findings at crash: ${diagnostics.activeFindingCount}`,
+				`Completed checkpoints: ${diagnostics.hourlyCheckpointsCount}`,
+				'',
+				'This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
+			].join('\n');
+
+			void vscode.window.showWarningMessage(
+				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
+				{ modal: true, detail },
+				'View Diagnostics',
+				'Dismiss',
+			).then((selection) => {
+				if (selection === 'View Diagnostics') {
+					showAbruptSessionDiagnosticPanel(context, diagnostics);
+				}
+			});
 		}
 	}
+
+	console.log(`[Ariadne] Notification level initialized to: '${getNotificationLevel()}'.`);
 
 	// Save-scan settlement state is session-scoped. Since we start with no
 	// active session, ensure initialCheckpointDoneAt is reset so the first
@@ -713,19 +746,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (hourlyScanTimer !== null) {
 			return;
 		}
-		console.log('[Ariadne] Started hourly auto full scan timer (60m interval).');
+		const intervalMs = getAutoScanIntervalMs();
+		const intervalMin = getAutoScanIntervalMinutes();
+		console.log(`[Ariadne] Started auto full scan timer (${intervalMin}m interval).`);
 		hourlyScanTimer = setInterval(async () => {
 			await performHourlySessionRollover();
-		}, HOURLY_SCAN_INTERVAL_MS);
+		}, intervalMs);
 	}
 
 	function stopHourlyScanTimer(): void {
 		if (hourlyScanTimer !== null) {
 			clearInterval(hourlyScanTimer);
 			hourlyScanTimer = null;
-			console.log('[Ariadne] Stopped hourly auto full scan timer.');
+			console.log('[Ariadne] Stopped auto full scan timer.');
 		}
 	}
+
+	function restartHourlyScanTimer(): void {
+		stopHourlyScanTimer();
+		if (activeSession && featuresUnlocked) {
+			startHourlyScanTimer();
+		}
+	}
+
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (e.affectsConfiguration('ariadne.autoScan.intervalMinutes')) {
+				console.log('[Ariadne] Auto-scan interval setting updated. Re-arming timer.');
+				restartHourlyScanTimer();
+			}
+			if (e.affectsConfiguration('ariadne.notifications.level')) {
+				const newLevel = getNotificationLevel();
+				console.log(`[Ariadne] Notification level updated to: '${newLevel}'.`);
+			}
+		}),
+	);
 
 	async function performHourlySessionRollover(): Promise<void> {
 		if (!activeSession || !featuresUnlocked) {
@@ -1325,6 +1380,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 
+	const debugSimulateAbruptRecovery = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugSimulateAbruptRecovery',
+		async () => {
+			const currentSession = activeSession ?? {
+				sessionId: `session-simulated-${Date.now()}`,
+				startedAt: Date.now() - 45 * 60 * 1000,
+				endedAt: null,
+				status: 'incomplete' as const,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				lifecycleSummaries: [],
+				hourlyCheckpoints: [
+					{
+						timestamp: Date.now() - 15 * 60 * 1000,
+						findings: [],
+					},
+				],
+			};
+
+			const recoveryTime = Date.now();
+			const diagnostics = buildAbruptSessionDiagnostics(currentSession, lifecycles, recoveryTime);
+
+			const detail = [
+				`Session: ${currentSession.sessionId}`,
+				`Started: ${new Date(currentSession.startedAt).toLocaleString()}`,
+				`Active findings at crash: ${diagnostics.activeFindingCount}`,
+				`Completed checkpoints: ${diagnostics.hourlyCheckpointsCount}`,
+				'',
+				'This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
+			].join('\n');
+
+			const selection = await vscode.window.showWarningMessage(
+				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
+				{ modal: true, detail },
+				'View Diagnostics',
+				'Dismiss',
+			);
+
+			if (selection === 'View Diagnostics') {
+				showAbruptSessionDiagnosticPanel(context, diagnostics);
+			}
+		},
+	);
+
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
 		async (cwe?: string, title?: string) => {
@@ -1426,6 +1525,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		debugShowSaveScanState,
 		debugResetSaveScanState,
 		triggerHourlyRollover,
+		debugSimulateAbruptRecovery,
 	);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
