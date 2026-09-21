@@ -126,7 +126,7 @@ describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 			assert.strictEqual(diag.findingsBySeverity.medium, 0);
 			assert.strictEqual(diag.findingsBySeverity.low, 0);
 			assert.strictEqual(diag.vulnerabilityTypes.length, 2);
-			assert.ok(diag.trendsImpact.includes('withheld from being used as a trend baseline'));
+			assert.ok(diag.trendsImpact.includes('withheld from your trend baseline'));
 		});
 
 		it('builds diagnostic HTML containing session and vulnerability details', () => {

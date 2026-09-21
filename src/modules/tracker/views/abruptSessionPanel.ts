@@ -96,7 +96,7 @@ export function buildAbruptSessionDiagnostics(
 		vulnerabilityTypes,
 		reason: 'Process terminated or closed before clean deactivation could execute',
 		trendsImpact:
-			'Per Section 9 of the Ariadne Trends framework, this session is classified as "incomplete" and withheld from being used as a trend baseline to prevent skewed progress scores (F, P, T).',
+			'This session is classified as "incomplete" and withheld from your trend baseline to protect your progress scores.',
 	};
 }
 
@@ -375,7 +375,7 @@ export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 	</div>
 
 	<div class="notice-card">
-		<strong>Trends Framework Impact:</strong> ${d.trendsImpact}
+		This session is classified as <strong>incomplete</strong> and withheld from your trend baseline to protect your progress scores.
 	</div>
 
 	<div class="section-title">Findings Active at Termination</div>
