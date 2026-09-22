@@ -90,6 +90,10 @@
       {
         "command": "ariadne-extension-vscode.triggerHourlyRollover",
         "title": "Ariadne: Debug — Trigger Hourly Session Rollover"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugSimulateAbruptRecovery",
+        "title": "Ariadne: Debug — Simulate Abrupt Session Recovery"
       }
     ],
     "viewsContainers": {
@@ -156,6 +160,13 @@
             "Suppress all popup toast notifications. Metrics and issues remain visible in the sidebar, squiggles, and status bar."
           ],
           "markdownDescription": "Controls the verbosity of Ariadne popup toast notifications."
+        },
+        "ariadne.autoScan.intervalMinutes": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 2,
+          "maximum": 180,
+          "markdownDescription": "Duration in minutes between automatic full background scans (default: 60 minutes). Minimum: 2 minutes, Maximum: 180 minutes."
         }
       }
     },
