@@ -46,7 +46,7 @@ import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTy
 
 // ── Tracker (lifecycle engine + views) ────────────────────────────────
 import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
-import { showSessionToasts } from './modules/tracker/views/notificationToast.js';
+import { showSessionToasts, getNotificationLevel } from './modules/tracker/views/notificationToast.js';
 import { buildSessionAnalysis, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import {
 	processObservation,
@@ -69,6 +69,15 @@ import type {
 import type { SessionAnalysis } from './modules/tracker/analysis/analysisTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
 import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
+import {
+	buildAbruptSessionDiagnostics,
+	formatSessionDisplayId,
+	showAbruptSessionDiagnosticPanel,
+} from './modules/tracker/views/abruptSessionPanel.js';
+import {
+	getAutoScanIntervalMinutes,
+	getAutoScanIntervalMs,
+} from './modules/feedback/settings/extensionSettings.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -266,12 +275,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	if (!pendingFinalized) {
 		const staleSession = store.loadActiveSession();
 		if (staleSession) {
-			const recovered = finalizeSession(staleSession, lifecycles, Date.now(), 'incomplete');
+			const recoveryTime = Date.now();
+			const diagnostics = buildAbruptSessionDiagnostics(staleSession, lifecycles, recoveryTime);
+			const recovered = finalizeSession(staleSession, lifecycles, recoveryTime, 'incomplete');
 			void store.appendCompletedSession(recovered);
 			void store.clearActiveSession();
 			console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
+
+			// Prompt user with modal popup containing diagnostics overview
+			const displayId = formatSessionDisplayId(staleSession.sessionId);
+			const detail = [
+				`SESSION: ${displayId} (${staleSession.sessionId})`,
+				`STARTED: ${new Date(staleSession.startedAt).toLocaleString()}`,
+				`CHECKPOINTS: ${diagnostics.hourlyCheckpointsCount} completed`,
+				'',
+				`• Active at crash: ${diagnostics.activeFindingCount} unresolved`,
+				`• Resolved this session: ${diagnostics.resolvedFindingCount} fixed`,
+				'',
+				'Your code changes are safe. To protect your progress metrics from skewed data, Trend scores will be measured against your last completed session.',
+			].join('\n');
+
+			const viewAction: vscode.MessageItem = { title: 'View Diagnostics' };
+			const dismissAction: vscode.MessageItem = { title: 'Dismiss', isCloseAffordance: true };
+
+			void vscode.window.showWarningMessage(
+				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
+				{ modal: true, detail },
+				viewAction,
+				dismissAction,
+			).then((selection) => {
+				if (selection?.title === 'View Diagnostics') {
+					showAbruptSessionDiagnosticPanel(context, diagnostics);
+				}
+			});
 		}
 	}
+
+	console.log(`[Ariadne] Notification level initialized to: '${getNotificationLevel()}'.`);
 
 	// Save-scan settlement state is session-scoped. Since we start with no
 	// active session, ensure initialCheckpointDoneAt is reset so the first
@@ -445,6 +485,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				cweId: entry.cweId,
 				sessionCount: entry.sessionCount,
 				totalSessions: entry.totalSessions,
+				totalInstanceCount: entry.totalInstanceCount,
 				activeFindingCount: entry.activeFindingCount,
 			});
 		}
@@ -707,25 +748,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// ── Hourly Auto Full Scan & Session Rollover ────────────────────────
 	let hourlyScanTimer: ReturnType<typeof setInterval> | null = null;
-	let hourlySessionCount = 1;
+	let hourlySessionCount = 0;
 
 	function startHourlyScanTimer(): void {
 		if (hourlyScanTimer !== null) {
 			return;
 		}
-		console.log('[Ariadne] Started hourly auto full scan timer (60m interval).');
+		const intervalMs = getAutoScanIntervalMs();
+		const intervalMin = getAutoScanIntervalMinutes();
+		console.log(`[Ariadne] Started auto full scan timer (${intervalMin}m interval).`);
 		hourlyScanTimer = setInterval(async () => {
 			await performHourlySessionRollover();
-		}, HOURLY_SCAN_INTERVAL_MS);
+		}, intervalMs);
 	}
 
 	function stopHourlyScanTimer(): void {
 		if (hourlyScanTimer !== null) {
 			clearInterval(hourlyScanTimer);
 			hourlyScanTimer = null;
-			console.log('[Ariadne] Stopped hourly auto full scan timer.');
+			console.log('[Ariadne] Stopped auto full scan timer.');
 		}
 	}
+
+	function restartHourlyScanTimer(): void {
+		stopHourlyScanTimer();
+		if (activeSession && featuresUnlocked) {
+			startHourlyScanTimer();
+		}
+	}
+
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (e.affectsConfiguration('ariadne.autoScan.intervalMinutes')) {
+				console.log('[Ariadne] Auto-scan interval setting updated. Re-arming timer.');
+				restartHourlyScanTimer();
+			}
+			if (e.affectsConfiguration('ariadne.notifications.level')) {
+				const newLevel = getNotificationLevel();
+				console.log(`[Ariadne] Notification level updated to: '${newLevel}'.`);
+			}
+		}),
+	);
 
 	async function performHourlySessionRollover(): Promise<void> {
 		if (!activeSession || !featuresUnlocked) {
@@ -788,6 +851,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				previousScanSnapshot,
 				lifecycles,
 				activeSession.trendComparisonByKey,
+				activeSession.startedAt,
 			);
 			latestSessionAnalysis = sessionAnalysis;
 			previousScanSnapshot = currentSnapshot;
@@ -932,6 +996,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const timestamp = Date.now();
 
 			// ── 4c. Session record — create or update ───────────────────
+			const isFirstSettlement = !activeSession;
 			if (!activeSession) {
 				// First settlement: create the session NOW, using the
 				// settlement timestamp so startedAt === initialCheckpointDoneAt.
@@ -981,6 +1046,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					lifecycles,
 					activeSession?.trendComparisonByKey,
 					activeSession?.startedAt,
+					{ isInitialCheckpoint: isFirstSettlement },
 				);
 				latestSessionAnalysis = sessionAnalysis;
 
@@ -1323,6 +1389,134 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 
+	const debugSimulateAbruptRecovery = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugSimulateAbruptRecovery',
+		async () => {
+			const currentSession = activeSession ?? {
+				sessionId: 'session-004',
+				startedAt: Date.now() - 45 * 60 * 1000,
+				endedAt: null,
+				status: 'incomplete' as const,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				lifecycleSummaries: [],
+				hourlyCheckpoints: [
+					{
+						timestamp: Date.now() - 15 * 60 * 1000,
+						findings: [],
+					},
+				],
+			};
+
+			const simulatedLifecycles = lifecycles.length > 0 ? lifecycles : [
+				{
+					logicalFingerprint: 'sim-fp-1',
+					contentFingerprint: 'sim-c-1',
+					scopeFingerprint: 'sim-s-1',
+					ruleId: 'RULE-SQLI',
+					cweId: 'CWE-89',
+					type: 'SQL Injection',
+					severity: 'critical' as const,
+					instanceName: 'executeQuery',
+					filePath: 'src/database/QueryRunner.java',
+					firstConfirmedAt: Date.now() - 40 * 60 * 1000,
+					lastConfirmedAt: Date.now() - 2 * 60 * 1000,
+					missingSince: null,
+					provisionalResolutionAt: null,
+					durableResolutionAt: null,
+					baselineOccurrenceCount: 1,
+					currentOccurrenceCount: 1,
+					confirmationCount: 3,
+					recurrenceCount: 0,
+					lastRecurredAt: null,
+					inSessionToggleCount: 0,
+					identicalRestorationCount: 0,
+					isCommentedOut: false,
+					lifecycleState: 'persisting' as const,
+				},
+				{
+					logicalFingerprint: 'sim-fp-2',
+					contentFingerprint: 'sim-c-2',
+					scopeFingerprint: 'sim-s-2',
+					ruleId: 'RULE-XSS',
+					cweId: 'CWE-79',
+					type: 'Cross-Site Scripting',
+					severity: 'high' as const,
+					instanceName: 'renderOutput',
+					filePath: 'src/views/UserController.java',
+					firstConfirmedAt: Date.now() - 35 * 60 * 1000,
+					lastConfirmedAt: Date.now() - 10 * 60 * 1000,
+					missingSince: null,
+					provisionalResolutionAt: null,
+					durableResolutionAt: null,
+					baselineOccurrenceCount: 1,
+					currentOccurrenceCount: 1,
+					confirmationCount: 2,
+					recurrenceCount: 1,
+					lastRecurredAt: Date.now() - 15 * 60 * 1000,
+					inSessionToggleCount: 1,
+					identicalRestorationCount: 0,
+					isCommentedOut: false,
+					lifecycleState: 'recurring' as const,
+				},
+				{
+					logicalFingerprint: 'sim-fp-3',
+					contentFingerprint: 'sim-c-3',
+					scopeFingerprint: 'sim-s-3',
+					ruleId: 'RULE-PT',
+					cweId: 'CWE-22',
+					type: 'Path Traversal',
+					severity: 'medium' as const,
+					instanceName: 'getFile',
+					filePath: 'src/storage/FileManager.java',
+					firstConfirmedAt: Date.now() - 42 * 60 * 1000,
+					lastConfirmedAt: Date.now() - 25 * 60 * 1000,
+					missingSince: Date.now() - 20 * 60 * 1000,
+					provisionalResolutionAt: Date.now() - 18 * 60 * 1000,
+					durableResolutionAt: Date.now() - 10 * 60 * 1000,
+					baselineOccurrenceCount: 1,
+					currentOccurrenceCount: 0,
+					confirmationCount: 2,
+					recurrenceCount: 0,
+					lastRecurredAt: null,
+					inSessionToggleCount: 0,
+					identicalRestorationCount: 0,
+					isCommentedOut: false,
+					lifecycleState: 'resolved' as const,
+				},
+			];
+
+			const recoveryTime = Date.now();
+			const diagnostics = buildAbruptSessionDiagnostics(currentSession, simulatedLifecycles, recoveryTime);
+			const displayId = formatSessionDisplayId(currentSession.sessionId);
+
+			const detail = [
+				`SESSION: ${displayId} (${currentSession.sessionId})`,
+				`STARTED: ${new Date(currentSession.startedAt).toLocaleString()}`,
+				`CHECKPOINTS: ${diagnostics.hourlyCheckpointsCount} completed`,
+				'',
+				`• Active at crash: ${diagnostics.activeFindingCount} unresolved`,
+				`• Resolved this session: ${diagnostics.resolvedFindingCount} fixed`,
+				'',
+				'Your code changes are safe. To protect your progress metrics from skewed data, Trend scores will be measured against your last completed session.',
+			].join('\n');
+
+			const viewAction: vscode.MessageItem = { title: 'View Diagnostics' };
+			const dismissAction: vscode.MessageItem = { title: 'Dismiss', isCloseAffordance: true };
+
+			const selection = await vscode.window.showWarningMessage(
+				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
+				{ modal: true, detail },
+				viewAction,
+				dismissAction,
+			);
+
+			if (selection?.title === 'View Diagnostics') {
+				showAbruptSessionDiagnosticPanel(context, diagnostics);
+			}
+		},
+	);
+
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
 		async (cwe?: string, title?: string) => {
@@ -1424,6 +1618,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		debugShowSaveScanState,
 		debugResetSaveScanState,
 		triggerHourlyRollover,
+		debugSimulateAbruptRecovery,
 	);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────

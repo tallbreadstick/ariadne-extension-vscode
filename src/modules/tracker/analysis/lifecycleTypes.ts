@@ -235,11 +235,41 @@ export interface FindingClassification {
 	currentOccurrenceCount: number;
 
 	/**
+	 * Lifecycle state prior to this observation, or undefined if this finding
+	 * was newly created in this observation.
+	 */
+	previousState?: FindingLifecycleState;
+
+	/**
 	 * True if this observation was an identical restoration of a
 	 * previously absent finding (same logical, content, and scope fingerprints).
 	 * Measurement-integrity flag (Section 11.2).
 	 */
 	isIdenticalRestoration?: boolean;
+
+	/**
+	 * True if this finding was newly introduced and recorded with Candidate status
+	 * in this observation.
+	 */
+	isNewCandidate?: boolean;
+
+	/**
+	 * True if this finding was previously active/detected and transitioned to absent
+	 * Candidate status in this observation.
+	 */
+	isAbsentCandidate?: boolean;
+
+	/**
+	 * True if this finding transitioned into Persisting status in this observation
+	 * (graduating from Candidate or Recurring).
+	 */
+	isNewPersisting?: boolean;
+
+	/**
+	 * True if this finding transitioned into Resolved status in this observation
+	 * (transitioning from Candidate or absent to durable resolution).
+	 */
+	isNewResolved?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════

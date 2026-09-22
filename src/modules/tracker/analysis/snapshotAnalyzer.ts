@@ -73,14 +73,14 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
 // SESSION ANALYSIS BUILDER
 // ══════════════════════════════════════════════════════════════════════
 
+export interface BuildSessionAnalysisOptions {
+	/** True if this is the session's first checkpoint. */
+	isInitialCheckpoint?: boolean;
+}
+
 /**
  * Builds a SessionAnalysis from lifecycle classifications and the
  * current scan snapshot.
- *
- * This replaces the old `analyzeSession(snapshots)` function.
- * The lifecycle engine has already processed the observation and
- * produced classifications — this function maps them to the shape
- * the UI expects.
  *
  * @param classifications - Output from lifecycleEngine.processObservation()
  * @param currentScan - The current scan snapshot (for active findings)
@@ -88,6 +88,7 @@ function countSeverities(vulnerabilities: Vulnerability[]): SeverityCounts {
  * @param lifecycles - Current lifecycle records (for F/P computation)
  * @param trendComparisonByKey - Frozen comparison set from prior session (for T computation)
  * @param sessionStartedAt - Start timestamp of the current active session (for scoping resolutions)
+ * @param options - Additional options including initial checkpoint flags
  */
 export function buildSessionAnalysis(
 	classifications: FindingClassification[],
@@ -95,9 +96,52 @@ export function buildSessionAnalysis(
 	previousScan: ScanSnapshot | null,
 	lifecycles?: FindingLifecycleRecord[],
 	trendComparisonByKey?: Record<string, TrendComparisonBaseline> | null,
-	sessionStartedAt?: number | null,
+	sessionStartedAtOrOptions?: number | null | BuildSessionAnalysisOptions,
+	options?: BuildSessionAnalysisOptions,
 ): SessionAnalysis {
+	let sessionStartedAt: number | null | undefined = null;
+	let resolvedOptions = options;
+
+	if (typeof sessionStartedAtOrOptions === 'number' || sessionStartedAtOrOptions === null) {
+		sessionStartedAt = sessionStartedAtOrOptions;
+	} else if (sessionStartedAtOrOptions && typeof sessionStartedAtOrOptions === 'object') {
+		resolvedOptions = sessionStartedAtOrOptions;
+	}
+	void resolvedOptions;
 	const activeFindings = currentScan.vulnerabilities;
+
+	const newCandidateFindings = classifications.filter((c) => {
+		if (c.isNewCandidate !== undefined) {
+			return c.isNewCandidate;
+		}
+		return c.status === 'candidate' && c.previousState === undefined;
+	});
+
+	const absentCandidateFindings = classifications.filter((c) => {
+		if (c.isAbsentCandidate !== undefined) {
+			return c.isAbsentCandidate;
+		}
+		return (
+			c.status === 'candidate' &&
+			c.previousState !== undefined &&
+			c.previousState !== 'candidate' &&
+			c.previousState !== 'resolved'
+		);
+	});
+
+	const newPersistingFindings = classifications.filter((c) => {
+		if (c.isNewPersisting !== undefined) {
+			return c.isNewPersisting;
+		}
+		return c.status === 'persisting' && c.previousState !== 'persisting';
+	});
+
+	const newResolvedFindings = classifications.filter((c) => {
+		if (c.isNewResolved !== undefined) {
+			return c.isNewResolved;
+		}
+		return c.status === 'resolved' && c.previousState !== 'resolved';
+	});
 
 	let persistingPatterns = 0;
 	let improvingTrends = 0;
@@ -107,6 +151,22 @@ export function buildSessionAnalysis(
 	let totalInSessionToggles = 0;
 
 	const deltas: VulnerabilityDelta[] = [];
+
+	/**
+	 * Indices of deltas for findings first detected in this session
+	 * (firstConfirmedAt >= sessionStartedAt). These are new problems
+	 * and must NOT be reclassified as "improving" even if another
+	 * finding of the same type was resolved.
+	 */
+	const newlyPersistingIndices = new Set<number>();
+
+	/**
+	 * Indices of deltas for findings that were previously resolved
+	 * (durably) and then reintroduced (recurrenceCount > 0).
+	 * These are relapses, not evidence of partial fixing —
+	 * they must NOT be reclassified as "improving".
+	 */
+	const restoredPersistingIndices = new Set<number>();
 
 	// ── Per-type aggregation for type-level improving detection ──
 	const typeResolvedCount = new Map<string, number>();
@@ -147,6 +207,7 @@ export function buildSessionAnalysis(
 		// For resolved findings, we need a placeholder since they're not active
 		const vuln = matchedVuln ?? createResolvedPlaceholder(classification);
 
+		const deltaIdx = deltas.length;
 		deltas.push({
 			vulnerability: vuln,
 			status,
@@ -161,6 +222,25 @@ export function buildSessionAnalysis(
 			case 'persisting':
 				persistingPatterns++;
 				typePersistingCount.set(type, (typePersistingCount.get(type) ?? 0) + 1);
+				// Tag findings first detected in this session — they are new
+				// problems, not partially-fixed old ones. This is stable across
+				// multiple saves within the same session (unlike previousState).
+				if (
+					sessionStartedAt !== null &&
+					sessionStartedAt !== undefined &&
+					classification.lifecycle.firstConfirmedAt !== null &&
+					classification.lifecycle.firstConfirmedAt !== undefined &&
+					classification.lifecycle.firstConfirmedAt >= sessionStartedAt
+				) {
+					newlyPersistingIndices.add(deltaIdx);
+				}
+				// Tag findings that were previously resolved and then reintroduced
+				// (recurrenceCount > 0). These are relapses — reclassifying them
+				// as "improving" would be misleading because the student undid
+				// a fix rather than making partial progress on an old problem.
+				if ((classification.lifecycle.recurrenceCount ?? 0) > 0) {
+					restoredPersistingIndices.add(deltaIdx);
+				}
 				break;
 			case 'improving':
 				// FLC-level improving (occurrence count reduction) — still count
@@ -180,13 +260,27 @@ export function buildSessionAnalysis(
 	// ── Type-level improving detection ───────────────────────────
 	// A vulnerability type is "improving" when it has at least one
 	// resolved instance AND at least one still-persisting instance.
-	// Recurring findings are regressions (relapses), never improving trends.
+	//
+	// Guard: restored-persisting findings (recurrenceCount > 0) are
+	// excluded — they were previously fixed and then reintroduced
+	// (e.g. Ctrl+Z undo). These are relapses, not partial fixes.
+	//
+	// Note: we intentionally do NOT exclude "newly-persisting" findings
+	// (firstConfirmedAt >= sessionStartedAt) because in Session 1 ALL
+	// findings are new to the lifecycle system and would be blocked.
+	// The recurrenceCount guard is sufficient for the revert case.
 	for (const [type, resolved] of typeResolvedCount.entries()) {
 		const persisting = typePersistingCount.get(type) ?? 0;
 		if (resolved > 0 && persisting > 0) {
-			// Mark the still-persisting deltas for this type as 'improving'
-			for (const d of deltas) {
-				if (d.vulnerability.type === type && d.status === 'persisting') {
+			// Mark the still-persisting deltas for this type as 'improving',
+			// but skip restored-persisting ones (fix-then-revert relapses)
+			for (let i = 0; i < deltas.length; i++) {
+				const d = deltas[i];
+				if (
+					d.vulnerability.type === type &&
+					d.status === 'persisting' &&
+					!restoredPersistingIndices.has(i)
+				) {
 					(d as { status: VulnerabilityStatus }).status = 'improving';
 					improvingTrends++;
 					persistingPatterns = Math.max(0, persistingPatterns - 1);
@@ -243,6 +337,10 @@ export function buildSessionAnalysis(
 		totalInSessionToggles,
 		scores,
 		typeScores,
+		newCandidateFindings,
+		absentCandidateFindings,
+		newPersistingFindings,
+		newResolvedFindings,
 	};
 }
 
@@ -331,6 +429,7 @@ function mapCommonVulns(
 			cweId: entry.cweId,
 			sessionCount: entry.sessionCount,
 			totalSessions: entry.totalSessions,
+			totalInstanceCount: entry.totalInstanceCount,
 			activeFindingCount: entry.activeFindingCount,
 		});
 	}
@@ -391,10 +490,15 @@ export function toSessionMetrics(
 			const label = t !== null ? trendLabel(t) : null;
 			const delta = t !== null ? formatTrendDelta(t) : 'N/A';
 
+			// When T is null (Session 1, no prior session data), show
+			// "Some progress" with delta "N/A" — the student IS making
+			// partial fixes but there's no comparison baseline yet.
+			// When T is exactly 0 (no change from prior session), show
+			// "No change" instead of the misleading "Some progress".
 			improvingMap.set(type, {
 				type,
 				instances: d.currentInstanceCount,
-				progressLabel: label ?? 'Some progress',
+				progressLabel: label ?? (t === null ? 'Some progress' : 'No change'),
 				progressDelta: delta,
 			});
 		}
