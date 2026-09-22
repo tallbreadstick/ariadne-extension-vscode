@@ -48,10 +48,12 @@ export interface TrendSubItem {
 export interface ImprovingSubItem extends TrendSubItem {
 	/**
 	 * Human-readable progress classification.
-	 * Placeholder until F/P/T calculation is implemented.
+	 * - 'No change' — T score is exactly 0 (no improvement from prior session).
+	 * - 'Some progress' / 'Clear progress' / 'Major progress' — positive T,
+	 *   or Session 1 fallback when no prior comparison data exists.
 	 */
-	progressLabel: 'Some progress' | 'Clear progress' | 'Major progress';
-	/** Delta string shown alongside the label (e.g. "+2.00"). Placeholder. */
+	progressLabel: 'No change' | 'Some progress' | 'Clear progress' | 'Major progress';
+	/** Delta string shown alongside the label (e.g. "+2.00"). Empty when T is null. */
 	progressDelta: string;
 }
 
