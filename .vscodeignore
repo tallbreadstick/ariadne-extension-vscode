@@ -16,3 +16,22 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Agentic scaffolding & AI docs
+AGENTS.md
+GEMINI.md
+CLAUDE.md
+PRODUCT.md
+docs/**
+
+# Tool-specific agent configs
+.codex/**
+.cursor/**
+.impeccable/**
+.github/**
+
+# Dev scripts & test fixtures
+scripts/**
+sample-project/**
+test-project/**
+test-project - Copy/**
