@@ -17,6 +17,8 @@ export interface AbruptSessionDiagnostics {
 	hourlyCheckpointsCount: number;
 	activeFindingCount: number;
 	persistingFindingCount: number;
+	resolvedFindingCount: number;
+	recurredFindingCount: number;
 	findingsBySeverity: {
 		critical: number;
 		high: number;
@@ -30,6 +32,20 @@ export interface AbruptSessionDiagnostics {
 	}>;
 	reason: string;
 	trendsImpact: string;
+}
+
+/**
+ * Formats internal session IDs (e.g. "session-005") into friendly display labels ("Session 5").
+ */
+export function formatSessionDisplayId(sessionId: string): string {
+	const match = /^session-0*(\d+)$/i.exec(sessionId.trim());
+	if (match) {
+		return `Session ${match[1]}`;
+	}
+	if (sessionId.startsWith('session-simulated-')) {
+		return 'Session 4 (Simulated)';
+	}
+	return sessionId;
 }
 
 /**
@@ -49,6 +65,16 @@ export function buildAbruptSessionDiagnostics(
 
 	const persistingLifecycles = activeLifecycles.filter(
 		(flc) => flc.confirmationCount >= 2,
+	);
+
+	const resolvedLifecycles = lifecycles.filter(
+		(flc) => flc.durableResolutionAt !== null && flc.durableResolutionAt >= startedAt,
+	);
+
+	const recurredLifecycles = lifecycles.filter(
+		(flc) =>
+			(flc.lastRecurredAt !== null && flc.lastRecurredAt >= startedAt) ||
+			(flc.recurrenceCount > 0 && flc.lastConfirmedAt >= startedAt),
 	);
 
 	const findingsBySeverity = {
@@ -92,11 +118,13 @@ export function buildAbruptSessionDiagnostics(
 		hourlyCheckpointsCount: staleSession.hourlyCheckpoints?.length ?? 0,
 		activeFindingCount: activeLifecycles.length,
 		persistingFindingCount: persistingLifecycles.length,
+		resolvedFindingCount: resolvedLifecycles.length,
+		recurredFindingCount: recurredLifecycles.length,
 		findingsBySeverity,
 		vulnerabilityTypes,
 		reason: 'Process terminated or closed before clean deactivation could execute',
 		trendsImpact:
-			'This session is classified as "incomplete" and withheld from your trend baseline to protect your progress scores.',
+			'Your code changes are safe. All modifications and resolved vulnerabilities from this session will be recognized when your next session begins. To protect your progress metrics from skewed data, your Trend score will be measured against your last completed session rather than this interrupted one.',
 	};
 }
 
@@ -126,6 +154,7 @@ const CSS = /* css */ `
 		--accent: var(--vscode-textLink-foreground);
 		--warning: var(--vscode-editorWarning-foreground, #cca700);
 		--error: var(--vscode-errorForeground, #f14c4c);
+		--success: #73c991;
 		--critical: #f85149;
 		--high: #e06c75;
 		--medium: #d19a66;
@@ -136,13 +165,14 @@ const CSS = /* css */ `
 
 	body {
 		margin: 0;
-		padding: 24px 32px 48px;
+		padding: 24px 28px 48px;
 		background: var(--bg);
 		color: var(--text);
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 		font-size: 13px;
 		line-height: 1.5;
 		max-width: 800px;
+		width: 100%;
 	}
 
 	.header-banner {
@@ -177,7 +207,7 @@ const CSS = /* css */ `
 	}
 
 	.section-title {
-		font-size: 13px;
+		font-size: 12px;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
@@ -189,7 +219,7 @@ const CSS = /* css */ `
 
 	.grid-meta {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 		gap: 12px;
 		margin-bottom: 20px;
 	}
@@ -214,35 +244,91 @@ const CSS = /* css */ `
 		color: var(--text);
 	}
 
-	.meta-badge-incomplete {
-		display: inline-block;
-		padding: 2px 8px;
+	.meta-sub {
 		font-size: 11px;
-		font-weight: 600;
-		border-radius: 12px;
-		background: color-mix(in srgb, var(--warning) 20%, transparent);
-		color: var(--warning);
+		color: var(--muted);
+		margin-top: 2px;
 	}
 
 	.notice-card {
-		padding: 12px 16px;
-		background: var(--card);
+		padding: 14px 16px;
+		background: color-mix(in srgb, var(--accent) 8%, var(--card));
 		border-left: 3px solid var(--accent);
-		border-radius: 4px;
+		border-radius: 6px;
+		border-top: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+		border-right: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
 		margin-bottom: 20px;
+	}
+
+	.notice-title {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-weight: 600;
+		font-size: 13px;
 		color: var(--text);
+		margin-bottom: 6px;
+	}
+
+	.notice-title svg {
+		width: 16px;
+		height: 16px;
+		color: var(--accent);
+		flex-shrink: 0;
+	}
+
+	.notice-card p {
+		margin: 0;
+		color: var(--muted);
 		font-size: 12px;
+		line-height: 1.5;
+	}
+
+	.grid-activity {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+		gap: 12px;
+		margin-bottom: 20px;
+	}
+
+	.activity-box {
+		padding: 12px 14px;
+		background: var(--card);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		text-align: center;
+	}
+
+	.activity-count {
+		font-size: 20px;
+		font-weight: 700;
+		line-height: 1.2;
+		margin-bottom: 2px;
+	}
+
+	.activity-label {
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		color: var(--text);
+	}
+
+	.activity-sub {
+		font-size: 10px;
+		color: var(--muted);
+		margin-top: 2px;
 	}
 
 	.severity-row {
-		display: flex;
-		gap: 12px;
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 10px;
 		margin-bottom: 16px;
 	}
 
 	.severity-pill {
-		flex: 1;
-		padding: 10px 14px;
+		padding: 10px 12px;
 		border-radius: 6px;
 		background: var(--card);
 		border: 1px solid var(--border);
@@ -263,34 +349,53 @@ const CSS = /* css */ `
 		margin-top: 2px;
 	}
 
+	.c-active { color: var(--text); }
+	.c-resolved { color: var(--success); }
+	.c-recurred { color: var(--high); }
+	.c-persisting { color: var(--medium); }
 	.c-critical { color: var(--critical); }
 	.c-high { color: var(--high); }
 	.c-medium { color: var(--medium); }
 	.c-low { color: var(--low); }
 
+	.table-container {
+		width: 100%;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		margin-bottom: 24px;
+	}
+
 	table {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 12px;
-		margin-bottom: 24px;
+		min-width: 320px;
+		margin: 0;
 	}
 
 	th, td {
 		padding: 8px 12px;
 		text-align: left;
 		border-bottom: 1px solid var(--border);
+		word-break: break-word;
+	}
+
+	tr:last-child td {
+		border-bottom: none;
 	}
 
 	th {
 		color: var(--muted);
 		font-weight: 600;
-		background: color-mix(in srgb, var(--card) 40%, transparent);
+		background: color-mix(in srgb, var(--card) 60%, transparent);
 	}
 
 	.actions {
 		display: flex;
 		gap: 10px;
-		margin-top: 28px;
+		margin-top: 24px;
 	}
 
 	button {
@@ -313,12 +418,38 @@ const CSS = /* css */ `
 	button:hover {
 		opacity: 0.9;
 	}
+
+	@media (max-width: 600px) {
+		body {
+			padding: 16px 16px 36px;
+		}
+		.header-banner {
+			padding: 12px 14px;
+			gap: 12px;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.grid-meta {
+			grid-template-columns: 1fr;
+			gap: 8px;
+		}
+		.grid-activity {
+			grid-template-columns: repeat(2, 1fr);
+			gap: 8px;
+		}
+		.severity-row {
+			grid-template-columns: repeat(2, 1fr);
+			gap: 8px;
+		}
+	}
 `;
 
 export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 	const startedDate = new Date(d.startedAt).toLocaleString();
 	const recoveredDate = new Date(d.recoveredAt).toLocaleString();
 	const duration = formatDuration(d.estimatedDurationMs);
+	const displayId = formatSessionDisplayId(d.sessionId);
 
 	const vulnRows = d.vulnerabilityTypes.length > 0
 		? d.vulnerabilityTypes.map((v) => `
@@ -328,7 +459,7 @@ export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 				<td style="text-align: right; font-weight: 600;">${v.count}</td>
 			</tr>
 		`).join('')
-		: '<tr><td colspan="3" style="text-align: center; color: var(--muted);">No active vulnerabilities at termination</td></tr>';
+		: '<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 16px;">No active vulnerabilities at termination</td></tr>';
 
 	const jsonPayload = JSON.stringify(d, null, 2);
 
@@ -357,28 +488,57 @@ export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 	<div class="section-title">Session Metadata</div>
 	<div class="grid-meta">
 		<div class="meta-box">
-			<div class="meta-label">Session ID</div>
-			<div class="meta-value" style="font-family: monospace; font-size: 12px;">${d.sessionId}</div>
-		</div>
-		<div class="meta-box">
-			<div class="meta-label">Status</div>
-			<div class="meta-value"><span class="meta-badge-incomplete">Incomplete</span></div>
-		</div>
-		<div class="meta-box">
-			<div class="meta-label">Session Duration</div>
-			<div class="meta-value">${duration}</div>
+			<div class="meta-label">Session</div>
+			<div class="meta-value">${displayId}</div>
+			${displayId !== d.sessionId ? `<div class="meta-sub">${d.sessionId}</div>` : ''}
 		</div>
 		<div class="meta-box">
 			<div class="meta-label">Checkpoints</div>
 			<div class="meta-value">${d.hourlyCheckpointsCount} completed</div>
+			<div class="meta-sub">Hourly snapshots</div>
+		</div>
+		<div class="meta-box">
+			<div class="meta-label">Duration</div>
+			<div class="meta-value">${duration}</div>
+			<div class="meta-sub">Before termination</div>
 		</div>
 	</div>
 
 	<div class="notice-card">
-		This session is classified as <strong>incomplete</strong> and withheld from your trend baseline to protect your progress scores.
+		<div class="notice-title">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+			</svg>
+			<span>Your code changes are safe</span>
+		</div>
+		<p>${d.trendsImpact}</p>
 	</div>
 
-	<div class="section-title">Findings Active at Termination</div>
+	<div class="section-title">Session Activity Overview</div>
+	<div class="grid-activity">
+		<div class="activity-box">
+			<div class="activity-count c-active">${d.activeFindingCount}</div>
+			<div class="activity-label">Active at Crash</div>
+			<div class="activity-sub">Unresolved findings</div>
+		</div>
+		<div class="activity-box">
+			<div class="activity-count c-resolved">${d.resolvedFindingCount}</div>
+			<div class="activity-label">Resolved</div>
+			<div class="activity-sub">Fixed this session</div>
+		</div>
+		<div class="activity-box">
+			<div class="activity-count c-recurred">${d.recurredFindingCount}</div>
+			<div class="activity-label">Recurred</div>
+			<div class="activity-sub">Re-introduced</div>
+		</div>
+		<div class="activity-box">
+			<div class="activity-count c-persisting">${d.persistingFindingCount}</div>
+			<div class="activity-label">Persisting</div>
+			<div class="activity-sub">&ge; 2 confirmations</div>
+		</div>
+	</div>
+
+	<div class="section-title">Active Findings at Termination</div>
 	<div class="severity-row">
 		<div class="severity-pill">
 			<span class="count c-critical">${d.findingsBySeverity.critical}</span>
@@ -398,18 +558,20 @@ export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 		</div>
 	</div>
 
-	<table>
-		<thead>
-			<tr>
-				<th>Vulnerability Type</th>
-				<th>CWE</th>
-				<th style="text-align: right;">Active Instances</th>
-			</tr>
-		</thead>
-		<tbody>
-			${vulnRows}
-		</tbody>
-	</table>
+	<div class="table-container">
+		<table>
+			<thead>
+				<tr>
+					<th>Vulnerability Type</th>
+					<th>CWE</th>
+					<th style="text-align: right;">Active Instances</th>
+				</tr>
+			</thead>
+			<tbody>
+				${vulnRows}
+			</tbody>
+		</table>
+	</div>
 
 	<div style="font-size: 11px; color: var(--muted);">
 		Started: ${startedDate} &bull; Recovered: ${recoveredDate}

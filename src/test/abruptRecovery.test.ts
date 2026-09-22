@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import {
 	buildAbruptSessionDiagnostics,
 	buildAbruptSessionHtml,
+	formatSessionDisplayId,
 } from '../modules/tracker/views/abruptSessionPanel.js';
 import {
 	DEFAULT_AUTO_SCAN_INTERVAL_MINUTES,
@@ -15,7 +16,7 @@ import type { FindingLifecycleRecord, SessionRecord } from '../modules/tracker/a
 describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 	describe('1. Abrupt Session Diagnostics Builder', () => {
 		const mockSession: SessionRecord = {
-			sessionId: 'session-abrupt-001',
+			sessionId: 'session-005',
 			startedAt: 10000,
 			endedAt: null,
 			status: 'incomplete',
@@ -74,15 +75,15 @@ describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 				baselineOccurrenceCount: 1,
 				currentOccurrenceCount: 1,
 				confirmationCount: 1,
-				recurrenceCount: 0,
-				lastRecurredAt: null,
+				recurrenceCount: 1,
+				lastRecurredAt: 13000,
 				inSessionToggleCount: 0,
 				identicalRestorationCount: 0,
 				isCommentedOut: false,
-				lifecycleState: 'active',
+				lifecycleState: 'recurring',
 			},
 			{
-				// Resolved finding (should be excluded from active count)
+				// Resolved finding (durably resolved during this session)
 				logicalFingerprint: 'fp-3',
 				contentFingerprint: 'c3',
 				scopeFingerprint: 's3',
@@ -109,11 +110,19 @@ describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 			},
 		];
 
-		it('constructs diagnostic metadata matching unfinalized session state', () => {
+		it('formats session display IDs into user-friendly names', () => {
+			assert.strictEqual(formatSessionDisplayId('session-001'), 'Session 1');
+			assert.strictEqual(formatSessionDisplayId('session-005'), 'Session 5');
+			assert.strictEqual(formatSessionDisplayId('session-042'), 'Session 42');
+			assert.strictEqual(formatSessionDisplayId('session-simulated-12345'), 'Session 4 (Simulated)');
+			assert.strictEqual(formatSessionDisplayId('custom-id'), 'custom-id');
+		});
+
+		it('constructs diagnostic metadata matching unfinalized session state with resolved and recurred counts', () => {
 			const recoveredAt = 25000;
 			const diag = buildAbruptSessionDiagnostics(mockSession, mockLifecycles, recoveredAt);
 
-			assert.strictEqual(diag.sessionId, 'session-abrupt-001');
+			assert.strictEqual(diag.sessionId, 'session-005');
 			assert.strictEqual(diag.status, 'incomplete');
 			assert.strictEqual(diag.startedAt, 10000);
 			assert.strictEqual(diag.recoveredAt, 25000);
@@ -121,26 +130,33 @@ describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 			assert.strictEqual(diag.hourlyCheckpointsCount, 1);
 			assert.strictEqual(diag.activeFindingCount, 2);
 			assert.strictEqual(diag.persistingFindingCount, 1);
+			assert.strictEqual(diag.resolvedFindingCount, 1);
+			assert.strictEqual(diag.recurredFindingCount, 1);
 			assert.strictEqual(diag.findingsBySeverity.critical, 1);
 			assert.strictEqual(diag.findingsBySeverity.high, 1);
 			assert.strictEqual(diag.findingsBySeverity.medium, 0);
 			assert.strictEqual(diag.findingsBySeverity.low, 0);
 			assert.strictEqual(diag.vulnerabilityTypes.length, 2);
-			assert.ok(diag.trendsImpact.includes('withheld from your trend baseline'));
+			assert.ok(diag.trendsImpact.includes('Your code changes are safe'));
+			assert.ok(diag.trendsImpact.includes('last completed session'));
 		});
 
-		it('builds diagnostic HTML containing session and vulnerability details', () => {
+		it('builds diagnostic HTML containing session activity and vulnerability details', () => {
 			const diag = buildAbruptSessionDiagnostics(mockSession, mockLifecycles, 25000);
 			const html = buildAbruptSessionHtml(diag);
 
-			assert.ok(html.includes('session-abrupt-001'));
+			assert.ok(html.includes('Session 5'));
+			assert.ok(html.includes('session-005'));
 			assert.ok(html.includes('SQL Injection'));
 			assert.ok(html.includes('CWE-89'));
 			assert.ok(html.includes('Cross-Site Scripting'));
 			assert.ok(html.includes('CWE-79'));
-			assert.ok(html.includes('Incomplete'));
 			assert.ok(html.includes('1 completed'));
+			assert.ok(html.includes('Your code changes are safe'));
+			assert.ok(html.includes('Session Activity Overview'));
+			assert.ok(html.includes('Active at Crash'));
 			assert.ok(html.includes('Copy Diagnostics JSON'));
+			assert.ok(html.includes('table-container'));
 		});
 	});
 

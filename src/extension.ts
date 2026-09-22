@@ -71,6 +71,7 @@ import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.j
 import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
 import {
 	buildAbruptSessionDiagnostics,
+	formatSessionDisplayId,
 	showAbruptSessionDiagnosticPanel,
 } from './modules/tracker/views/abruptSessionPanel.js';
 import {
@@ -282,20 +283,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
 
 			// Prompt user with modal popup containing diagnostics overview
+			const displayId = formatSessionDisplayId(staleSession.sessionId);
 			const detail = [
-				`Session: ${staleSession.sessionId}`,
+				`Session: ${displayId} (${staleSession.sessionId})`,
 				`Started: ${new Date(staleSession.startedAt).toLocaleString()}`,
 				`Active findings at crash: ${diagnostics.activeFindingCount}`,
+				`Resolved this session: ${diagnostics.resolvedFindingCount}`,
 				`Completed checkpoints: ${diagnostics.hourlyCheckpointsCount}`,
 				'',
-				'This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
+				'Your code changes are safe. This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
 			].join('\n');
 
 			void vscode.window.showWarningMessage(
 				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
 				{ modal: true, detail },
 				'View Diagnostics',
-				'Dismiss',
 			).then((selection) => {
 				if (selection === 'View Diagnostics') {
 					showAbruptSessionDiagnosticPanel(context, diagnostics);
@@ -1384,7 +1386,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		'ariadne-extension-vscode.debugSimulateAbruptRecovery',
 		async () => {
 			const currentSession = activeSession ?? {
-				sessionId: `session-simulated-${Date.now()}`,
+				sessionId: 'session-004',
 				startedAt: Date.now() - 45 * 60 * 1000,
 				endedAt: null,
 				status: 'incomplete' as const,
@@ -1399,23 +1401,102 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				],
 			};
 
+			const simulatedLifecycles = lifecycles.length > 0 ? lifecycles : [
+				{
+					logicalFingerprint: 'sim-fp-1',
+					contentFingerprint: 'sim-c-1',
+					scopeFingerprint: 'sim-s-1',
+					ruleId: 'RULE-SQLI',
+					cweId: 'CWE-89',
+					type: 'SQL Injection',
+					severity: 'critical' as const,
+					instanceName: 'executeQuery',
+					filePath: 'src/database/QueryRunner.java',
+					firstConfirmedAt: Date.now() - 40 * 60 * 1000,
+					lastConfirmedAt: Date.now() - 2 * 60 * 1000,
+					missingSince: null,
+					provisionalResolutionAt: null,
+					durableResolutionAt: null,
+					baselineOccurrenceCount: 1,
+					currentOccurrenceCount: 1,
+					confirmationCount: 3,
+					recurrenceCount: 0,
+					lastRecurredAt: null,
+					inSessionToggleCount: 0,
+					identicalRestorationCount: 0,
+					isCommentedOut: false,
+					lifecycleState: 'persisting' as const,
+				},
+				{
+					logicalFingerprint: 'sim-fp-2',
+					contentFingerprint: 'sim-c-2',
+					scopeFingerprint: 'sim-s-2',
+					ruleId: 'RULE-XSS',
+					cweId: 'CWE-79',
+					type: 'Cross-Site Scripting',
+					severity: 'high' as const,
+					instanceName: 'renderOutput',
+					filePath: 'src/views/UserController.java',
+					firstConfirmedAt: Date.now() - 35 * 60 * 1000,
+					lastConfirmedAt: Date.now() - 10 * 60 * 1000,
+					missingSince: null,
+					provisionalResolutionAt: null,
+					durableResolutionAt: null,
+					baselineOccurrenceCount: 1,
+					currentOccurrenceCount: 1,
+					confirmationCount: 2,
+					recurrenceCount: 1,
+					lastRecurredAt: Date.now() - 15 * 60 * 1000,
+					inSessionToggleCount: 1,
+					identicalRestorationCount: 0,
+					isCommentedOut: false,
+					lifecycleState: 'recurring' as const,
+				},
+				{
+					logicalFingerprint: 'sim-fp-3',
+					contentFingerprint: 'sim-c-3',
+					scopeFingerprint: 'sim-s-3',
+					ruleId: 'RULE-PT',
+					cweId: 'CWE-22',
+					type: 'Path Traversal',
+					severity: 'medium' as const,
+					instanceName: 'getFile',
+					filePath: 'src/storage/FileManager.java',
+					firstConfirmedAt: Date.now() - 42 * 60 * 1000,
+					lastConfirmedAt: Date.now() - 25 * 60 * 1000,
+					missingSince: Date.now() - 20 * 60 * 1000,
+					provisionalResolutionAt: Date.now() - 18 * 60 * 1000,
+					durableResolutionAt: Date.now() - 10 * 60 * 1000,
+					baselineOccurrenceCount: 1,
+					currentOccurrenceCount: 0,
+					confirmationCount: 2,
+					recurrenceCount: 0,
+					lastRecurredAt: null,
+					inSessionToggleCount: 0,
+					identicalRestorationCount: 0,
+					isCommentedOut: false,
+					lifecycleState: 'resolved' as const,
+				},
+			];
+
 			const recoveryTime = Date.now();
-			const diagnostics = buildAbruptSessionDiagnostics(currentSession, lifecycles, recoveryTime);
+			const diagnostics = buildAbruptSessionDiagnostics(currentSession, simulatedLifecycles, recoveryTime);
+			const displayId = formatSessionDisplayId(currentSession.sessionId);
 
 			const detail = [
-				`Session: ${currentSession.sessionId}`,
+				`Session: ${displayId} (${currentSession.sessionId})`,
 				`Started: ${new Date(currentSession.startedAt).toLocaleString()}`,
 				`Active findings at crash: ${diagnostics.activeFindingCount}`,
+				`Resolved this session: ${diagnostics.resolvedFindingCount}`,
 				`Completed checkpoints: ${diagnostics.hourlyCheckpointsCount}`,
 				'',
-				'This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
+				'Your code changes are safe. This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
 			].join('\n');
 
 			const selection = await vscode.window.showWarningMessage(
 				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
 				{ modal: true, detail },
 				'View Diagnostics',
-				'Dismiss',
 			);
 
 			if (selection === 'View Diagnostics') {
