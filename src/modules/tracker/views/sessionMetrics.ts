@@ -117,10 +117,14 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 			? 'progress-some'
 			: item.progressLabel === 'Clear progress'
 				? 'progress-clear'
-				: 'progress-major';
-		const deltaText = item.progressDelta === 'N/A'
-			? ' (N/A)'
-			: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
+				: item.progressLabel === 'Major progress'
+					? 'progress-major'
+					: 'progress-nochange';
+		const deltaText = !item.progressDelta
+			? ''
+			: item.progressDelta === 'N/A'
+				? ' (N/A)'
+				: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		return /* html */ `
 			<div class="trend-sub-item">
 				<span class="sub-label">${item.type || 'Unknown'}</span>
@@ -455,6 +459,7 @@ const CSS = /* css */ `
 	.progress-some  { color: var(--orange); }
 	.progress-clear { color: var(--accent-strong); }
 	.progress-major { color: var(--blue); }
+	.progress-nochange { color: var(--muted); }
 
 	.sub-count {
 		font-size: 12px;
