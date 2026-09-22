@@ -285,21 +285,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// Prompt user with modal popup containing diagnostics overview
 			const displayId = formatSessionDisplayId(staleSession.sessionId);
 			const detail = [
-				`Session: ${displayId} (${staleSession.sessionId})`,
-				`Started: ${new Date(staleSession.startedAt).toLocaleString()}`,
-				`Active findings at crash: ${diagnostics.activeFindingCount}`,
-				`Resolved this session: ${diagnostics.resolvedFindingCount}`,
-				`Completed checkpoints: ${diagnostics.hourlyCheckpointsCount}`,
+				`SESSION: ${displayId} (${staleSession.sessionId})`,
+				`STARTED: ${new Date(staleSession.startedAt).toLocaleString()}`,
+				`CHECKPOINTS: ${diagnostics.hourlyCheckpointsCount} completed`,
 				'',
-				'Your code changes are safe. This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
+				`• Active at crash: ${diagnostics.activeFindingCount} unresolved`,
+				`• Resolved this session: ${diagnostics.resolvedFindingCount} fixed`,
+				'',
+				'Your code changes are safe. To protect your progress metrics from skewed data, Trend scores will be measured against your last completed session.',
 			].join('\n');
+
+			const viewAction: vscode.MessageItem = { title: 'View Diagnostics' };
+			const dismissAction: vscode.MessageItem = { title: 'Dismiss', isCloseAffordance: true };
 
 			void vscode.window.showWarningMessage(
 				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
 				{ modal: true, detail },
-				'View Diagnostics',
+				viewAction,
+				dismissAction,
 			).then((selection) => {
-				if (selection === 'View Diagnostics') {
+				if (selection?.title === 'View Diagnostics') {
 					showAbruptSessionDiagnosticPanel(context, diagnostics);
 				}
 			});
@@ -1484,22 +1489,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const displayId = formatSessionDisplayId(currentSession.sessionId);
 
 			const detail = [
-				`Session: ${displayId} (${currentSession.sessionId})`,
-				`Started: ${new Date(currentSession.startedAt).toLocaleString()}`,
-				`Active findings at crash: ${diagnostics.activeFindingCount}`,
-				`Resolved this session: ${diagnostics.resolvedFindingCount}`,
-				`Completed checkpoints: ${diagnostics.hourlyCheckpointsCount}`,
+				`SESSION: ${displayId} (${currentSession.sessionId})`,
+				`STARTED: ${new Date(currentSession.startedAt).toLocaleString()}`,
+				`CHECKPOINTS: ${diagnostics.hourlyCheckpointsCount} completed`,
 				'',
-				'Your code changes are safe. This session was recovered as "incomplete" and withheld from Trends scoring to protect your baseline.',
+				`• Active at crash: ${diagnostics.activeFindingCount} unresolved`,
+				`• Resolved this session: ${diagnostics.resolvedFindingCount} fixed`,
+				'',
+				'Your code changes are safe. To protect your progress metrics from skewed data, Trend scores will be measured against your last completed session.',
 			].join('\n');
+
+			const viewAction: vscode.MessageItem = { title: 'View Diagnostics' };
+			const dismissAction: vscode.MessageItem = { title: 'Dismiss', isCloseAffordance: true };
 
 			const selection = await vscode.window.showWarningMessage(
 				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
 				{ modal: true, detail },
-				'View Diagnostics',
+				viewAction,
+				dismissAction,
 			);
 
-			if (selection === 'View Diagnostics') {
+			if (selection?.title === 'View Diagnostics') {
 				showAbruptSessionDiagnosticPanel(context, diagnostics);
 			}
 		},

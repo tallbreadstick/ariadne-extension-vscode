@@ -378,35 +378,79 @@ const CSS = /* css */ `
 		-webkit-overflow-scrolling: touch;
 		border: 1px solid var(--border);
 		border-radius: 6px;
+		background: var(--card);
 		margin-bottom: 24px;
 	}
 
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 12px;
-		min-width: 320px;
+		font-size: 13px;
+		min-width: 340px;
 		margin: 0;
 	}
 
-	th, td {
-		padding: 10px 14px;
+	th {
+		padding: 12px 16px;
+		text-align: left;
+		color: var(--muted);
+		font-weight: 700;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.8px;
+		background: color-mix(in srgb, var(--border) 35%, var(--card));
+		border-bottom: 2px solid var(--border);
+	}
+
+	td {
+		padding: 12px 16px;
 		text-align: left;
 		border-bottom: 1px solid var(--border);
 		word-break: break-word;
 	}
 
-	tr:last-child td {
+	tbody tr:nth-child(even) td {
+		background: color-mix(in srgb, var(--bg) 35%, transparent);
+	}
+
+	tbody tr:hover td {
+		background: color-mix(in srgb, var(--accent) 8%, transparent);
+	}
+
+	tbody tr:last-child td {
 		border-bottom: none;
 	}
 
-	th {
+	.vuln-name {
+		font-weight: 600;
+		font-size: 13px;
 		color: var(--text);
-		font-weight: 700;
+	}
+
+	.cwe-pill {
+		display: inline-block;
+		font-family: var(--vscode-editor-font-family, monospace);
 		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		background: color-mix(in srgb, var(--card) 80%, transparent);
+		font-weight: 600;
+		padding: 2px 8px;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--text) 8%, var(--card));
+		border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+		color: var(--text);
+	}
+
+	.count-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 26px;
+		padding: 2px 8px;
+		font-size: 12px;
+		font-weight: 700;
+		border-radius: 12px;
+		background: color-mix(in srgb, var(--accent) 15%, var(--card));
+		color: var(--accent);
+		border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 	}
 
 	.actions {
@@ -471,12 +515,12 @@ export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 	const vulnRows = d.vulnerabilityTypes.length > 0
 		? d.vulnerabilityTypes.map((v) => `
 			<tr>
-				<td><strong style="color: var(--text); font-size: 13px;">${v.type}</strong></td>
-				<td style="color: var(--text); opacity: 0.85; font-family: monospace; font-size: 12px; font-weight: 600;">${v.cweId}</td>
-				<td style="text-align: right; font-weight: 700; font-size: 14px; color: var(--text);">${v.count}</td>
+				<td><span class="vuln-name">${v.type}</span></td>
+				<td><span class="cwe-pill">${v.cweId}</span></td>
+				<td style="text-align: right;"><span class="count-pill">${v.count}</span></td>
 			</tr>
 		`).join('')
-		: '<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 16px; font-weight: 500;">No active vulnerabilities at termination</td></tr>';
+		: '<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 20px; font-weight: 500;">No active vulnerabilities at termination</td></tr>';
 
 	const jsonPayload = JSON.stringify(d, null, 2);
 
