@@ -11,12 +11,12 @@ export interface SidebarSettingsViewModel {
 import * as vscode from 'vscode';
 
 export const DEFAULT_AUTO_SCAN_INTERVAL_MINUTES = 60;
-export const MIN_AUTO_SCAN_INTERVAL_MINUTES = 5;
+export const MIN_AUTO_SCAN_INTERVAL_MINUTES = 2;
 export const MAX_AUTO_SCAN_INTERVAL_MINUTES = 180;
 
 /**
  * Reads the configured auto-scan interval in minutes from settings
- * (clamped between 5 and 180 minutes).
+ * (clamped between 2 and 180 minutes).
  */
 export function getAutoScanIntervalMinutes(): number {
 	try {

@@ -164,9 +164,9 @@
         "ariadne.autoScan.intervalMinutes": {
           "type": "integer",
           "default": 60,
-          "minimum": 5,
+          "minimum": 2,
           "maximum": 180,
-          "markdownDescription": "Duration in minutes between automatic full background scans (default: 60 minutes). Minimum: 5 minutes, Maximum: 180 minutes."
+          "markdownDescription": "Duration in minutes between automatic full background scans (default: 60 minutes). Minimum: 2 minutes, Maximum: 180 minutes."
         }
       }
     },

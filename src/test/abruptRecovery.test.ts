@@ -163,7 +163,7 @@ describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 	describe('2. Auto-Scan Settings & Intervals', () => {
 		it('defines valid policy defaults and boundaries', () => {
 			assert.strictEqual(DEFAULT_AUTO_SCAN_INTERVAL_MINUTES, 60);
-			assert.strictEqual(MIN_AUTO_SCAN_INTERVAL_MINUTES, 5);
+			assert.strictEqual(MIN_AUTO_SCAN_INTERVAL_MINUTES, 2);
 			assert.strictEqual(MAX_AUTO_SCAN_INTERVAL_MINUTES, 180);
 		});
 
