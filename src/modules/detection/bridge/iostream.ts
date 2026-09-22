@@ -8,11 +8,13 @@ export type FindingsCallback = (findings: VulnerabilityMetadata[]) => void;
 export interface AriadneSession {
 	send(msg: AriadneMessage): void;
 	kill(): void;
+	/** Spawn the engine if it is not already running and notify restart listeners. */
+	start(): void;
 	/** Kill the engine and spawn a fresh session process. */
 	restart(): void;
-	/** Subscribe to findings emitted after each analysis. */
-	onFindings(cb: FindingsCallback): void;
-	/** Fired after `restart()` once the new process is spawned. */
+	/** Subscribe to findings emitted after each analysis. Returns disposable to unsubscribe. */
+	onFindings(cb: FindingsCallback): { dispose: () => void };
+	/** Fired after `start()` / `restart()` once the process is spawned. */
 	onRestarted(cb: () => void): void;
 }
 
@@ -66,7 +68,11 @@ export function runSession(): AriadneSession {
 		return child;
 	};
 
-	proc = spawnSession();
+	const notifyRestarted = (): void => {
+		for (const cb of restartedCallbacks) {
+			cb();
+		}
+	};
 
 	return {
 		send(msg: AriadneMessage): void {
@@ -80,16 +86,30 @@ export function runSession(): AriadneSession {
 			proc?.kill();
 			proc = null;
 		},
+		start(): void {
+			if (proc) {
+				return;
+			}
+			proc = spawnSession();
+			console.log('[Ariadne TS] engine session started');
+			notifyRestarted();
+		},
 		restart(): void {
 			proc?.kill();
 			proc = spawnSession();
 			console.log('[Ariadne TS] engine session restarted');
-			for (const cb of restartedCallbacks) {
-				cb();
-			}
+			notifyRestarted();
 		},
-		onFindings(cb: FindingsCallback): void {
+		onFindings(cb: FindingsCallback): { dispose: () => void } {
 			findingsCallbacks.push(cb);
+			return {
+				dispose: () => {
+					const idx = findingsCallbacks.indexOf(cb);
+					if (idx !== -1) {
+						findingsCallbacks.splice(idx, 1);
+					}
+				},
+			};
 		},
 		onRestarted(cb: () => void): void {
 			restartedCallbacks.push(cb);

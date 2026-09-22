@@ -6,17 +6,19 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { SessionMetrics, SessionNotification } from '../../presentation/panelTypes.js';
+import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
+import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
 const TREND_CHART_SVG =
-	`<svg class="trend-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<path d="M4 16l5-5 4 3 6-7" stroke="currentColor" stroke-width="2"
-			stroke-linecap="round" stroke-linejoin="round" />
-		<path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+	`<svg class="trend-icon severity-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<rect x="3" y="15" width="3" height="6" rx="1" fill="currentColor" />
+		<rect x="8" y="11" width="3" height="10" rx="1" fill="currentColor" />
+		<rect x="18" y="7" width="3" height="14" rx="1" fill="currentColor" />
+		<rect x="13" y="3" width="3" height="18" rx="1" fill="currentColor" />
 	</svg>`;
 
 const TRENDS_HEADER_SVG =
@@ -39,11 +41,39 @@ const IMPROVING_SVG =
 			stroke-linecap="round" stroke-linejoin="round" />
 	</svg>`;
 
+const RECURRING_SVG =
+	`<svg class="trend-icon trend-red" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>`;
+
+
+
+
+
 const RESOLVED_SVG =
 	`<svg class="trend-icon trend-blue" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
 		<path d="M8 12l3 3 5-6" stroke="currentColor" stroke-width="2"
 			stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
+
+const NOTIFICATION_BELL_SVG =
+	`<svg class="section-icon notif-bell" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
+
+const COMMON_VULN_SVG =
+	`<svg class="section-icon" style="color: #E24B4A;" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+		<path d="M12 8v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+		<circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
+	</svg>`;
+
+const FULL_SCAN_SVG =
+	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<path d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2m-10 0H5a2 2 0 01-2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+		<line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 	</svg>`;
 
 const NOTIFICATION_ICON_SVG =
@@ -60,11 +90,86 @@ function buildMetricCard(title: string, value: number, severity: Severity): stri
 	return /* html */ `
 		<div class="metric-card" style="border-left: 3px solid ${accent};">
 			<div class="metric-title">${title}</div>
-			<div class="metric-row">
-				<div class="metric-value" style="color: ${accent};">${value}</div>
-				<div class="metric-trend">
-					${TREND_CHART_SVG}
-					<span>${value}</span>
+			<div class="metric-trend" style="color: ${accent};">
+				${TREND_CHART_SVG}
+				<span>${value}</span>
+			</div>
+		</div>`;
+}
+
+function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): string {
+	if (!items || items.length === 0) {
+		return '';
+	}
+	return items.map((item) => /* html */ `
+		<div class="trend-sub-item">
+			<span class="sub-label">${item.type}</span>
+			<span class="sub-count">${item.instances}</span>
+		</div>`).join('');
+}
+
+function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: number): string {
+	if (!items || items.length === 0) {
+		return '';
+	}
+	return items.map((item) => {
+		const progressClass = item.progressLabel === 'Some progress'
+			? 'progress-some'
+			: item.progressLabel === 'Clear progress'
+				? 'progress-clear'
+				: item.progressLabel === 'Major progress'
+					? 'progress-major'
+					: 'progress-nochange';
+		const deltaText = !item.progressDelta
+			? ''
+			: item.progressDelta === 'N/A'
+				? ' (N/A)'
+				: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
+		return /* html */ `
+			<div class="trend-sub-item">
+				<span class="sub-label">${item.type || 'Unknown'}</span>
+				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
+				<span class="sub-count">${item.instances}</span>
+			</div>`;
+	}).join('');
+}
+
+/**
+ * Builds a single collapsible trend row.
+ *
+ * @param id       - Unique ID prefix for toggling (e.g. "persisting")
+ * @param icon     - SVG icon string for the row header
+ * @param label    - Row label text
+ * @param count    - Instance count shown in the header
+ * @param subItems - Rendered HTML string of sub-item rows
+ */
+function buildCollapsibleTrendRow(
+	id: string,
+	icon: string,
+	label: string,
+	count: number,
+	subItems: string,
+	instanceLabel: string,
+): string {
+	return /* html */ `
+		<div class="trend-group" data-trend-id="${id}">
+			<button class="trend-header" type="button" aria-expanded="false"
+			        aria-controls="trend-body-${id}" data-trend-toggle="${id}">
+				<span class="trend-header-left">
+					${icon}
+					<span class="trend-header-label">${label}</span>
+				</span>
+				<span class="trend-header-right">
+					<span class="trend-instance-count">${instanceLabel} :  <span style="color: var(--text); font-weight: 700;">${count}</span></span>
+					<svg class="chevron-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+						<path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"
+							stroke-linecap="round" stroke-linejoin="round" />
+					</svg>
+				</span>
+			</button>
+			<div class="trend-body" id="trend-body-${id}" aria-hidden="true">
+				<div class="trend-body-inner">
+					${subItems}
 				</div>
 			</div>
 		</div>`;
@@ -87,15 +192,63 @@ function buildNotificationItem(notif: SessionNotification): string {
 		</div>`;
 }
 
-function buildNotificationFeed(metrics: SessionMetrics): string {
-	if (!metrics.notifications || metrics.notifications.length === 0) {
-		return '';
-	}
-	const items = metrics.notifications.map(buildNotificationItem).join('\n');
+function buildNotificationsPanel(metrics: SessionMetrics): string {
+	const items = metrics.notifications && metrics.notifications.length > 0
+		? metrics.notifications.map(buildNotificationItem).join('\n')
+		: /* html */ `<div class="panel-empty">No notifications</div>`;
+
 	return /* html */ `
-		<div class="divider"></div>
-		<div class="notif-feed">
-			${items}
+		<div class="split-panel notif-panel">
+			<div class="split-panel-header">
+				${NOTIFICATION_BELL_SVG}
+				<span class="split-panel-title">NOTIFICATIONS</span>
+			</div>
+			<div class="notif-feed" id="notif-feed">
+				${items}
+			</div>
+		</div>`;
+}
+
+function buildCommonVulnerabilitiesPanel(
+	items?: CommonVulnerabilityItem[],
+	totalSessionsAnalyzed?: number,
+): string {
+	let content: string;
+
+	if (!items || items.length === 0) {
+		const totalSessions = totalSessionsAnalyzed ?? items?.[0]?.totalSessions ?? 0;
+		const emptyMessage = totalSessions < COMMON_VULN_POLICY.K
+			? 'Not enough session data yet'
+			: 'No common vulnerabilities';
+		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;
+	} else {
+		content = items.map(item => {
+			const statusLabel = item.activeFindingCount > 0
+				? /* html */ `<span class="cv-active">${item.activeFindingCount} active</span>`
+				: /* html */ `<span class="cv-resolved">all resolved</span>`;
+			return /* html */ `
+				<div class="cv-card">
+					<div class="cv-card-left">
+						<span class="cv-type">${item.type}</span>
+						${statusLabel}
+					</div>
+					<div class="cv-card-body">
+						<span class="cv-cwe">${item.cweId}</span>
+						<span class="cv-instances">found ${item.totalInstanceCount} time${item.totalInstanceCount !== 1 ? 's' : ''}</span>
+					</div>
+				</div>`;
+		}).join('');
+	}
+
+	return /* html */ `
+		<div class="split-panel common-vuln-panel">
+			<div class="split-panel-header">
+				${COMMON_VULN_SVG}
+				<span class="split-panel-title">COMMON VULNERABILITIES</span>
+			</div>
+			<div class="common-vuln-feed">
+				${content}
+			</div>
 		</div>`;
 }
 
@@ -114,6 +267,7 @@ const CSS = /* css */ `
 		--accent-strong: #5ce6d7;
 		--red: var(--vscode-errorForeground);
 		--blue: var(--vscode-textLink-activeForeground);
+		--orange: #e09850;
 		--radius: 8px;
 		--shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
 		          0 0 16px color-mix(in srgb, var(--accent) 10%, transparent);
@@ -131,6 +285,24 @@ const CSS = /* css */ `
 
 	.dashboard { display: grid; gap: 16px; }
 
+	/* ── Full scan section ── */
+	.full-scan-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.full-scan-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		color: var(--muted);
+		letter-spacing: 0.04em;
+	}
+
 	.metrics-grid {
 		display: grid;
 		gap: 12px;
@@ -142,9 +314,10 @@ const CSS = /* css */ `
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		padding: 12px 14px;
-		display: grid;
-		gap: 8px;
-		min-height: 90px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		transition: border-color 0.2s ease, box-shadow 0.2s ease;
 	}
 
@@ -160,15 +333,6 @@ const CSS = /* css */ `
 		color: var(--muted);
 	}
 
-	.metric-value { font-size: 28px; font-weight: 600; color: #f1f1f1; }
-
-	.metric-row {
-		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
-		gap: 8px;
-	}
-
 	.metric-trend {
 		display: inline-flex;
 		align-items: center;
@@ -178,73 +342,299 @@ const CSS = /* css */ `
 		font-weight: 500;
 	}
 
-	.trend-icon { width: 16px; height: 16px; display: inline-block; }
+	.trend-icon { width: 18px; height: 18px; display: inline-block; }
 
+	/* ── Trends card ── */
 	.trends-card {
 		background: var(--panel);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
-		padding: 12px 14px 10px;
-		display: grid;
-		gap: 10px;
+		overflow: hidden;
 	}
 
 	.trends-title {
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
-		font-size: 12px;
+		font-size: 13px;
 		text-transform: uppercase;
+		font-weight: 700;
+		color: var(--muted);
+		padding: 12px 14px 8px;
+	}
+
+	/* ── Collapsible trend row ── */
+	.trend-group {
+		border-top: 1px solid var(--vscode-panel-border);
+	}
+
+	.trend-header {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 12px 14px 8px;
+		background: transparent;
+		border: none;
+		color: var(--text);
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.trend-header:hover { background: rgba(255, 255, 255, 0.04); }
+
+	.trend-header-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	.trend-header-right {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+	}
+
+	.trend-instance-count {
+		font-size: 12px;
 		font-weight: 600;
 		color: var(--muted);
+		white-space: nowrap;
 	}
 
-	.trend-row {
+	.chevron-icon {
+		margin-left: 2px;
+		width: 16px;
+		height: 16px;
+		color: var(--text);
+		transition: transform 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.trend-header[aria-expanded="true"] .chevron-icon {
+		transform: rotate(90deg);
+	}
+
+	/* ── Collapsible body — grid-row trick for smooth animation ── */
+	.trend-body {
 		display: grid;
-		grid-template-columns: auto 1fr auto;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 0;
-		border-top: 1px solid rgba(58, 58, 58, 0.6);
+		grid-template-rows: 0fr;
+		transition: grid-template-rows 0.25s ease;
 	}
 
-	.trend-row:first-of-type { border-top: none; }
+	.trend-body.open {
+		grid-template-rows: 1fr;
+	}
 
-	.trend-label { font-size: 13px; color: var(--text); }
-	.trend-value { font-size: 14px; font-weight: 600; }
-	.trend-red   { color: var(--red); }
+	.trend-body-inner {
+		overflow: hidden;
+		border-top: 1px solid var(--border);
+		background: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
+	}
+
+	/* ── Sub-item rows ── */
+	.trend-sub-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 12px 14px 8px 38px;
+		font-size: 12px;
+		color: var(--text);
+	}
+
+	.trend-sub-item:last-child { padding-bottom: 10px; }
+
+	.sub-label { flex: 1; color: var(--text); }
+
+	.sub-progress {
+		font-size: 12px;
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.progress-some  { color: var(--orange); }
+	.progress-clear { color: var(--accent-strong); }
+	.progress-major { color: var(--blue); }
+	.progress-nochange { color: var(--muted); }
+
+	.sub-count {
+		font-size: 12px;
+		font-weight: 700;
+		color: var(--text);
+		min-width: 20px;
+		margin-right: 12px;
+		
+	}
+
+	.trend-sub-placeholder { color: var(--muted); }
+
+	.trend-red   { color: #E24B4A; }
 	.trend-teal  { color: var(--accent-strong); }
 	.trend-blue  { color: var(--blue); }
 
 	.divider { height: 1px; background: rgba(58, 58, 58, 0.7); }
 
-	/* ── Notification feed (scrollable) ── */
-	.notif-feed {
+	/* ── Split panel section ── */
+	.split-section {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		min-height: 180px;
+	}
+
+	.split-panel {
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
 		max-height: 260px;
-		overflow-y: auto;
-		padding-right: 2px;
+		overflow: hidden;
+	}
 
-		/* Custom scrollbar */
+	.split-panel-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 12px 8px;
+		border-bottom: 1px solid rgba(58, 58, 58, 0.6);
+		flex-shrink: 0;
+	}
+
+	.split-panel-title {
+		font-size: 13px;
+		font-weight: 700;
+		text-transform: uppercase;
+		color: var(--muted);
+		letter-spacing: 0.04em;
+	}
+
+	.section-icon {
+		width: 16px;
+		height: 16px;
+		color: var(--muted);
+		flex-shrink: 0;
+	}
+
+	.section-icon.notif-bell { color: var(--accent); }
+
+	/* ── Common vulnerabilities panel ── */
+	.common-vuln-feed {
+	
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		overflow-y: auto;
+		padding: 8px;
 		scrollbar-width: thin;
 		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
 	}
 
-	.notif-feed::-webkit-scrollbar {
-		width: 4px;
+	.common-vuln-feed:has(.panel-empty),
+	.notif-feed:has(.panel-empty) {
+		background: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
 	}
 
-	.notif-feed::-webkit-scrollbar-track {
-		background: transparent;
-	}
-
-	.notif-feed::-webkit-scrollbar-thumb {
+	.common-vuln-feed::-webkit-scrollbar { width: 4px; }
+	.common-vuln-feed::-webkit-scrollbar-track { background: transparent; }
+	.common-vuln-feed::-webkit-scrollbar-thumb {
 		background-color: rgba(70, 213, 196, 0.3);
 		border-radius: 4px;
 	}
 
+	.panel-empty {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 12px;
+		color: var(--muted);
+		text-align: center;
+		padding: 20px 8px;
+	}
+
+	/* ── Common vulnerability cards ── */
+	.cv-card {
+		padding: 8px 10px;
+		border-bottom: 1px solid var(--border);
+		background: var(--card);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.cv-card:last-child { border-bottom: none; }
+
+	.cv-card-left {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.cv-type {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.cv-card-body {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+		flex-shrink: 0;
+	}
+
+	.cv-cwe {
+		font-size: 10px;
+		color: var(--muted);
+	}
+
+	.cv-instances {
+		font-size: 11px;
+		font-weight: 700;
+		color: var(--accent);
+	}
+
+	.cv-active {
+		font-size: 10px;
+		font-weight: 500;
+		color: #E24B4A;
+	}
+
+	.cv-resolved {
+		font-size: 10px;
+		font-weight: 500;
+		color: var(--accent);
+	}
+
+	/* ── Notification feed (scrollable) ── */
+	.notif-feed {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		
+		overflow-y: auto;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
+	}
+
+	.notif-feed::-webkit-scrollbar { width: 4px; }
+	.notif-feed::-webkit-scrollbar-track { background: transparent; }
+	.notif-feed::-webkit-scrollbar-thumb {
+		background-color: rgba(70, 213, 196, 0.3);
+		border-radius: 4px;
+	}
 	.notif-feed::-webkit-scrollbar-thumb:hover {
 		background-color: rgba(70, 213, 196, 0.6);
 	}
@@ -254,40 +644,40 @@ const CSS = /* css */ `
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 10px;
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		padding: 12px 14px;
+		background: var(--card);
+		border-bottom: 1px solid var(--border);
+		
+		padding: 10px 12px;
 		flex-shrink: 0;
 	}
 
 	.notif-body {
 		display: flex;
 		align-items: flex-start;
-		gap: 10px;
+		gap: 8px;
 		min-width: 0;
 	}
 
 	.notif-icon {
-		width: 18px;
-		height: 18px;
+		width: 16px;
+		height: 16px;
 		flex: 0 0 auto;
 		color: var(--accent);
 		margin-top: 1px;
 	}
 
-	.notif-text { display: grid; gap: 4px; min-width: 0; }
+	.notif-text { display: grid; gap: 3px; min-width: 0; }
 
-	.notif-message { font-size: 13px; font-weight: 600; color: var(--text); }
-	.notif-detail  { font-size: 12px; color: var(--text); line-height: 1.4; }
-	.notif-timestamp { font-size: 11px; color: var(--muted); }
+	.notif-message { font-size: 12px; font-weight: 600; color: var(--text); }
+	.notif-detail  { font-size: 11px; color: var(--text); line-height: 1.4; }
+	.notif-timestamp { font-size: 10px; color: var(--muted); }
 
 	.notif-dismiss {
 		background: transparent;
 		border: none;
 		color: var(--muted);
 		cursor: pointer;
-		font-size: 14px;
+		font-size: 13px;
 		padding: 0;
 		line-height: 1;
 		flex: 0 0 auto;
@@ -299,7 +689,7 @@ const CSS = /* css */ `
 	@keyframes notif-slide-out {
 		0%   { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 0; }
 		60%  { opacity: 0; transform: translateX(40px); max-height: 200px; margin-bottom: 0; }
-		100% { opacity: 0; transform: translateX(40px); max-height: 0; margin-bottom: -8px; padding: 0 14px; border-width: 0; }
+		100% { opacity: 0; transform: translateX(40px); max-height: 0; margin-bottom: -6px; padding: 0 12px; border-width: 0; }
 	}
 
 	.notif-card.dismissing {
@@ -308,9 +698,59 @@ const CSS = /* css */ `
 		overflow: hidden;
 	}
 
+	.signin-state {
+		display: grid;
+		gap: 10px;
+		align-content: center;
+		justify-items: center;
+		min-height: 220px;
+		padding: 32px 20px;
+		text-align: center;
+	}
+
+	.signin-title {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.signin-copy {
+		margin: 0;
+		font-size: 12px;
+		line-height: 1.5;
+		max-width: 340px;
+		color: var(--muted);
+	}
+
+	.signin-cta {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-top: 6px;
+		padding: 7px 14px;
+		border-radius: 2px;
+		background: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
+		text-decoration: none;
+		font-size: 13px;
+	}
+
+	.signin-cta:hover {
+		background: var(--vscode-button-hoverBackground);
+	}
+
 	@media (max-width: 520px) {
 		body { padding: 12px; }
-		.metrics-grid { grid-template-columns: 1fr; }
+		.metrics-grid { grid-template-columns: 1fr; gap: 8px; }
+		.metric-title {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.metric-trend { flex-shrink: 0; }
+		.split-section { grid-template-columns: 1fr; }
 	}
 `;
 
@@ -322,8 +762,38 @@ const CSS = /* css */ `
  * @param metrics - Aggregated session metrics from the current scan session.
  * @returns A complete HTML string ready to be set on a VS Code webview.
  */
-export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
+export function buildSessionMetricsHtml(
+	metrics: SessionMetrics,
+	options: { signedIn?: boolean } = {},
+): string {
+	if (options.signedIn === false) {
+		return /* html */ `<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Session Metrics</title>
+		<style>${CSS}</style>
+	</head>
+	<body>
+		<section class="signin-state" role="status">
+			<p class="signin-title">Sign in required</p>
+			<p class="signin-copy">
+				GitHub sign-in is needed to run scans and show session metrics for
+				this workspace.
+			</p>
+			<a class="signin-cta" href="command:ariadne-extension-vscode.openSignInPanel">Sign in to Ariadne</a>
+		</section>
+	</body>
+</html>`;
+	}
+
 	const { critical, high, medium, low, trends } = metrics;
+
+	const persistingSubItems = buildBasicSubItems(trends.persistingItems, trends.persistingPatterns);
+	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
+	const recurringSubItems = buildBasicSubItems(trends.recurringItems, trends.recurringPatterns);
+	const resolvedSubItems = buildBasicSubItems(trends.resolvedItems, trends.resolvedThisSession);
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -335,11 +805,17 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 	</head>
 	<body>
 		<section class="dashboard">
-			<div class="metrics-grid">
-				${buildMetricCard('Critical Issues', critical, 'critical')}
-				${buildMetricCard('High Issues', high, 'high')}
-				${buildMetricCard('Medium Issues', medium, 'medium')}
-				${buildMetricCard('Low Issues', low, 'low')}
+			<div class="full-scan-section">
+				<div class="full-scan-header">
+					${FULL_SCAN_SVG}
+					<span>Full scan</span>
+				</div>
+				<div class="metrics-grid">
+					${buildMetricCard('Critical Issues', critical, 'critical')}
+					${buildMetricCard('High Issues', high, 'high')}
+					${buildMetricCard('Medium Issues', medium, 'medium')}
+					${buildMetricCard('Low Issues', low, 'low')}
+				</div>
 			</div>
 
 			<div class="divider"></div>
@@ -349,53 +825,88 @@ export function buildSessionMetricsHtml(metrics: SessionMetrics): string {
 					${TRENDS_HEADER_SVG}
 					Trends
 				</div>
-				<div class="trend-row">
-					${PERSISTING_SVG}
-					<div class="trend-label">Persisting Patterns</div>
-					<div class="trend-value trend-red">${trends.persistingPatterns}</div>
-				</div>
-				<div class="trend-row">
-					${IMPROVING_SVG}
-					<div class="trend-label">Improving Trends</div>
-					<div class="trend-value trend-teal">${trends.improvingTrends}</div>
-				</div>
-				<div class="trend-row">
-					${RESOLVED_SVG}
-					<div class="trend-label">Resolved This Session</div>
-					<div class="trend-value trend-blue">${trends.resolvedThisSession}</div>
-				</div>
-			</div>
 
-			${buildNotificationFeed(metrics)}
+				${buildCollapsibleTrendRow(
+		'persisting',
+		PERSISTING_SVG,
+		'Persisting Patterns',
+		trends.persistingPatterns,
+		persistingSubItems,
+		'Instances Open',
+	)}
+
+				${buildCollapsibleTrendRow(
+		'improving',
+		IMPROVING_SVG,
+		'Improving Trends',
+		trends.improvingTrends,
+		improvingSubItems,
+		'Instances Remaining',
+	)}
+
+				${buildCollapsibleTrendRow(
+		'recurring',
+		RECURRING_SVG,
+		'Recurring Patterns',
+		trends.recurringPatterns,
+		recurringSubItems,
+		'Instances Returned',
+	)}
+
+				${buildCollapsibleTrendRow(
+		'resolved',
+		RESOLVED_SVG,
+		'Resolved This Session',
+		trends.resolvedThisSession,
+		resolvedSubItems,
+		'Instances Fixed',
+	)}
+			</div>
+			
+			<div class="divider"></div>
+			
+			<div class="split-section">
+				${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
+				${buildNotificationsPanel(metrics)}
+			</div>
 		</section>
 		<script>
 			(function () {
 				const vscode = acquireVsCodeApi();
-				document.addEventListener('click', (e) => {
-					const btn = e.target.closest('.notif-dismiss');
-					if (!btn) return;
-					const id = btn.dataset.notifId;
-					if (!id) return;
 
-					// Animate the card out, then remove from DOM
+				// ── Collapsible trend rows ──────────────────────────────
+				document.querySelectorAll('[data-trend-toggle]').forEach(function (btn) {
+					btn.addEventListener('click', function () {
+						const id = btn.getAttribute('data-trend-toggle');
+						const body = document.getElementById('trend-body-' + id);
+						if (!body) { return; }
+
+						const isOpen = btn.getAttribute('aria-expanded') === 'true';
+						btn.setAttribute('aria-expanded', String(!isOpen));
+						body.setAttribute('aria-hidden', String(isOpen));
+						body.classList.toggle('open', !isOpen);
+					});
+				});
+
+				// ── Notification dismiss ────────────────────────────────
+				document.addEventListener('click', function (e) {
+					const btn = e.target.closest('.notif-dismiss');
+					if (!btn) { return; }
+					const id = btn.dataset.notifId;
+					if (!id) { return; }
+
 					const card = btn.closest('.notif-card');
 					if (card) {
 						card.classList.add('dismissing');
-						card.addEventListener('animationend', () => {
+						card.addEventListener('animationend', function () {
 							card.remove();
-							// If no notifications remain, remove the divider + feed wrapper
-							const feed = document.querySelector('.notif-feed');
-							if (feed && feed.children.length === 0) {
-								const divider = feed.previousElementSibling;
-								if (divider && divider.classList.contains('divider')) {
-									divider.remove();
-								}
-								feed.remove();
+							const feed = document.getElementById('notif-feed');
+							if (feed && feed.querySelectorAll('.notif-card').length === 0) {
+								feed.innerHTML = '<div class="panel-empty">No notifications</div>';
 							}
 						});
 					}
 
-					// Persist the dismissal in the extension host
 					vscode.postMessage({ type: 'dismiss-notification', notifId: id });
 				});
 			})();

@@ -36,17 +36,71 @@ export interface Vulnerability {
 	line: number;
 }
 
+/** A single sub-item entry for a persisting, recurring, or resolved trend row. */
+export interface TrendSubItem {
+	/** Vulnerability type label (e.g. "SQL Injection"). */
+	type: string;
+	/** Current instance count. */
+	instances: number;
+}
+
+/** A single sub-item entry for an improving trend row, with progress label. */
+export interface ImprovingSubItem extends TrendSubItem {
+	/**
+	 * Human-readable progress classification.
+	 * - 'No change' — T score is exactly 0 (no improvement from prior session).
+	 * - 'Some progress' / 'Clear progress' / 'Major progress' — positive T,
+	 *   or Session 1 fallback when no prior comparison data exists.
+	 */
+	progressLabel: 'No change' | 'Some progress' | 'Clear progress' | 'Major progress';
+	/** Delta string shown alongside the label (e.g. "+2.00"). Empty when T is null. */
+	progressDelta: string;
+}
+
 /**
  * Trend counters summarising how vulnerability patterns shifted
  * across the current session.
  */
 export interface TrendData {
-	/** Vulnerabilities that have appeared in multiple consecutive scans. */
+	/** Unique instances still present after being seen in this session. */
 	persistingPatterns: number;
-	/** Vulnerability categories that are trending toward resolution. */
+	/** Unique instances seen earlier that are currently gone. */
 	improvingTrends: number;
-	/** Vulnerabilities fully resolved during this session. */
+	/** Unique instances fully resolved during this session. */
 	resolvedThisSession: number;
+	/**
+	 * Count of vulnerabilities that have recurred after durable resolution
+	 * and met the recurrence threshold.
+	 */
+	recurringPatterns: number;
+	/**
+	 * Per-vulnerability detail for the Persisting Patterns collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	persistingItems?: TrendSubItem[];
+	/**
+	 * Per-vulnerability detail for the Improving Trends collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	improvingItems?: ImprovingSubItem[];
+	/**
+	 * Per-vulnerability detail for the Recurring Patterns collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	recurringItems?: TrendSubItem[];
+	/**
+	 * Per-vulnerability detail for the Resolved This Session collapsible row.
+	 * Optional — placeholder rows are shown when absent.
+	 */
+	resolvedItems?: TrendSubItem[];
+	/** Workspace-level Fix Score (0–10). */
+	fixScore?: number;
+	/** Workspace-level Persistence Score (0–10). */
+	persistenceScore?: number;
+	/** Workspace-level Trend Score. Null = first session. */
+	trendScore?: number | null;
+	/** User-facing trend label, e.g. "Some progress (+2.00)". */
+	trendLabel?: string;
 }
 
 /**
@@ -62,6 +116,25 @@ export interface SessionNotification {
 	detail: string;
 	/** Human-readable timestamp label (e.g. "just now"). */
 	timestamp: string;
+}
+
+/** A single entry in the Common Vulnerabilities panel. */
+export interface CommonVulnerabilityItem {
+	/** Vulnerability type label (e.g. "SQL Injection"). */
+	type: string;
+	/** CWE identifier (e.g. "CWE-89"). */
+	cweId: string;
+	/** Number of sessions this type appeared in (post-graduation). */
+	sessionCount: number;
+	/** Total sessions analyzed. */
+	totalSessions: number;
+	/**
+	 * Total finding instances of this type (active + resolved + missing).
+	 * Represents how many times the student has encountered this pattern.
+	 */
+	totalInstanceCount: number;
+	/** Active findings of this type still present. */
+	activeFindingCount: number;
 }
 
 /**
@@ -81,4 +154,8 @@ export interface SessionMetrics {
 	trends: TrendData;
 	/** Optional list of notifications to display in a scrollable feed at the bottom of the panel. */
 	notifications?: SessionNotification[];
+	/** Optional list of common vulnerability types to display in the Common Vulnerabilities panel. */
+	commonVulnerabilities?: CommonVulnerabilityItem[];
+	/** Total sessions analyzed (completed + active). */
+	totalSessionsAnalyzed?: number;
 }

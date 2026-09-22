@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { join, relative } from 'node:path';
 import { AriadneSession } from './iostream';
+import { incrementRevision } from './revisionTracker.js';
 
 /**
  * Debounced scan interval (ms) for live edits.
@@ -13,13 +14,11 @@ import { AriadneSession } from './iostream';
  * After each flush, if the document version changed in the meantime, one more
  * trailing scan is scheduled so the absolute latest content is always sent.
  */
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = 400;
 
 interface FileUpdateState {
 	/** Fires `DEBOUNCE_MS` after the last edit (trailing debounce). */
 	trailingTimer: ReturnType<typeof setTimeout> | null;
-	/** Forces a scan at least every `DEBOUNCE_MS` during continuous typing. */
-	maxWaitTimer: ReturnType<typeof setTimeout> | null;
 	/** Edits arrived since the last successful flush. */
 	pending: boolean;
 }
@@ -42,7 +41,7 @@ function isTrackedFilePath(fsPath: string): boolean {
 	return base === 'application.properties' || base === '.gitignore' || base === '.env';
 }
 
-function isTrackedDocument(doc: vscode.TextDocument): boolean {
+export function isTrackedDocument(doc: vscode.TextDocument): boolean {
 	return isTrackedFilePath(doc.uri.fsPath);
 }
 
@@ -91,7 +90,7 @@ function resolveDocument(filePath: string): vscode.TextDocument | undefined {
 function getOrCreateState(filePath: string): FileUpdateState {
 	let state = fileUpdateState.get(filePath);
 	if (!state) {
-		state = { trailingTimer: null, maxWaitTimer: null, pending: false };
+		state = { trailingTimer: null, pending: false };
 		fileUpdateState.set(filePath, state);
 	}
 	return state;
@@ -101,10 +100,6 @@ function clearTimers(state: FileUpdateState): void {
 	if (state.trailingTimer) {
 		clearTimeout(state.trailingTimer);
 		state.trailingTimer = null;
-	}
-	if (state.maxWaitTimer) {
-		clearTimeout(state.maxWaitTimer);
-		state.maxWaitTimer = null;
 	}
 }
 
@@ -147,9 +142,6 @@ function flushDocumentUpdate(session: AriadneSession, filePath: string): void {
 		scheduleTrailingScan(session, filePath);
 	} else {
 		state.pending = false;
-		if (!state.trailingTimer) {
-			state.maxWaitTimer = null;
-		}
 	}
 }
 
@@ -166,40 +158,18 @@ function scheduleTrailingScan(session: AriadneSession, filePath: string): void {
 			return;
 		}
 		flushDocumentUpdate(session, filePath);
-		if (!state.pending) {
-			if (state.maxWaitTimer) {
-				clearTimeout(state.maxWaitTimer);
-				state.maxWaitTimer = null;
-			}
-		}
-	}, DEBOUNCE_MS);
-}
-
-function scheduleMaxWaitScan(session: AriadneSession, filePath: string): void {
-	const state = getOrCreateState(filePath);
-
-	if (state.maxWaitTimer) {
-		return;
-	}
-
-	state.maxWaitTimer = setTimeout(() => {
-		state.maxWaitTimer = null;
-		if (state.pending) {
-			flushDocumentUpdate(session, filePath);
-		}
-		if (state.pending) {
-			scheduleMaxWaitScan(session, filePath);
-		}
 	}, DEBOUNCE_MS);
 }
 
 function scheduleDocumentUpdate(session: AriadneSession, doc: vscode.TextDocument): void {
 	const filePath = doc.uri.fsPath;
 	const state = getOrCreateState(filePath);
+	if (!state.pending) {
+		console.log(`[Ariadne TS] Debounced update scheduled for ${filePath} (${DEBOUNCE_MS}ms)`);
+	}
 	state.pending = true;
 
 	scheduleTrailingScan(session, filePath);
-	scheduleMaxWaitScan(session, filePath);
 }
 
 function cancelPendingUpdate(filePath: string): void {
@@ -212,15 +182,57 @@ function cancelPendingUpdate(filePath: string): void {
 }
 
 /**
+ * Flushes all pending in-memory buffer edits to the engine immediately.
+ * Called during deactivation so the engine's forest is fully synced before
+ * a final scan or shutdown.
+ */
+export function flushAllPendingUpdates(session: AriadneSession): void {
+	for (const [filePath, state] of fileUpdateState.entries()) {
+		if (state.pending) {
+			const doc = resolveDocument(filePath);
+			if (doc) {
+				console.log(`[Ariadne TS] Shutdown flush: syncing ${filePath}`);
+				sendFullDocumentUpdate(session, doc);
+			}
+			state.pending = false;
+		}
+		clearTimers(state);
+	}
+	fileUpdateState.clear();
+}
+
+/**
+ * Cancels all pending debounce and max-wait timers across all files.
+ */
+export function cancelAllPendingUpdates(): void {
+	for (const state of fileUpdateState.values()) {
+		clearTimers(state);
+	}
+	fileUpdateState.clear();
+}
+
+/**
  * Registers VS Code filesystem + editor events and converts them
  * into structured IPC messages for the Rust SAST engine.
  *
  * File mutation events automatically trigger re-analysis in the
  * session after each UpdateFile / Create / Delete / Rename.
+ *
+ * @param onSaveTrigger - Optional callback fired immediately before
+ *   the Analyze IPC message is sent on a tracked-file save. Receives
+ *   the workspace revision at the moment of the save so the caller
+ *   can record it for settlement validation.
+ *
+ * @param onRevisionChange - Optional callback fired whenever a
+ *   tracked-file mutation increments the workspace revision. The new
+ *   revision number is passed as the argument. Use this to cancel any
+ *   active settlement timer.
  */
 export function registerDocumentEvents(
 	context: vscode.ExtensionContext,
 	session: AriadneSession,
+	onSaveTrigger?: (revision: number) => void,
+	onRevisionChange?: (revision: number) => void,
 ): void {
 
 	// ============================================================
@@ -253,17 +265,42 @@ export function registerDocumentEvents(
 				scheduleRulesReload(session);
 			}
 		}),
+
 		vscode.workspace.onDidSaveTextDocument((doc) => {
 			if (isAriadnePath(doc.uri.fsPath)) {
 				scheduleRulesReload(session);
 			}
+			if (isTrackedDocument(doc)) {
+				// Flush any pending in-flight debounced edits first so the engine's
+				// forest is guaranteed to hold the latest buffer when Analyze runs.
+				const state = fileUpdateState.get(doc.uri.fsPath);
+				if (state?.pending) {
+					console.log(`[Ariadne TS] Save flush: syncing in-flight edits for ${doc.uri.fsPath}`);
+					sendFullDocumentUpdate(session, doc);
+				}
+				cancelPendingUpdate(doc.uri.fsPath);
+
+				// Record current revision before sending so the caller can
+				// validate the result when it arrives.
+				const revision = incrementRevision();
+				console.log(`[Ariadne TS] Save-triggered scan revision=${revision}: ${doc.uri.fsPath}`);
+				onSaveTrigger?.(revision);
+				session.send({ type: 'Analyze', path: null });
+			}
 		}),
+
 		vscode.workspace.onDidChangeTextDocument((event) => {
 			if (event.contentChanges.length === 0) {
 				return;
 			}
-			if (isAriadnePath(event.document.uri.fsPath)) {
+			const fsPath = event.document.uri.fsPath;
+			if (isAriadnePath(fsPath)) {
 				scheduleRulesReload(session);
+			}
+			if (isTrackedFilePath(fsPath)) {
+				// Increment revision: any tracked edit cancels active settlement.
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			}
 		}),
 	);
@@ -298,6 +335,8 @@ export function registerDocumentEvents(
 				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] CreateFile ${file.fsPath}`);
 				session.send({ type: 'CreateFile', path: file.fsPath, content: '' });
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			});
 		}),
 	);
@@ -311,6 +350,8 @@ export function registerDocumentEvents(
 				if (!isTrackedFilePath(file.fsPath)) { return; }
 				console.log(`[Ariadne TS] DeleteFile ${file.fsPath}`);
 				session.send({ type: 'DeleteFile', path: file.fsPath });
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			});
 		}),
 	);
@@ -332,6 +373,8 @@ export function registerDocumentEvents(
 					old_path: file.oldUri.fsPath,
 					new_path: file.newUri.fsPath,
 				});
+				const rev = incrementRevision();
+				onRevisionChange?.(rev);
 			});
 		}),
 	);

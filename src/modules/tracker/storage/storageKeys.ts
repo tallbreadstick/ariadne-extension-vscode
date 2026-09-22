@@ -10,17 +10,35 @@
 
 // ── workspaceState keys (per-project) ─────────────────────────────────
 
-/** Key for the persisted ScanSnapshot[] array. */
+/**
+ * Key for the persisted ScanSnapshot[] array.
+ * @deprecated Legacy key — cleared on migration to lifecycle records.
+ */
 export const WS_SCAN_SNAPSHOTS = 'ariadne.scanSnapshots';
 
 /** Key for the persisted SessionMeta object. */
 export const WS_SESSION_META = 'ariadne.sessionMeta';
+
+/** Key for the active (in-progress) SessionRecord. */
+export const WS_ACTIVE_SESSION = 'ariadne.activeSession';
+
+/** Key for the persisted completed SessionRecord[] array. */
+export const WS_COMPLETED_SESSIONS = 'ariadne.completedSessions';
+
+/** Key for the persisted FindingLifecycleRecord[] array. */
+export const WS_FINDING_LIFECYCLES = 'ariadne.findingLifecycles';
+
+/** Key for the persisted SaveScanState object (first-checkpoint tracking). */
+export const WS_SAVE_SCAN_STATE = 'ariadne.saveScanState';
 
 /** Key for the persisted set of dismissed notification IDs. */
 export const WS_DISMISSED_NOTIFICATIONS = 'ariadne.dismissedNotifications';
 
 /** Key for the single expanded vulnerability card in the active-vulns panel. */
 export const WS_EXPANDED_VULN_KEY = 'ariadne.expandedVulnKey';
+
+/** Key for the persisted TypeGraduationState map (Common Vulnerabilities). */
+export const WS_GRADUATION_HISTORY = 'ariadne.graduationHistory';
 
 // ── globalState keys (cross-project) ──────────────────────────────────
 

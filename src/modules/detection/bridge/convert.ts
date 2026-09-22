@@ -1,12 +1,17 @@
 /**
  * Converters from the flat VulnerabilityMetadata emitted by the Rust
- * SAST engine to the two UI-facing type shapes used by the extension:
+ * SAST engine to the type shapes used by the extension:
  *
- * 1. `Vulnerability`   — presentation/panelTypes.ts  (active-vulns panel)
- * 2. `AriadneFinding`  — presentation/diagnostics/diagnosticTypes.ts (inline highlights)
- * 3. `ScanSnapshot`    — feedback/vulnerability_results/vulnerabilityTypes.ts
- *                        (session-metrics tracker)
+ * 1. `Vulnerability`      — presentation/panelTypes.ts  (active-vulns panel)
+ * 2. `AriadneFinding`     — presentation/diagnostics/diagnosticTypes.ts (inline highlights)
+ * 3. `ScanSnapshot`       — feedback/vulnerability_results/vulnerabilityTypes.ts
+ *                           (session-metrics tracker)
+ * 4. `ObservedFinding[]`  — tracker/analysis/lifecycleTypes.ts (lifecycle engine)
  */
+
+import { isAbsolute, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import * as vscode from 'vscode';
 
 import type { Vulnerability as PanelVulnerability } from '../../presentation/panelTypes.js';
 import type { AriadneFinding } from '../../presentation/diagnostics/diagnosticTypes.js';
@@ -17,6 +22,26 @@ import type {
 	Instance,
 	Occurrence,
 } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type { ObservedFinding } from '../../tracker/analysis/lifecycleTypes.js';
+
+/** Engine may send an absolute path or a workspace-relative one. */
+export function resolveWorkspaceFsPath(filePath: string): string {
+	if (!filePath) {
+		return filePath;
+	}
+	if (isAbsolute(filePath)) {
+		return filePath;
+	}
+	const folders = vscode.workspace.workspaceFolders ?? [];
+	for (const folder of folders) {
+		const abs = join(folder.uri.fsPath, filePath);
+		if (existsSync(abs)) {
+			return abs;
+		}
+	}
+	const root = folders[0]?.uri.fsPath;
+	return root ? join(root, filePath) : filePath;
+}
 
 // ── Presentation panel ────────────────────────────────────────────────
 
@@ -37,7 +62,7 @@ export function metadataToVulnerability(
 		description:
 			m.description ??
 			`${m.type} detected in ${shortPath(m.file_path)} at line ${m.line_number}.`,
-		filePath: m.file_path,
+		filePath: resolveWorkspaceFsPath(m.file_path),
 		line: m.line_number,
 	};
 }
@@ -49,6 +74,7 @@ export function metadataToVulnerability(
  * by DiagnosticManager for inline squiggles and hover popups.
  *
  * Line numbers from the engine are 1-based; VS Code ranges are 0-based.
+ * `start_column` / `end_column` are already 0-based byte offsets.
  */
 export function metadataToAriadneFinding(
 	m: VulnerabilityMetadata,
@@ -56,8 +82,8 @@ export function metadataToAriadneFinding(
 ): AriadneFinding {
 	const line0 = Math.max(0, m.line_number - 1);
 	const sev = capitalize(m.severity) as AriadneFinding['severity'];
-	const startCol =
-		m.column_number !== undefined ? Math.max(0, m.column_number - 1) : 0;
+	const startCol = startColumn0(m);
+	const endLine = m.end_line !== undefined ? Math.max(0, m.end_line - 1) : line0;
 
 	return {
 		id: `engine-finding-${idx}`,
@@ -66,11 +92,11 @@ export function metadataToAriadneFinding(
 		cweId: m.cwe_id,
 		owaspCategory: m.owasp_category,
 		shortExplanation: m.description ?? m.type,
-		filePath: m.file_path,
+		filePath: resolveWorkspaceFsPath(m.file_path),
 		startLine: line0,
 		startColumn: startCol,
-		endLine: line0,
-		endColumn: 999,
+		endLine,
+		endColumn: endColumn0(m, startCol),
 		taintPath: m.taint_trace
 			? {
 				originLine: m.taint_trace.origin_line,
@@ -90,9 +116,9 @@ export function groupFindingsByFile(
 	const byFile = new Map<string, AriadneFinding[]>();
 	findings.forEach((m, idx) => {
 		const f = metadataToAriadneFinding(m, idx);
-		const existing = byFile.get(m.file_path) ?? [];
+		const existing = byFile.get(f.filePath) ?? [];
 		existing.push(f);
-		byFile.set(m.file_path, existing);
+		byFile.set(f.filePath, existing);
 	});
 	return byFile;
 }
@@ -105,8 +131,9 @@ export function groupFindingsByFile(
  *
  * Grouping strategy:
  *   Level 1  Vulnerability  — by (cwe_id + type)
- *   Level 2  Instance       — by instance_name (falls back to file:line)
- *   Level 3  Occurrence     — one per flat finding
+ *   Level 2  Instance       — by instance_fingerprint, then composed
+ *                             hashes, then enclosing path / name / file:line
+ *   Level 3  Occurrence     — one per flat finding, carrying fingerprints
  */
 export function metadataToScanSnapshot(
 	findings: VulnerabilityMetadata[],
@@ -126,26 +153,38 @@ export function metadataToScanSnapshot(
 	for (const items of vulnMap.values()) {
 		const first = items[0];
 
-		// Group within a vulnerability by instance_name → Instance[]
+		// Group within a vulnerability by durable identity → Instance[]
 		const instanceMap = new Map<string, VulnerabilityMetadata[]>();
 		for (const item of items) {
-			const iKey = item.instance_name ?? `${item.file_path}:${item.line_number}`;
+			const iKey = instanceGroupKey(item);
 			const existing = instanceMap.get(iKey) ?? [];
 			existing.push(item);
 			instanceMap.set(iKey, existing);
 		}
 
 		const instances: Instance[] = [];
-		for (const [iName, iItems] of instanceMap) {
+		for (const [, iItems] of instanceMap) {
+			const firstItem = iItems[0];
 			const occurrences: Occurrence[] = iItems.map((item) => ({
 				file_path: item.file_path,
 				line_number: item.line_number,
 				column_number: item.column_number,
 				taint_trace: item.taint_trace,
+				enclosing_symbol_path: item.enclosing_symbol_path,
+				start_column: item.start_column,
+				end_column: item.end_column,
+				end_line: item.end_line,
+				fingerprint_version: item.fingerprint_version,
+				logical_fingerprint: item.logical_fingerprint,
+				scope_fingerprint: item.scope_fingerprint,
+				content_fingerprint: item.content_fingerprint,
+				instance_fingerprint: item.instance_fingerprint,
 			}));
 			instances.push({
-				name: iName,
-				kind: (iItems[0].instance_kind ?? 'variable') as Instance['kind'],
+				name: firstItem.instance_name
+					?? firstItem.enclosing_symbol_path
+					?? `${firstItem.file_path}:${firstItem.line_number}`,
+				kind: (firstItem.instance_kind ?? 'variable') as Instance['kind'],
 				occurrences,
 			});
 		}
@@ -163,7 +202,100 @@ export function metadataToScanSnapshot(
 	return { scan_id: scanId, timestamp: Date.now(), vulnerabilities };
 }
 
+// ── Lifecycle engine input ─────────────────────────────────────────────
+
+/**
+ * Converts flat VulnerabilityMetadata[] into ObservedFinding[] for
+ * the lifecycle engine.
+ *
+ * Implements a strict 1-to-1 instance mapping where every scanner finding
+ * is its own ObservedFinding with occurrenceCount = 1, keyed by
+ * the scanner's unique `instance_fingerprint` (with fallback to composite
+ * logical/scope/content identity via instanceGroupKey).
+ */
+export function metadataToObservedFindings(
+	findings: VulnerabilityMetadata[],
+): ObservedFinding[] {
+	return findings.map((finding) => ({
+		logicalFingerprint: instanceGroupKey(finding),
+		contentFingerprint: finding.content_fingerprint ?? '',
+		scopeFingerprint: finding.scope_fingerprint ?? '',
+		ruleId: finding.rule_id ?? '',
+		cweId: finding.cwe_id,
+		type: finding.type,
+		severity: finding.severity,
+		instanceName: finding.instance_name ?? '',
+		filePath: finding.file_path,
+		occurrenceCount: 1,
+		lineNumber: finding.line_number,
+		endLine: finding.end_line ?? finding.line_number,
+	}));
+}
+
+
+/**
+ * Returns the logical fingerprint for a finding.
+ *
+ * Prefers the scanner's engine-provided `logical_fingerprint` when
+ * present. Falls back to a derived key from available fields
+ * (excludes `line_number` because line numbers shift under editing).
+ */
+function deriveLogicalFingerprint(m: VulnerabilityMetadata): string {
+	if (m.logical_fingerprint) {
+		return m.logical_fingerprint;
+	}
+	return [
+		m.rule_id ?? '',
+		m.cwe_id,
+		m.type,
+		m.instance_name ?? '',
+		shortPath(m.file_path),
+	].join('::');
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Columns from the current engine are 0-based byte offsets (`start_column`).
+ * Older payloads may only send `column_number`; those without
+ * `fingerprint_version` are treated as 1-based.
+ */
+function endColumn0(m: VulnerabilityMetadata, startCol: number): number {
+	const raw = m.end_column ?? 999;
+	if (raw > startCol) {
+		return raw;
+	}
+	return 999;
+}
+function startColumn0(m: VulnerabilityMetadata): number {
+	if (m.start_column !== undefined) {
+		return m.start_column;
+	}
+	if (m.column_number === undefined) {
+		return 0;
+	}
+	if (m.fingerprint_version !== undefined) {
+		return m.column_number;
+	}
+	return Math.max(0, m.column_number - 1);
+}
+
+/**
+ * Group tracker instances by durable identity so inserting blank lines
+ * does not split one finding into a new instance.
+ */
+function instanceGroupKey(item: VulnerabilityMetadata): string {
+	if (item.instance_fingerprint) {
+		return item.instance_fingerprint;
+	}
+	if (item.logical_fingerprint && item.scope_fingerprint && item.content_fingerprint) {
+		return `${item.logical_fingerprint}:${item.scope_fingerprint}:${item.content_fingerprint}`;
+	}
+	return item.logical_fingerprint
+		?? item.enclosing_symbol_path
+		?? item.instance_name
+		?? `${item.file_path}:${item.line_number}`;
+}
 
 function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
