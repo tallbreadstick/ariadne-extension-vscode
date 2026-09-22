@@ -137,7 +137,7 @@ describe('Abrupt Close Recovery & Auto-Scan Settings Test Suite', () => {
 			assert.strictEqual(diag.findingsBySeverity.medium, 0);
 			assert.strictEqual(diag.findingsBySeverity.low, 0);
 			assert.strictEqual(diag.vulnerabilityTypes.length, 2);
-			assert.ok(diag.trendsImpact.includes('Your code changes are safe'));
+			assert.ok(diag.trendsImpact.includes('All modifications and resolved vulnerabilities'));
 			assert.ok(diag.trendsImpact.includes('last completed session'));
 		});
 

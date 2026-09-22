@@ -124,7 +124,7 @@ export function buildAbruptSessionDiagnostics(
 		vulnerabilityTypes,
 		reason: 'Process terminated or closed before clean deactivation could execute',
 		trendsImpact:
-			'Your code changes are safe. All modifications and resolved vulnerabilities from this session will be recognized when your next session begins. To protect your progress metrics from skewed data, your Trend score will be measured against your last completed session rather than this interrupted one.',
+			'All modifications and resolved vulnerabilities from this session will be recognized when your next session begins. To protect your progress metrics from skewed data, your Trend score will be measured against your last completed session rather than this interrupted one.',
 	};
 }
 
@@ -154,24 +154,27 @@ const CSS = /* css */ `
 		--accent: var(--vscode-textLink-foreground);
 		--warning: var(--vscode-editorWarning-foreground, #cca700);
 		--error: var(--vscode-errorForeground, #f14c4c);
-		--success: #73c991;
-		--critical: #f85149;
-		--high: #e06c75;
-		--medium: #d19a66;
-		--low: #61afef;
+		--critical: #E24B4A; /* Red */
+		--high: #F0883E;     /* Orange */
+		--medium: #E3B341;   /* Yellow */
+		--low: #3FB950;      /* Green */
 	}
 
 	* { box-sizing: border-box; }
 
+	html {
+		background: var(--bg);
+	}
+
 	body {
-		margin: 0;
-		padding: 24px 28px 48px;
+		margin: 0 auto;
+		padding: 24px 32px 48px;
 		background: var(--bg);
 		color: var(--text);
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 		font-size: 13px;
 		line-height: 1.5;
-		max-width: 800px;
+		max-width: 860px;
 		width: 100%;
 	}
 
@@ -179,10 +182,10 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: flex-start;
 		gap: 16px;
-		padding: 16px 20px;
+		padding: 18px 20px;
 		border-radius: 6px;
 		background: color-mix(in srgb, var(--warning) 12%, transparent);
-		border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+		border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
 		margin-bottom: 24px;
 	}
 
@@ -196,24 +199,25 @@ const CSS = /* css */ `
 	.header-banner h1 {
 		margin: 0 0 4px;
 		font-size: 16px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--text);
 	}
 
 	.header-banner p {
 		margin: 0;
-		color: var(--muted);
+		color: var(--text);
+		opacity: 0.85;
 		font-size: 13px;
 	}
 
 	.section-title {
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 700;
 		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		color: var(--muted);
-		margin: 24px 0 12px;
-		padding-bottom: 4px;
+		letter-spacing: 0.6px;
+		color: var(--text);
+		margin: 28px 0 14px;
+		padding-bottom: 6px;
 		border-bottom: 1px solid var(--border);
 	}
 
@@ -225,7 +229,7 @@ const CSS = /* css */ `
 	}
 
 	.meta-box {
-		padding: 12px 14px;
+		padding: 14px 16px;
 		background: var(--card);
 		border: 1px solid var(--border);
 		border-radius: 6px;
@@ -233,56 +237,62 @@ const CSS = /* css */ `
 
 	.meta-label {
 		font-size: 11px;
+		font-weight: 700;
 		text-transform: uppercase;
-		color: var(--muted);
-		margin-bottom: 4px;
+		letter-spacing: 0.5px;
+		color: var(--text);
+		opacity: 0.75;
+		margin-bottom: 6px;
 	}
 
 	.meta-value {
-		font-size: 14px;
-		font-weight: 600;
+		font-size: 16px;
+		font-weight: 700;
 		color: var(--text);
 	}
 
 	.meta-sub {
 		font-size: 11px;
+		font-weight: 500;
 		color: var(--muted);
-		margin-top: 2px;
+		margin-top: 3px;
 	}
 
 	.notice-card {
-		padding: 14px 16px;
-		background: color-mix(in srgb, var(--accent) 8%, var(--card));
-		border-left: 3px solid var(--accent);
+		padding: 16px 18px;
+		background: color-mix(in srgb, var(--accent) 10%, var(--card));
+		border-left: 4px solid var(--accent);
 		border-radius: 6px;
-		border-top: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-		border-right: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-		border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-		margin-bottom: 20px;
+		border-top: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+		border-right: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+		margin-bottom: 24px;
 	}
 
 	.notice-title {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		font-weight: 600;
-		font-size: 13px;
+		font-weight: 700;
+		font-size: 14px;
 		color: var(--text);
-		margin-bottom: 6px;
+		margin-bottom: 8px;
 	}
 
 	.notice-title svg {
-		width: 16px;
-		height: 16px;
+		width: 18px;
+		height: 18px;
 		color: var(--accent);
 		flex-shrink: 0;
 	}
 
 	.notice-card p {
 		margin: 0;
-		color: var(--muted);
-		font-size: 12px;
-		line-height: 1.5;
+		color: var(--text);
+		opacity: 0.9;
+		font-size: 12.5px;
+		font-weight: 500;
+		line-height: 1.6;
 	}
 
 	.grid-activity {
@@ -293,7 +303,7 @@ const CSS = /* css */ `
 	}
 
 	.activity-box {
-		padding: 12px 14px;
+		padding: 14px 16px;
 		background: var(--card);
 		border: 1px solid var(--border);
 		border-radius: 6px;
@@ -301,34 +311,36 @@ const CSS = /* css */ `
 	}
 
 	.activity-count {
-		font-size: 20px;
-		font-weight: 700;
+		font-size: 24px;
+		font-weight: 800;
 		line-height: 1.2;
-		margin-bottom: 2px;
+		margin-bottom: 4px;
 	}
 
 	.activity-label {
 		font-size: 11px;
-		font-weight: 600;
+		font-weight: 700;
 		text-transform: uppercase;
+		letter-spacing: 0.5px;
 		color: var(--text);
 	}
 
 	.activity-sub {
-		font-size: 10px;
+		font-size: 11px;
+		font-weight: 500;
 		color: var(--muted);
-		margin-top: 2px;
+		margin-top: 3px;
 	}
 
 	.severity-row {
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
-		gap: 10px;
+		gap: 12px;
 		margin-bottom: 16px;
 	}
 
 	.severity-pill {
-		padding: 10px 12px;
+		padding: 12px 14px;
 		border-radius: 6px;
 		background: var(--card);
 		border: 1px solid var(--border);
@@ -338,19 +350,21 @@ const CSS = /* css */ `
 	}
 
 	.severity-pill .count {
-		font-size: 18px;
-		font-weight: 700;
+		font-size: 22px;
+		font-weight: 800;
 	}
 
 	.severity-pill .label {
 		font-size: 11px;
+		font-weight: 700;
 		text-transform: uppercase;
-		color: var(--muted);
-		margin-top: 2px;
+		letter-spacing: 0.5px;
+		color: var(--text);
+		margin-top: 4px;
 	}
 
 	.c-active { color: var(--text); }
-	.c-resolved { color: var(--success); }
+	.c-resolved { color: var(--low); }
 	.c-recurred { color: var(--high); }
 	.c-persisting { color: var(--medium); }
 	.c-critical { color: var(--critical); }
@@ -376,7 +390,7 @@ const CSS = /* css */ `
 	}
 
 	th, td {
-		padding: 8px 12px;
+		padding: 10px 14px;
 		text-align: left;
 		border-bottom: 1px solid var(--border);
 		word-break: break-word;
@@ -387,9 +401,12 @@ const CSS = /* css */ `
 	}
 
 	th {
-		color: var(--muted);
-		font-weight: 600;
-		background: color-mix(in srgb, var(--card) 60%, transparent);
+		color: var(--text);
+		font-weight: 700;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		background: color-mix(in srgb, var(--card) 80%, transparent);
 	}
 
 	.actions {
@@ -424,7 +441,7 @@ const CSS = /* css */ `
 			padding: 16px 16px 36px;
 		}
 		.header-banner {
-			padding: 12px 14px;
+			padding: 14px 16px;
 			gap: 12px;
 		}
 	}
@@ -454,12 +471,12 @@ export function buildAbruptSessionHtml(d: AbruptSessionDiagnostics): string {
 	const vulnRows = d.vulnerabilityTypes.length > 0
 		? d.vulnerabilityTypes.map((v) => `
 			<tr>
-				<td><strong>${v.type}</strong></td>
-				<td style="color: var(--muted);">${v.cweId}</td>
-				<td style="text-align: right; font-weight: 600;">${v.count}</td>
+				<td><strong style="color: var(--text); font-size: 13px;">${v.type}</strong></td>
+				<td style="color: var(--text); opacity: 0.85; font-family: monospace; font-size: 12px; font-weight: 600;">${v.cweId}</td>
+				<td style="text-align: right; font-weight: 700; font-size: 14px; color: var(--text);">${v.count}</td>
 			</tr>
 		`).join('')
-		: '<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 16px;">No active vulnerabilities at termination</td></tr>';
+		: '<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 16px; font-weight: 500;">No active vulnerabilities at termination</td></tr>';
 
 	const jsonPayload = JSON.stringify(d, null, 2);
 
