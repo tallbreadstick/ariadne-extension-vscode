@@ -362,14 +362,6 @@ const CSS = /* css */ `
 		color: var(--text);
 	}
 
-	.placeholder-list {
-		margin: 0;
-		padding-left: 16px;
-		color: var(--muted);
-		font-size: 12px;
-		line-height: 1.5;
-	}
-
 	.github-mark {
 		width: 16px;
 		height: 16px;
@@ -551,11 +543,19 @@ function buildScriptingSection(model: SignInPanelViewModel): string {
 
 function buildSessionSection(): string {
 	return /* html */ `
-		<p class="subtitle">Local session data settings will appear here.</p>
-		<ul class="placeholder-list">
-			<li>Clear session history — coming soon</li>
-			<li>Export session metrics — coming soon</li>
-		</ul>`;
+		<p class="subtitle">Manage local scan history and metrics for this workspace.</p>
+		<div class="actions">
+			<button class="btn btn-primary" id="export-session-btn" type="button">
+				Export session data
+			</button>
+			<button class="btn btn-danger" id="clear-session-btn" type="button">
+				Clear session data
+			</button>
+		</div>
+		<p class="footer-note">
+			Export saves a JSON file of this workspace's session history. Clear
+			permanently deletes all local session tracking after a confirmation prompt.
+		</p>`;
 }
 
 /**
@@ -651,6 +651,8 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 			const retryBtn = document.getElementById('retry-btn');
 			const initRulesBtn = document.getElementById('init-rules-btn');
 			const resetRulesBtn = document.getElementById('reset-rules-btn');
+			const exportSessionBtn = document.getElementById('export-session-btn');
+			const clearSessionBtn = document.getElementById('clear-session-btn');
 
 			function updateSignInEnabled() {
 				if (!signInBtn || !termsCheckbox || !privacyCheckbox) {
@@ -694,6 +696,14 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					return;
 				}
 				vscode.postMessage({ type: 'reset-rule-scripts' });
+			});
+
+			exportSessionBtn?.addEventListener('click', () => {
+				vscode.postMessage({ type: 'export-session-data' });
+			});
+
+			clearSessionBtn?.addEventListener('click', () => {
+				vscode.postMessage({ type: 'clear-session-data' });
 			});
 
 			window.addEventListener('message', (event) => {

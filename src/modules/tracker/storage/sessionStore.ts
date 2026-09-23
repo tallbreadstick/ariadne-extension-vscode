@@ -82,6 +82,28 @@ const DEFAULT_SAVE_SCAN_STATE: SaveScanState = {
 	totalSettledCancellations: 0,
 };
 
+export const SESSION_EXPORT_FORMAT = 'ariadne-session-export' as const;
+export const SESSION_EXPORT_VERSION = 1 as const;
+
+/**
+ * Versioned JSON snapshot of local workspace session tracking.
+ * Does not include GitHub auth or global user preferences.
+ */
+export interface SessionDataExport {
+	format: typeof SESSION_EXPORT_FORMAT;
+	version: typeof SESSION_EXPORT_VERSION;
+	exportedAt: string;
+	activeSession: SessionRecord | null;
+	completedSessions: SessionRecord[];
+	findingLifecycles: FindingLifecycleRecord[];
+	sessionMeta: SessionMeta;
+	saveScanState: SaveScanState;
+	graduationHistory: Record<string, TypeGraduationState>;
+	dismissedNotifications: string[];
+	pendingFinalizedSession: SessionRecord | null;
+	expandedVulnKey?: string;
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // SESSION STORE
 // ══════════════════════════════════════════════════════════════════════
@@ -139,9 +161,11 @@ export class SessionStore {
 	}
 
 	/**
-	 * Clears ALL lifecycle data for a clean slate.
-	 * Wipes: active session, completed sessions, finding lifecycles,
-	 * and resets the session ID seed.
+	 * Clears ALL local session tracking for this workspace.
+	 * Wipes active/completed sessions, finding lifecycles, graduation
+	 * history, save-scan state, dismissed notifications, expanded-vuln
+	 * UI state, session counters, and any pending finalized-session file.
+	 * Does not touch GitHub auth or global user preferences.
 	 */
 	async clearAllLifecycleData(): Promise<void> {
 		return this.enqueuePersist(async () => {
@@ -149,11 +173,37 @@ export class SessionStore {
 			await this.context.workspaceState.update(WS_COMPLETED_SESSIONS, undefined);
 			await this.context.workspaceState.update(WS_FINDING_LIFECYCLES, undefined);
 			await this.context.workspaceState.update(WS_GRADUATION_HISTORY, undefined);
-			const meta = this.loadSessionMeta();
-			meta.sessionIdSeed = 0;
-			await this.saveSessionMeta(meta);
-			console.log('[Ariadne Store] Cleared all lifecycle data (including graduation history).');
+			await this.context.workspaceState.update(WS_SAVE_SCAN_STATE, undefined);
+			await this.context.workspaceState.update(WS_DISMISSED_NOTIFICATIONS, undefined);
+			await this.context.workspaceState.update(WS_EXPANDED_VULN_KEY, undefined);
+			await this.context.workspaceState.update(WS_SESSION_META, {
+				...DEFAULT_SESSION_META,
+				sessionStartTime: Date.now(),
+			});
+			this.deletePendingFinalizedSessionFile();
+			console.log('[Ariadne Store] Cleared all local session tracking data.');
 		});
+	}
+
+	/**
+	 * Returns a JSON-serializable snapshot of local session tracking.
+	 * Does not include GitHub auth or global user preferences.
+	 */
+	exportSessionSnapshot(): SessionDataExport {
+		return {
+			format: SESSION_EXPORT_FORMAT,
+			version: SESSION_EXPORT_VERSION,
+			exportedAt: new Date().toISOString(),
+			activeSession: this.loadActiveSession(),
+			completedSessions: [...this.loadCompletedSessions()],
+			findingLifecycles: [...this.loadFindingLifecycles()],
+			sessionMeta: { ...this.loadSessionMeta() },
+			saveScanState: { ...this.loadSaveScanState() },
+			graduationHistory: { ...this.loadGraduationHistory() },
+			dismissedNotifications: [...this.loadDismissedNotifications()],
+			pendingFinalizedSession: this.readPendingFinalizedSessionFile(),
+			expandedVulnKey: this.loadExpandedVulnKey(),
+		};
 	}
 
 	// ── Completed Sessions (workspaceState — per project) ─────────
@@ -233,6 +283,37 @@ export class SessionStore {
 	getFinalizedSessionFilePath(): string {
 		const dir = this.context.storageUri?.fsPath ?? this.context.globalStorageUri.fsPath;
 		return path.join(dir, 'pending-finalized-session.json');
+	}
+
+	private readPendingFinalizedSessionFile(): SessionRecord | null {
+		try {
+			const filePath = this.getFinalizedSessionFilePath();
+			if (!fs.existsSync(filePath)) {
+				return null;
+			}
+			const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+				return null;
+			}
+			if (typeof (parsed as { sessionId?: unknown }).sessionId !== 'string') {
+				return null;
+			}
+			return parsed as SessionRecord;
+		} catch (err) {
+			console.error('[Ariadne Store] Failed to read pending finalized session:', err);
+			return null;
+		}
+	}
+
+	private deletePendingFinalizedSessionFile(): void {
+		try {
+			const filePath = this.getFinalizedSessionFilePath();
+			if (fs.existsSync(filePath)) {
+				fs.unlinkSync(filePath);
+			}
+		} catch (err) {
+			console.error('[Ariadne Store] Failed to delete pending finalized session:', err);
+		}
 	}
 
 	/**
