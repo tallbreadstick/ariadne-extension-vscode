@@ -695,6 +695,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					const message = error instanceof Error ? error.message : String(error);
 					vscode.window.showErrorMessage(`Ariadne: ${message}`);
 				}
+				return;
+			}
+
+			if (msg.type === 'export-session-data') {
+				try {
+					const snapshot = store.exportSessionSnapshot();
+					const stamp = new Date().toISOString().slice(0, 10);
+					const defaultName = `ariadne-session-${stamp}.json`;
+					const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+					const uri = await vscode.window.showSaveDialog({
+						defaultUri: workspaceFolder
+							? vscode.Uri.joinPath(workspaceFolder, defaultName)
+							: undefined,
+						filters: { JSON: ['json'] },
+						saveLabel: 'Export',
+						title: 'Export Ariadne session data',
+					});
+					if (!uri) {
+						return;
+					}
+					await vscode.workspace.fs.writeFile(
+						uri,
+						Buffer.from(JSON.stringify(snapshot, null, 2), 'utf8'),
+					);
+					vscode.window.showInformationMessage(
+						'Ariadne: Session data exported.',
+					);
+				} catch (error: unknown) {
+					const message = error instanceof Error ? error.message : String(error);
+					vscode.window.showErrorMessage(
+						`Ariadne: Could not export session data. ${message}`,
+					);
+				}
+				return;
+			}
+
+			if (msg.type === 'clear-session-data') {
+				const confirmed = await vscode.window.showWarningMessage(
+					'Clear all Ariadne session data for this workspace? This permanently deletes the current session, completed session history, metrics, and related local tracking data. This cannot be undone.',
+					{ modal: true },
+					'Clear session data',
+				);
+				if (confirmed !== 'Clear session data') {
+					return;
+				}
+				try {
+					if (settlementTimer !== null) {
+						clearTimeout(settlementTimer);
+						settlementTimer = null;
+						pendingSettlementFindings = null;
+					}
+					pendingSaveRevision = null;
+					await store.clearAllLifecycleData();
+					lifecycles = [];
+					activeSession = null;
+					latestSessionAnalysis = null;
+					lastSettledRevision = null;
+					previousScanSnapshot = null;
+					saveScanState = store.loadSaveScanState();
+					refreshSessionMetricsPanel();
+					vscode.window.showInformationMessage(
+						'Ariadne: Session data cleared. The next settled save starts a fresh session.',
+					);
+				} catch (error: unknown) {
+					const message = error instanceof Error ? error.message : String(error);
+					vscode.window.showErrorMessage(
+						`Ariadne: Could not clear session data. ${message}`,
+					);
+				}
 			}
 		},
 	);
@@ -1308,11 +1377,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const debugResetLifecycles = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.debugResetLifecycles',
 		async () => {
+			if (settlementTimer !== null) {
+				clearTimeout(settlementTimer);
+				settlementTimer = null;
+				pendingSettlementFindings = null;
+			}
+			pendingSaveRevision = null;
 			await store.clearAllLifecycleData();
 			lifecycles = [];
 			activeSession = null;
-			await store.clearSaveScanState();
+			latestSessionAnalysis = null;
+			lastSettledRevision = null;
+			previousScanSnapshot = null;
 			saveScanState = store.loadSaveScanState();
+			refreshSessionMetricsPanel();
 			console.log('[Ariadne Debug] All lifecycle data cleared. Session will start on next settled save.');
 			vscode.window.showInformationMessage(
 				'Ariadne Debug: All data cleared. Next settled save will start a fresh session and initial checkpoint.',

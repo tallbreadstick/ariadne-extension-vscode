@@ -132,10 +132,24 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(!/id="reset-rules-btn"[^>]*disabled/.test(html));
 	});
 
-	it('keeps the Session section as placeholders', () => {
+	it('renders export and clear session data actions', () => {
 		const html = buildSignInPanelHtml(signedInModel());
-		assert.ok(/coming soon|placeholder/i.test(html));
-		assert.ok(!html.includes('id="clear-session-btn"'));
+		assert.ok(html.includes('id="export-session-btn"'));
+		assert.ok(html.includes('id="clear-session-btn"'));
+		assert.match(html, /Export session data/i);
+		assert.match(html, /Clear session data/i);
+		assert.ok(html.includes("'export-session-data'") || html.includes('"export-session-data"'));
+		assert.ok(html.includes("'clear-session-data'") || html.includes('"clear-session-data"'));
+		assert.ok(!/coming soon/i.test(html));
+		assert.ok(!html.includes('placeholder-list'));
+	});
+
+	it('keeps session data actions available while signed out', () => {
+		const html = buildSignInPanelHtml(signedOutModel());
+		assert.ok(html.includes('id="export-session-btn"'));
+		assert.ok(html.includes('id="clear-session-btn"'));
+		assert.ok(!/id="export-session-btn"[^>]*disabled/.test(html));
+		assert.ok(!/id="clear-session-btn"[^>]*disabled/.test(html));
 	});
 });
 
