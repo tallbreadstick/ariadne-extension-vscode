@@ -151,6 +151,10 @@ ariadne-extension-vscode/
 └── .vscode/launch.json           ← F5 “Run Extension”
 ```
 
+## License
+
+Proprietary. Users may install and run it during data collection. See [LICENSE](LICENSE).
+
 ## See also
 
 - Full-stack quick start — see the parent repository README

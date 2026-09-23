@@ -4,6 +4,7 @@
   "publisher": "ariadne",
   "description": "A student-first VS Code tool that reviews code for security flaws without compromising academic integrity.",
   "version": "0.0.1",
+  "license": "UNLICENSED",
   "engines": {
     "vscode": "^1.107.0"
   },
