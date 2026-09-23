@@ -117,6 +117,15 @@ Within each section, newest decision at the top.
 - supersedes: <title of previous decision> (if applicable)
 -->
 
+### Ship Linux and Windows scanner binaries inside the extension
+
+- date: 2026-09-23
+- status: accepted
+- context: Deployed students should not need a PATH install or a local cargo build of the scanner. The extension already spawns `ariadne session` as a child process; the missing piece was a reliable, per-OS binary next to the extension.
+- decision: Package x64 Linux and Windows scanner binaries under `bin/linux-x64/` and `bin/win32-x64/`. On activate, `configureAriadneExecutable(context.extensionPath)` selects the host binary. Session, CLI, and rule-script spawns use that path. An explicit existing `ariadne.executable` setting still overrides the bundle.
+- consequences: VSIX size grows by ~7MB. macOS and ARM hosts have no bundled binary until those builds exist. Linux hosts need a reasonably current glibc. Updating the scanner means replacing the files in `bin/`.
+- task: docs/ai/tasks/2026-09-23-bundled-scanner-binaries.md
+
 ### Hourly auto full scan with seamless session rollover and K=3 policy
 
 - date: 2026-09-16

@@ -245,7 +245,7 @@ function spawnCheck(projectRoot: string): Promise<CheckReport> {
 		});
 		proc.on('error', (err) => {
 			reject(new Error(
-				`Could not run \`${exe}\`: ${err.message}. Set ariadne.executable, or cargo-build ariadne-core.`,
+				`Could not run \`${exe}\`: ${err.message}.`,
 			));
 		});
 		proc.on('close', () => {

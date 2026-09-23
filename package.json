@@ -144,7 +144,7 @@
         "ariadne.executable": {
           "type": "string",
           "default": "ariadne",
-          "markdownDescription": "Path to the `ariadne` binary. Leave as `ariadne` to use PATH, or a cargo `target/debug/ariadne` build in the open workspace."
+          "markdownDescription": "Optional override path to the `ariadne` scanner binary. Leave as `ariadne` to use the packaged binary for this OS (Linux x64 or Windows x64)."
         },
         "ariadne.notifications.level": {
           "type": "string",

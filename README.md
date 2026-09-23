@@ -2,12 +2,7 @@
 
 VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by GitHub Copilot.
 
-This extension does **not** embed the analysis engine. It spawns the **`ariadne`** CLI in session mode. Install the scanner binary first — see the scanner core documentation for Rust/Cargo setup.
-
-```powershell
-# From the scanner core repository
-cargo install --path .
-```
+This extension ships **Linux x64** and **Windows x64** scanner binaries under `bin/` and selects the matching one when it activates. You do not need a separate scanner install.
 
 ## Prerequisites
 
@@ -16,7 +11,7 @@ cargo install --path .
 | [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
 | npm | Bundled with Node.js |
 | [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
-| `ariadne` on PATH | From `cargo install --path .` in scanner core |
+| OS | Linux x64 or Windows x64 (packaged scanner binaries) |
 
 ## Install dependencies
 
@@ -108,7 +103,7 @@ Open **File → Preferences → Settings** and search for **Ariadne**, or edit `
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `ariadne.executable` | `"ariadne"` | Path to the scanner binary |
+| `ariadne.executable` | `"ariadne"` | Optional override path to the scanner binary. Leave default to use the packaged OS binary. |
 
 GitHub sign-in is required to use the extension (scanning, rule scripts, and AI explanations). Explanations always use Gemini Flash via the user's Copilot allowance.
 
@@ -129,8 +124,8 @@ GitHub sign-in is required to use the extension (scanning, rule scripts, and AI 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
-| No findings / core errors in Debug Console | `ariadne` not on PATH | Install scanner via cargo |
-| Stale results after core changes | Old binary still installed | Reinstall scanner binary, reload window |
+| No findings / core errors in Debug Console | Packaged scanner did not start | Reload the window; on unsupported OS set `ariadne.executable` |
+| Stale results after replacing `bin/` binaries | Old process still running | Reload the extension window |
 | Ask Ariadne errors | Copilot auth failure | Check VS Code Copilot extension status |
 
 Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.
@@ -139,6 +134,7 @@ Check **View → Output** or the **Debug Console** in the host that runs the ext
 
 ```
 ariadne-extension-vscode/
+├── bin/                          ← packaged scanner binaries (linux-x64, win32-x64)
 ├── src/
 │   ├── extension.ts              ← activation entry point
 │   └── modules/

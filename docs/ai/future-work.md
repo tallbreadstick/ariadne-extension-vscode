@@ -20,8 +20,8 @@ Known gaps, deferred improvements, and follow-up work.
 
 ## Scanner Integration
 
-- Cross-compilation and bundling of the Rust binary for all platforms (Windows, macOS, Linux) as part of extension packaging
-- Binary download at install time as alternative to requiring users to build from source
+- Cross-compilation and bundling of the Rust binary for macOS and ARM as part of extension packaging (Linux x64 and Windows x64 are now shipped in `bin/`)
+- Binary download at install time as alternative to shipping both OS binaries in the VSIX
 - Scanner rule overlay system (`.ariadne` rule files) — language support exists, full integration pending
 
 ## Developer Experience

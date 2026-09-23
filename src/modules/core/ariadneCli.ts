@@ -26,7 +26,7 @@ export function runAriadneCli(
 		});
 		proc.on('error', (err) => {
 			reject(new Error(
-				`Could not run \`${exe}\`: ${err.message}. Set ariadne.executable.`,
+				`Could not run \`${exe}\`: ${err.message}.`,
 			));
 		});
 		proc.on('close', (code) => {

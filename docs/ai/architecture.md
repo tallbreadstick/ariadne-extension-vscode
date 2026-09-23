@@ -51,7 +51,7 @@ Current system shape, module boundaries, and conventions.
 
 | Module | Path | Responsibility |
 |---|---|---|
-| Core | `src/modules/core/` | Binary resolution (`ariadneExecutable.ts`) |
+| Core | `src/modules/core/` | Packaged-binary resolution (`ariadneExecutable.ts`, `bundledAriadneBinary.ts`) |
 | Bridge | `src/modules/detection/bridge/` | Spawn scanner, serialize/deserialize IPC messages, convert results to TS types |
 | Presentation | `src/modules/presentation/` | AriadneViewProvider, severity colors, panel type definitions |
 | Diagnostics | `src/modules/presentation/diagnostics/` | DiagnosticManager (inline squiggles + decorations), HoverProvider, finding types |
@@ -70,7 +70,7 @@ Current system shape, module boundaries, and conventions.
 
 ## Boundaries
 
-- **Extension ↔ Scanner**: Newline-delimited JSON over stdin/stdout via `child_process.spawn`. Already integrated via the bridge layer.
+- **Extension ↔ Scanner**: Newline-delimited JSON over stdin/stdout via `child_process.spawn` of the packaged `bin/` binary for the host OS. Already integrated via the bridge layer.
 - **VSCode API**: only in `src/modules/` — never in `src/utils/` or `src/types/`.
 - **Cross-repo**: scanner core is a private Rust repo. This repo treats it as an opaque external dependency.
 - **Privacy**: no private repo URLs, scanner internals, or proprietary rule logic in committed files.

@@ -35,6 +35,7 @@ import {
 	type SidebarSettingsViewModel,
 } from './modules/feedback/settings/extensionSettings.js';
 import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
+import { configureAriadneExecutable } from './modules/core/ariadneExecutable.js';
 import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js';
 import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
@@ -193,6 +194,8 @@ function buildVulnsHtml(
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+
+	configureAriadneExecutable(context.extensionPath);
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
