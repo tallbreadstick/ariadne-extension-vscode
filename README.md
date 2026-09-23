@@ -4,6 +4,12 @@ VS Code extension for **Ariadne** — inline security diagnostics, vulnerability
 
 This extension ships **Linux x64** and **Windows x64** scanner binaries under `bin/` and selects the matching one when it activates. You do not need a separate scanner install.
 
+## Install
+
+Supported hosts are Linux x64 and Windows x64.
+
+For the data-collection release, install the packaged `.vsix` with **Extensions: Install from VSIX...**. Leave `ariadne.executable` at its default so the extension uses the scanner binary inside the package.
+
 ## Prerequisites
 
 | Requirement | Version / notes |

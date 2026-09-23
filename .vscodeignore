@@ -1,30 +1,34 @@
 .vscode/**
 .vscode-test/**
+.vscode-test.mjs
 out/**
-node_modules/**
-!node_modules/@github/**
-!node_modules/koffi/**
-!node_modules/vscode-jsonrpc/**
-!node_modules/zod/**
 src/**
 .gitignore
+.gitattributes
 .env
 .env.*
 .yarnrc
 esbuild.js
+eslint.config.mjs
 vsc-extension-quickstart.md
+package-lock.json
+*.vsix
+**/*.vsix
 **/tsconfig.json
+**/tsconfig.*.json
 **/eslint.config.mjs
 **/*.map
 **/*.ts
 **/.vscode-test.*
+**/*.log
+.DS_Store
 
-# Agentic scaffolding & AI docs
-AGENTS.md
-GEMINI.md
-CLAUDE.md
-PRODUCT.md
+# Agentic scaffolding and docs. README.md stays; the Marketplace page is that file.
+*.md
+!README.md
+!CHANGELOG.md
 docs/**
+iterations/**
 
 # Tool-specific agent configs
 .codex/**
@@ -32,8 +36,30 @@ docs/**
 .impeccable/**
 .github/**
 
-# Dev scripts & test fixtures
+# Dev scripts and fixtures
 scripts/**
 sample-project/**
 test-project/**
 test-project - Copy/**
+
+# Dependencies. The extension bundle is dist/extension.js. What remains
+# below is the Copilot SDK, which esbuild leaves external, plus the
+# native CLI for the two hosts this extension supports.
+node_modules/**
+
+!node_modules/@github/copilot/**
+!node_modules/@github/copilot-sdk/**
+!node_modules/@github/copilot-linux-x64/**
+!node_modules/@github/copilot-win32-x64/**
+!node_modules/koffi/**
+!node_modules/vscode-jsonrpc/**
+!node_modules/zod/**
+!node_modules/@koromix/koffi-linux-x64/**
+!node_modules/@koromix/koffi-win32-x64/**
+
+# Zod's published CJS entry loads v4 only.
+node_modules/zod/src/**
+node_modules/zod/v3/**
+node_modules/zod/mini/**
+node_modules/zod/v4-mini/**
+node_modules/zod/locales/**
