@@ -2,11 +2,11 @@
 
 VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by GitHub Copilot.
 
-This extension ships **Linux x64** and **Windows x64** scanner binaries under `bin/` and selects the matching one when it activates. You do not need a separate scanner install.
+This extension ships **Linux x64**, **Windows x64**, and **Windows ARM64** scanner binaries under `bin/` and selects the matching one when it activates. You do not need a separate scanner install.
 
 ## Install
 
-Supported hosts are Linux x64 and Windows x64.
+Supported hosts are Linux x64, Windows x64, and Windows ARM64.
 
 For the data-collection release, install the packaged `.vsix` with **Extensions: Install from VSIX...**. Leave `ariadne.executable` at its default so the extension uses the scanner binary inside the package.
 
@@ -17,7 +17,7 @@ For the data-collection release, install the packaged `.vsix` with **Extensions:
 | [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
 | npm | Bundled with Node.js |
 | [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
-| OS | Linux x64 or Windows x64 (packaged scanner binaries) |
+| OS | Linux x64, Windows x64, or Windows ARM64 (packaged scanner binaries) |
 
 ## Install dependencies
 
@@ -140,7 +140,7 @@ Check **View → Output** or the **Debug Console** in the host that runs the ext
 
 ```
 ariadne-extension-vscode/
-├── bin/                          ← packaged scanner binaries (linux-x64, win32-x64)
+├── bin/                          ← packaged scanner binaries (linux-x64, win32-x64, win32-arm64)
 ├── src/
 │   ├── extension.ts              ← activation entry point
 │   └── modules/

@@ -1,9 +1,9 @@
 {
   "name": "ariadne-extension-vscode",
   "displayName": "ariadne",
-  "publisher": "ariadne",
+  "publisher": "tallbreadstick",
   "description": "A student-first VS Code tool that reviews code for security flaws without compromising academic integrity.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
@@ -159,7 +159,7 @@
         "ariadne.executable": {
           "type": "string",
           "default": "ariadne",
-          "markdownDescription": "Optional override path to the `ariadne` scanner binary. Leave as `ariadne` to use the packaged binary for this OS (Linux x64 or Windows x64)."
+          "markdownDescription": "Optional override path to the `ariadne` scanner binary. Leave as `ariadne` to use the packaged binary for this OS (Linux x64, Windows x64, or Windows ARM64)."
         },
         "ariadne.notifications.level": {
           "type": "string",

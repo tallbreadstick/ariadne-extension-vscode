@@ -1,2 +1,3 @@
 bin/linux-x64/ariadne binary
 bin/win32-x64/ariadne.exe binary
+bin/win32-arm64/ariadne.exe binary

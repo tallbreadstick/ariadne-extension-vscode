@@ -18,7 +18,7 @@ The scanning engine is developed in a separate **private** Rust repository. It i
 
 - **Integration mechanism**: `child_process` spawning the `ariadne` binary with `session` subcommand
 - **Communication format**: Newline-delimited JSON over stdin/stdout (IPC messages)
-- **Scanner binary location**: Packaged under `bin/linux-x64/ariadne` and `bin/win32-x64/ariadne.exe`. Selected at activation from `context.extensionPath` for the host OS. An existing `ariadne.executable` path still overrides the bundle.
+- **Scanner binary location**: Packaged under `bin/linux-x64/ariadne`, `bin/win32-x64/ariadne.exe`, and `bin/win32-arm64/ariadne.exe`. Selected at activation from `context.extensionPath` for the host OS. An existing `ariadne.executable` path still overrides the bundle.
 - **Core technology**: Rust + Tree-sitter Java parser for AST construction, taint analysis engine with dataflow graph traversal
 - Do not reference the private repo URL, internal module names, or proprietary rule logic in any committed file.
 

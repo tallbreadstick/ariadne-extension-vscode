@@ -8,14 +8,14 @@ export function bundledAriadneRelativePath(
 	platform: string = process.platform,
 	arch: string = process.arch,
 ): string | undefined {
-	if (arch !== 'x64') {
-		return undefined;
-	}
-	if (platform === 'linux') {
+	if (platform === 'linux' && arch === 'x64') {
 		return posix.join('bin', 'linux-x64', 'ariadne');
 	}
-	if (platform === 'win32') {
+	if (platform === 'win32' && arch === 'x64') {
 		return posix.join('bin', 'win32-x64', 'ariadne.exe');
+	}
+	if (platform === 'win32' && arch === 'arm64') {
+		return posix.join('bin', 'win32-arm64', 'ariadne.exe');
 	}
 	return undefined;
 }
