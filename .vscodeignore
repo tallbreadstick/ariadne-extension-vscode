@@ -44,13 +44,14 @@ test-project - Copy/**
 
 # Dependencies. The extension bundle is dist/extension.js. What remains
 # below is the Copilot SDK, which esbuild leaves external, plus the
-# native CLI for the two hosts this extension supports.
+# native CLI for Linux x64, Windows x64, and Windows ARM64.
 node_modules/**
 
 !node_modules/@github/copilot/**
 !node_modules/@github/copilot-sdk/**
 !node_modules/@github/copilot-linux-x64/**
 !node_modules/@github/copilot-win32-x64/**
+!node_modules/@github/copilot-win32-arm64/**
 !node_modules/koffi/**
 !node_modules/vscode-jsonrpc/**
 !node_modules/zod/**
