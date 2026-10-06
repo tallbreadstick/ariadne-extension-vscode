@@ -256,10 +256,9 @@ export class DiagnosticManager {
   }
 
   /**
-   * One decoration type per severity combining:
-   *   - background tint on the code range
-   *   - wavy underline on the same range
-   *   - overview ruler dot in the scroll bar
+   * One decoration type per severity: a background highlight on the code
+   * range, plus an overview-ruler dot. No underline, so a vulnerability
+   * does not look like a compiler error. Hover text stays on HoverProvider.
    */
   private _makeDecorationType(
     severity: AriadneFinding["severity"]
@@ -269,7 +268,6 @@ export class DiagnosticManager {
     return vscode.window.createTextEditorDecorationType({
       isWholeLine: false,
       backgroundColor: bg,
-      textDecoration: `underline wavy ${color}`,
       overviewRulerColor: color,
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });

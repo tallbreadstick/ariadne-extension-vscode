@@ -71,7 +71,7 @@ export function metadataToVulnerability(
 
 /**
  * Maps one flat VulnerabilityMetadata to the AriadneFinding shape used
- * by DiagnosticManager for inline squiggles and hover popups.
+ * by DiagnosticManager for inline highlights and hover popups.
  *
  * Line numbers from the engine are 1-based; VS Code ranges are 0-based.
  * `start_column` / `end_column` are already 0-based byte offsets.

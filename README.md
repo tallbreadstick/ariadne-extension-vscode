@@ -101,7 +101,7 @@ Open the **Ariadne** panel area in the bottom panel bar:
 - **ARIADNE (ACTIVE VULNERABILITIES)** — current findings
 - **SESSION METRICS** — counts and session stats
 
-Inline squiggles and hovers appear on vulnerable lines after analysis.
+A colored highlight and a hover appear on vulnerable code after analysis.
 
 ## Settings
 

@@ -24,15 +24,15 @@ export const SEVERITY_COLORS_TITLE: Record<
 	Low: SEVERITY_COLORS.low,
 };
 
-/** Highlight background at ~20% opacity for editor squiggles. */
+/** Highlight background at ~20% opacity for editor marks. */
 export const SEVERITY_BG_TITLE: Record<
 	'Critical' | 'High' | 'Medium' | 'Low',
 	string
 > = {
-	Critical: '#E24B4A33',
+	Critical: '#A236354D',
 	High: '#F0883E33',
 	Medium: '#E3B34133',
-	Low: '#3FB95033',
+	Low: '#2D853A4D',
 };
 
 export function severityCssVars(): string {

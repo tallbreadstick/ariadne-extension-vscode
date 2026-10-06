@@ -54,7 +54,7 @@ Current system shape, module boundaries, and conventions.
 | Core | `src/modules/core/` | Scanner download and resolution (`scannerRelease.ts`, `ariadneExecutable.ts`) |
 | Bridge | `src/modules/detection/bridge/` | Spawn scanner, serialize/deserialize IPC messages, convert results to TS types |
 | Presentation | `src/modules/presentation/` | AriadneViewProvider, severity colors, panel type definitions |
-| Diagnostics | `src/modules/presentation/diagnostics/` | DiagnosticManager (inline squiggles + decorations), HoverProvider, finding types |
+| Diagnostics | `src/modules/presentation/diagnostics/` | DiagnosticManager (highlights + decorations), HoverProvider, finding types |
 | Active Vulns | `src/modules/presentation/views/` | Active Vulnerabilities webview panel HTML builder |
 | Feedback Auth | `src/modules/feedback/auth/` | GitHub OAuth service, token storage, Copilot quota checking |
 | LLM Request | `src/modules/feedback/llm_request/` | Copilot client manager, payload serialization, LLM call, response parsing, error sanitization |
@@ -98,7 +98,7 @@ Engine emits VulnerabilityMetadata[] as JSON on stdout
 iostream.ts parses JSON lines → session.onFindings() callback
     │
     ├──→ convert.ts → metadataToVulnerability() → Active Vulnerabilities panel
-    ├──→ convert.ts → groupFindingsByFile() → DiagnosticManager (squiggles + decorations)
+    ├──→ convert.ts → groupFindingsByFile() → DiagnosticManager (highlights + decorations)
     ├──→ convert.ts → metadataToScanSnapshot() → SessionStore → snapshotAnalyzer
     │                                                            → Session Metrics panel
     │                                                            → Status bar update

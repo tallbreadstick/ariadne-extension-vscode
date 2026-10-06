@@ -43,13 +43,13 @@ The scanning engine is developed in a separate **private** Rust repository. It i
 - `AriadneMessage` — IPC message union type (Init, OpenFile, UpdateFile, CloseFile, CreateFile, DeleteFile, RenameFile, Analyze, ReloadRules) sent from TypeScript to the Rust engine.
 - `AriadneSession` — Session interface wrapping the child process: send(), kill(), restart(), onFindings().
 - `Bridge` — The TypeScript ↔ scanner communication layer: iostream.ts (process management), messages.ts (IPC contract), convert.ts (type transformers), documentEvents.ts (VS Code event → IPC message dispatcher).
-- `DiagnosticManager` — Manages VS Code DiagnosticCollection for inline squiggles, background highlights, and end-of-line labels.
+- `DiagnosticManager` — Manages VS Code DiagnosticCollection for background highlights and end-of-line labels. Vulnerable code is highlighted, not underlined.
 - `SessionStore` — Persists scan snapshots to VS Code workspaceState for cross-session tracking.
 
 ## MVP scope (shipped)
 
 1. **Static Vulnerability Detection Module** (Module 1) — Rust SAST engine parsing Java into ASTs via Tree-sitter, rule-based taint analysis with dataflow graph traversal, 10+ patterns from OWASP Top 10 / CWE Top 25, three detector categories (taint-flow, pattern-match, configuration-file), sanitizer rules to reduce false positives.
-2. **VS Code Diagnostic Presentation Layer** (Module 2) — Severity-coded inline annotations (wavy underline, whole-line background, end-of-line label), HoverProvider with vulnerability summary + "Ask Ariadne" action link, Active Vulnerabilities webview panel in bottom panel ViewsContainer.
+2. **VS Code Diagnostic Presentation Layer** (Module 2) — Severity-coded inline annotations (background highlight, end-of-line label), HoverProvider with vulnerability summary + "Ask Ariadne" action link, Active Vulnerabilities webview panel in bottom panel ViewsContainer.
 3. **AI-Powered Conceptual Feedback Engine** (Module 3) — LLM prompt serialization from vulnerability metadata, three-section response (issue description, security implication, concept pointer), constrained to never produce code fixes, GitHub Copilot SDK integration, response validation with static fallback.
 4. **Session-Based Reinforcement Tracker** (Module 4) — In-memory scan snapshot log, pattern analyzer (persisting/improving/new/resolved classifications), priority-based status bar summary, soft toast notifications, Session Metrics webview panel with severity count tiles and trend data, workspaceState persistence.
 5. **Supporting features** — GitHub OAuth authentication required for scanning and Copilot access, `.ariadne` rule file language support with syntax highlighting, accordion settings sidebar, terms of use panel.

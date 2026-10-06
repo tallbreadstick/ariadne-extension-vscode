@@ -84,12 +84,15 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(!/not available/i.test(html));
 	});
 
-	it('shows Sign in, Sessions, Core, and Scripting open as separate sections', () => {
+	it('keeps one accordion section open and restores it after a refresh', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
-		assert.ok(!html.includes('name="ariadne-settings"'));
-		for (const id of ['accordion-account', 'accordion-scripting', 'accordion-session', 'accordion-scanner']) {
-			assert.match(html, new RegExp(`id="${id}"[^>]*\\sopen`));
+		assert.ok(html.includes('name="ariadne-settings"'));
+		assert.match(html, /id="accordion-account"[^>]*\sopen/);
+		for (const id of ['accordion-scripting', 'accordion-session', 'accordion-scanner']) {
+			assert.ok(!new RegExp(`id="${id}"[^>]*\\sopen`).test(html), `${id} should start closed`);
 		}
+		assert.ok(html.includes('restoreAccordion'));
+		assert.ok(html.includes('openSection'));
 	});
 
 	it('requires separate Terms of Use and Privacy Policy checkboxes', () => {

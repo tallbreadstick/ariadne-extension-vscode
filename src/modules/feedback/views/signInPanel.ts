@@ -764,25 +764,25 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 	<body>
 		<div class="sidebar">
 			<h1 class="settings-title">Ariadne Settings</h1>
-			<details class="accordion-item" id="accordion-account" open>
+			<details class="accordion-item" id="accordion-account" name="ariadne-settings" open>
 				<summary>Sign in<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildAuthBody(model)}
 				</div>
 			</details>
-			<details class="accordion-item" id="accordion-session" open>
+			<details class="accordion-item" id="accordion-session" name="ariadne-settings">
 				<summary>Sessions<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildSessionSection()}
 				</div>
 			</details>
-			<details class="accordion-item" id="accordion-scanner" open>
+			<details class="accordion-item" id="accordion-scanner" name="ariadne-settings">
 				<summary>Core<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildScannerSection(model)}
 				</div>
 			</details>
-			<details class="accordion-item" id="accordion-scripting" open>
+			<details class="accordion-item" id="accordion-scripting" name="ariadne-settings">
 				<summary>Scripting<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildScriptingSection(model)}
@@ -791,6 +791,37 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
+			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-scripting'];
+
+			function restoreAccordion() {
+				const saved = vscode.getState()?.openSection;
+				const openId = saved === null
+					? null
+					: (accordionIds.includes(saved) ? saved : 'accordion-account');
+				for (const id of accordionIds) {
+					const section = document.getElementById(id);
+					if (section) {
+						section.open = id === openId;
+					}
+				}
+			}
+
+			restoreAccordion();
+
+			for (const id of accordionIds) {
+				document.getElementById(id)?.addEventListener('toggle', (event) => {
+					const section = event.currentTarget;
+					const state = vscode.getState() ?? {};
+					if (section.open) {
+						vscode.setState({ ...state, openSection: section.id });
+						return;
+					}
+					if (state.openSection === section.id) {
+						vscode.setState({ ...state, openSection: null });
+					}
+				});
+			}
+
 			const termsCheckbox = document.getElementById('terms-checkbox');
 			const privacyCheckbox = document.getElementById('privacy-checkbox');
 			const signInBtn = document.getElementById('sign-in-btn');
