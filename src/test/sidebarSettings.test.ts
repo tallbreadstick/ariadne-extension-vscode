@@ -47,18 +47,25 @@ function signedInModel(
 }
 
 describe('Sidebar settings accordion', () => {
-	it('renders Account, Scripting, and Session accordion sections', () => {
+	it('renders Sign in, Sessions, Core, and Scripting accordion sections', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
 
-		assert.ok(html.includes('id="accordion-account"'), 'Account accordion missing');
+		assert.ok(html.includes('id="accordion-account"'), 'Sign in accordion missing');
 		assert.ok(html.includes('id="accordion-scripting"'), 'Scripting accordion missing');
-		assert.ok(html.includes('id="accordion-session"'), 'Session accordion missing');
-		assert.match(html, /<summary[^>]*>\s*Account/);
+		assert.ok(html.includes('id="accordion-session"'), 'Sessions accordion missing');
+		assert.ok(html.includes('id="accordion-scanner"'), 'Core accordion missing');
+		assert.match(html, /<summary[^>]*>\s*Sign in/);
+		assert.match(html, /<summary[^>]*>\s*Sessions/);
+		assert.match(html, /<summary[^>]*>\s*Core/);
 		assert.match(html, /<summary[^>]*>\s*Scripting/);
-		assert.match(html, /<summary[^>]*>\s*Session/);
+		assert.ok(html.indexOf('>Sign in<span') < html.indexOf('>Sessions<span'));
+		assert.ok(html.indexOf('>Sessions<span') < html.indexOf('>Core<span'));
+		assert.ok(html.indexOf('>Core<span') < html.indexOf('>Scripting<span'));
+		assert.ok(html.includes('id="scanner-auto"'));
+		assert.ok(html.includes('Delete all binaries'));
 	});
 
-	it('opens the Account section by default', () => {
+	it('opens the Sign in section by default', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
 		assert.match(html, /id="accordion-account"[^>]*\sopen/);
 	});
@@ -69,7 +76,7 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(!html.includes('update-copilot-model'));
 	});
 
-	it('shows a locked Gemini Flash label in Account', () => {
+	it('shows a locked Gemini Flash label in Sign in', () => {
 		const html = buildSignInPanelHtml(signedInModel());
 		assert.ok(html.includes('Gemini Flash'));
 		assert.strictEqual(DEFAULT_COPILOT_MODEL, 'gemini-3.5-flash');
@@ -77,12 +84,12 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(!/not available/i.test(html));
 	});
 
-	it('keeps only one accordion section name so opening one closes another', () => {
+	it('shows Sign in, Sessions, Core, and Scripting open as separate sections', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
-		assert.equal(
-			(html.match(/name="ariadne-settings"/g) ?? []).length,
-			3,
-		);
+		assert.ok(!html.includes('name="ariadne-settings"'));
+		for (const id of ['accordion-account', 'accordion-scripting', 'accordion-session', 'accordion-scanner']) {
+			assert.match(html, new RegExp(`id="${id}"[^>]*\\sopen`));
+		}
 	});
 
 	it('requires separate Terms of Use and Privacy Policy checkboxes', () => {
@@ -144,6 +151,36 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(!html.includes('placeholder-list'));
 	});
 
+	it('shows OS and binary pickers, a download check, and delete when Auto is off', () => {
+		const html = buildSignInPanelHtml(signedOutModel({
+			scanner: {
+				auto: false,
+				os: 'windows',
+				osOptions: [
+					{ id: 'windows', label: 'Windows' },
+					{ id: 'linux', label: 'Linux' },
+					{ id: 'macos', label: 'macOS' },
+				],
+				target: 'x86_64-pc-windows-msvc',
+				binaries: [
+					{ id: 'x86_64-pc-windows-msvc', label: 'Windows 64-bit x86 (MSVC)', downloaded: true },
+				],
+				downloaded: [
+					{ id: 'x86_64-pc-windows-msvc', label: 'Windows 64-bit x86 (MSVC)', downloaded: true },
+				],
+				working: false,
+			},
+		}));
+		assert.ok(!html.includes('id="scanner-manual" hidden'));
+		assert.ok(html.includes('>Windows<'));
+		assert.ok(html.includes('>Linux<'));
+		assert.ok(html.includes('>macOS<'));
+		assert.ok(html.includes('id="scanner-target"'));
+		assert.ok(html.includes('aria-label="Downloaded"'));
+		assert.ok(html.includes('data-delete-target="x86_64-pc-windows-msvc"'));
+		assert.match(html, /current scanner binary is not working/i);
+	});
+
 	it('keeps session data actions available while signed out', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
 		assert.ok(html.includes('id="export-session-btn"'));
@@ -165,6 +202,13 @@ describe('Active Vulnerabilities signed-out state', () => {
 		const html = buildActiveVulnerabilitiesHtml([], { signedIn: true });
 		assert.ok(html.includes('No active vulnerabilities'));
 		assert.ok(!/Sign in required/i.test(html));
+	});
+
+	it('says the scanner binary is not working instead of reporting a clean scan', () => {
+		const html = buildActiveVulnerabilitiesHtml([], { signedIn: true, scannerBroken: true });
+		assert.match(html, /current scanner binary is not working/i);
+		assert.ok(!html.includes('No active vulnerabilities'));
+		assert.ok(!html.includes('You are all clear'));
 	});
 });
 

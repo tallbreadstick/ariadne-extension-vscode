@@ -45,4 +45,23 @@ export interface SignInPanelViewModel {
 		resetDate?: string;
 	};
 	settings: SidebarSettingsViewModel;
+	scanner?: ScannerSettingsViewModel;
+}
+
+export interface ScannerBinaryOption {
+	id: string;
+	label: string;
+	downloaded: boolean;
+}
+
+/** Binary picker shown on the Ariadne settings page. */
+export interface ScannerSettingsViewModel {
+	auto: boolean;
+	os: string;
+	osOptions: readonly { id: string; label: string }[];
+	target: string;
+	binaries: readonly ScannerBinaryOption[];
+	downloaded: readonly ScannerBinaryOption[];
+	working?: boolean;
+	overrideActive?: boolean;
 }

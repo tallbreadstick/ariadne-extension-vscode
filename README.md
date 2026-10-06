@@ -2,13 +2,13 @@
 
 VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by GitHub Copilot.
 
-This extension ships **Linux x64**, **Windows x64**, and **Windows ARM64** scanner binaries under `bin/` and selects the matching one when it activates. You do not need a separate scanner install.
+The scanner binary is downloaded from the [latest Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases) the first time a scan runs. **Auto** in the sidebar Core section picks the build for this computer. You can choose a specific build there.
 
 ## Install
 
-Supported hosts are Linux x64, Windows x64, and Windows ARM64.
+Supported hosts are the builds published on that release (Linux, Windows, and macOS).
 
-For the data-collection release, install the packaged `.vsix` with **Extensions: Install from VSIX...**. Leave `ariadne.executable` at its default so the extension uses the scanner binary inside the package.
+For the data-collection release, install the packaged `.vsix` with **Extensions: Install from VSIX...**. Leave Core set to **Auto** unless you need a different build.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ For the data-collection release, install the packaged `.vsix` with **Extensions:
 | [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
 | npm | Bundled with Node.js |
 | [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
-| OS | Linux x64, Windows x64, or Windows ARM64 (packaged scanner binaries) |
+| OS | A published Ariadne scanner build for this computer (downloaded on first scan) |
 
 ## Install dependencies
 
@@ -107,9 +107,13 @@ Inline squiggles and hovers appear on vulnerable lines after analysis.
 
 Open **File → Preferences → Settings** and search for **Ariadne**, or edit `settings.json`:
 
+Sign in, Sessions, Core, and Scripting live in the Ariadne side panel. Core is where Auto, the operating system, and the scanner binary are chosen.
+
 | Setting | Default | Purpose |
 |---|---|---|
-| `ariadne.executable` | `"ariadne"` | Optional override path to the scanner binary. Leave default to use the packaged OS binary. |
+| `ariadne.executable` | `"ariadne"` | Optional path to a local scanner binary. Leave the default to use the binary selected in the sidebar Core section. |
+| `ariadne.notifications.level` | `"milestones"` | How many popup notifications Ariadne shows. |
+| `ariadne.autoScan.intervalMinutes` | `60` | Minutes between automatic full scans. Minimum 2, maximum 180. |
 
 GitHub sign-in is required to use the extension (scanning, rule scripts, and AI explanations). Explanations always use Gemini Flash via the user's Copilot allowance.
 
@@ -130,8 +134,8 @@ GitHub sign-in is required to use the extension (scanning, rule scripts, and AI 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
-| No findings / core errors in Debug Console | Packaged scanner did not start | Reload the window; on unsupported OS set `ariadne.executable` |
-| Stale results after replacing `bin/` binaries | Old process still running | Reload the extension window |
+| No findings / core errors in Debug Console | Scanner download or process failed | Check the notification and Debug Console; change Core in the sidebar or set `ariadne.executable` |
+| Stale results after a new core release | Old scanner process still running | Reload the extension window |
 | Ask Ariadne errors | Copilot auth failure | Check VS Code Copilot extension status |
 
 Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.
@@ -140,7 +144,6 @@ Check **View → Output** or the **Debug Console** in the host that runs the ext
 
 ```
 ariadne-extension-vscode/
-├── bin/                          ← packaged scanner binaries (linux-x64, win32-x64, win32-arm64)
 ├── src/
 │   ├── extension.ts              ← activation entry point
 │   └── modules/

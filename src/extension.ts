@@ -29,13 +29,33 @@ import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
 import { buildTermsOfUseHtml } from './modules/feedback/views/termsOfUsePanel.js';
 import { buildPrivacyPolicyHtml } from './modules/feedback/views/privacyPolicyPanel.js';
 import { GitHubAuthService } from './modules/feedback/auth/githubAuthService.js';
-import type { AuthPanelState, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
+import type { AuthPanelState, ScannerSettingsViewModel, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
 import {
 	DEFAULT_COPILOT_MODEL,
 	type SidebarSettingsViewModel,
 } from './modules/feedback/settings/extensionSettings.js';
 import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
-import { configureAriadneExecutable } from './modules/core/ariadneExecutable.js';
+import {
+	configureAriadneExecutable,
+	deleteAllDownloadedScanners,
+	deleteDownloadedScanner,
+	listDownloadedScannerTargets,
+	localExecutableOverride,
+	probeAriadneExecutable,
+	readScannerPreferencesFromConfig,
+	ensureAriadneExecutable,
+} from './modules/core/ariadneExecutable.js';
+import {
+	SCANNER_OS_OPTIONS,
+	SCANNER_TARGET_LABELS,
+	hostScannerTarget,
+	isScannerOs,
+	isScannerTarget,
+	normalizeScannerPreferences,
+	scannerOsForTarget,
+	targetsForOs,
+	type ScannerPreferences,
+} from './modules/core/scannerRelease.js';
 import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js';
 import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
@@ -122,9 +142,10 @@ function getWorkspaceFileContent(filePath: string): string | undefined {
 	return undefined;
 }
 
+let openAriadneSettings: () => Promise<void> = async () => undefined;
+
 async function focusSignInSidebar(): Promise<void> {
-	await vscode.commands.executeCommand('workbench.view.extension.ariadne-sidebar');
-	await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+	await openAriadneSettings();
 }
 
 function copilotRuntimeOptions(
@@ -183,10 +204,12 @@ function buildVulnsHtml(
 	vulns: Vulnerability[],
 	store: SessionStore,
 	signedIn: boolean,
+	scannerBroken = false,
 ): string {
 	return buildActiveVulnerabilitiesHtml(vulns, {
 		expandedKey: resolveExpandedVulnKey(vulns, store),
 		signedIn,
+		scannerBroken,
 	});
 }
 
@@ -195,7 +218,28 @@ function buildVulnsHtml(
 // ─────────────────────────────────────────────────────────────────────
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 
-	configureAriadneExecutable(context.extensionPath);
+	const savedSetting = <T>(key: string): T | undefined => {
+		const looked = vscode.workspace.getConfiguration('ariadne').inspect<T>(key);
+		return looked?.workspaceFolderValue ?? looked?.workspaceValue ?? looked?.globalValue;
+	};
+
+	const readScannerChoice = (): ScannerPreferences => {
+		const saved = context.globalState.get<{ auto?: boolean; os?: string; target?: string }>('ariadne.scannerPreferences');
+		const source = saved
+			? { auto: saved.auto, os: saved.os, target: saved.target, legacy: undefined }
+			: {
+				auto: savedSetting<boolean>('scanner.auto') ?? savedSetting<boolean>('scannerAuto'),
+				os: savedSetting<string>('scanner.operatingSystem') ?? savedSetting<string>('scannerOs'),
+				target: savedSetting<string>('scanner.binary') ?? savedSetting<string>('scannerTarget'),
+				legacy: savedSetting<string>('scanner'),
+			};
+		return normalizeScannerPreferences({
+			...source,
+			platform: process.platform,
+			arch: process.arch,
+		});
+	};
+	configureAriadneExecutable(context.globalStorageUri.fsPath, readScannerChoice);
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
@@ -204,8 +248,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const session = runSession();
 	let rulesLanguageRegistered = false;
 	let featuresUnlocked = false;
+	let scannerBroken = false;
+	let scannerChecked = false;
+	let acceptFindings = true;
+	let settingsView: AriadneViewProvider | undefined;
 	let startScanner: () => void = () => undefined;
 	let stopScanner: () => void = () => undefined;
+	let markScannerBroken: () => void = () => undefined;
+	let applyScannerSelection: () => Promise<void> = async () => undefined;
 
 	// ── Migrate from legacy snapshot storage ───────────────────────────
 	void store.migrateFromLegacy();
@@ -215,14 +265,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		settings: getSidebarSettings(),
 	});
 
+	const loadScannerSettings = async (): Promise<ScannerSettingsViewModel> => {
+		const prefs = readScannerPreferencesFromConfig();
+		const downloadedIds = new Set(await listDownloadedScannerTargets());
+		const toOption = (id: ScannerPreferences['target']) => ({
+			id,
+			label: SCANNER_TARGET_LABELS[id],
+			downloaded: downloadedIds.has(id),
+		});
+		return {
+			auto: prefs.auto,
+			os: prefs.os,
+			osOptions: SCANNER_OS_OPTIONS,
+			target: prefs.target,
+			binaries: targetsForOs(prefs.os).map(toOption),
+			downloaded: [...downloadedIds].map(toOption),
+			working: scannerChecked ? !scannerBroken : undefined,
+			overrideActive: localExecutableOverride() !== undefined,
+		};
+	};
+
 	const refreshSignInPanel = async (
-		signInProvider: AriadneViewProvider,
 		override?: AuthPanelState,
 	): Promise<void> => {
 		const settings = getSidebarSettings();
 		let model: SignInPanelViewModel = {
 			...(override ?? await githubAuth.getPanelViewModel()),
 			settings,
+			scanner: await loadScannerSettings(),
 		};
 
 		if (model.status === 'signed-in' && !override) {
@@ -248,7 +318,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 
 		latestSignInHtml = buildSignInPanelHtml(model);
-		signInProvider.updateHtml(latestSignInHtml);
+		settingsView?.updateHtml(latestSignInHtml);
 	};
 
 	// ── Initialize lifecycle state ─────────────────────────────────────
@@ -548,7 +618,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked),
+		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -574,17 +644,95 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		sessionMetricsProvider,
 	);
 
-	const signInProvider = new AriadneViewProvider(
-		latestSignInHtml,
-		async (msg) => {
+	const saveScannerPreferences = async (next: ScannerPreferences): Promise<void> => {
+		await context.globalState.update('ariadne.scannerPreferences', {
+			auto: next.auto,
+			os: next.os,
+			target: next.target,
+		});
+		await applyScannerSelection();
+	};
+
+	const activeScannerTarget = (): string | undefined => {
+		if (localExecutableOverride()) {
+			return undefined;
+		}
+		const prefs = readScannerPreferencesFromConfig();
+		return prefs.auto ? hostScannerTarget(process.platform, process.arch) : prefs.target;
+	};
+
+	const handleSettingsMessage = async (msg: Record<string, unknown>): Promise<void> => {
+			if (msg.type === 'scanner-set-auto') {
+				const prefs = readScannerPreferencesFromConfig();
+				await saveScannerPreferences({ ...prefs, auto: msg.auto === true });
+				return;
+			}
+
+			if (msg.type === 'scanner-set-os') {
+				const os = typeof msg.os === 'string' ? msg.os : '';
+				if (!isScannerOs(os)) {
+					return;
+				}
+				const prefs = readScannerPreferencesFromConfig();
+				const options = targetsForOs(os);
+				const target = options.includes(prefs.target) ? prefs.target : options[0];
+				await saveScannerPreferences({ auto: false, os, target });
+				return;
+			}
+
+			if (msg.type === 'scanner-set-target') {
+				const target = typeof msg.target === 'string' ? msg.target : '';
+				if (!isScannerTarget(target)) {
+					return;
+				}
+				const os = scannerOsForTarget(target);
+				if (!os) {
+					return;
+				}
+				await saveScannerPreferences({ auto: false, os, target });
+				return;
+			}
+
+			if (msg.type === 'scanner-delete') {
+				const target = typeof msg.target === 'string' ? msg.target : '';
+				if (!isScannerTarget(target)) {
+					return;
+				}
+				await deleteDownloadedScanner(target);
+				if (featuresUnlocked && activeScannerTarget() === target) {
+					session.kill();
+					markScannerBroken();
+				}
+				await refreshSignInPanel();
+				return;
+			}
+
+			if (msg.type === 'scanner-delete-all') {
+				const confirmed = await vscode.window.showWarningMessage(
+					'Delete all downloaded Ariadne scanner binaries?',
+					{ modal: true },
+					'Delete all',
+				);
+				if (confirmed !== 'Delete all') {
+					return;
+				}
+				await deleteAllDownloadedScanners();
+				if (featuresUnlocked) {
+					session.kill();
+					markScannerBroken();
+				}
+				await refreshSignInPanel();
+				return;
+			}
+
 			if (msg.type === 'github-sign-in') {
-				await refreshSignInPanel(signInProvider, { status: 'signing-in' });
+				await refreshSignInPanel({ status: 'signing-in' });
 				try {
 					await githubAuth.signIn({
 						termsAccepted: msg.termsAccepted === true,
 						analyticsConsent: msg.privacyAccepted === true || msg.analyticsConsent === true,
 					});
-					await refreshSignInPanel(signInProvider);
+					await refreshSignInPanel();
 					const token = await githubAuth.getAccessToken();
 					if (token) {
 						copilotManager.prewarm(copilotRuntimeOptions(context, token));
@@ -596,7 +744,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				} catch (error: unknown) {
 					const message =
 						error instanceof Error ? error.message : 'GitHub sign-in failed.';
-					await refreshSignInPanel(signInProvider, {
+					await refreshSignInPanel({
 						status: 'error',
 						errorMessage: message,
 					});
@@ -605,7 +753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 
 			if (msg.type === 'github-sign-out') {
-				await refreshSignInPanel(signInProvider, {
+				await refreshSignInPanel({
 					status: 'signed-out',
 					hasConsent: false,
 					analyticsConsent: false,
@@ -614,7 +762,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					await githubAuth.signOut();
 					await copilotManager.dispose();
 					stopScanner();
-					await refreshSignInPanel(signInProvider);
+					await refreshSignInPanel();
 					vscode.window.showInformationMessage(
 						'Ariadne: Signed out of GitHub. Scanning is paused until you sign in.',
 					);
@@ -627,7 +775,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 
 			if (msg.type === 'github-auth-refresh') {
-				await refreshSignInPanel(signInProvider);
+				await refreshSignInPanel();
 				return;
 			}
 
@@ -651,8 +799,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						},
 						() => initRuleScripts(root),
 					);
-					session.restart();
-					await refreshSignInPanel(signInProvider);
+					await session.restart();
+					await refreshSignInPanel();
 					vscode.window.showInformationMessage('Ariadne: Rule scripts initialized.');
 				} catch (error: unknown) {
 					const message = error instanceof Error ? error.message : String(error);
@@ -689,8 +837,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						},
 						() => resetRuleScripts(root),
 					);
-					session.restart();
-					await refreshSignInPanel(signInProvider);
+					await session.restart();
+					await refreshSignInPanel();
 					vscode.window.showInformationMessage(
 						'Ariadne: Rule scripts restored to defaults.',
 					);
@@ -768,23 +916,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					);
 				}
 			}
+	};
+
+	settingsView = new AriadneViewProvider(
+		latestSignInHtml,
+		(msg) => {
+			void handleSettingsMessage(msg);
 		},
 	);
-	signInProvider.setResolveHtml(() => latestSignInHtml);
+	settingsView.setResolveHtml(() => latestSignInHtml);
+
+	openAriadneSettings = async () => {
+		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+	};
+
+	const openBottomPanel = async (): Promise<void> => {
+		await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+	};
+
 	void (async () => {
 		await githubAuth.initialize();
-		await refreshSignInPanel(signInProvider);
+		await refreshSignInPanel();
 	})();
 
 	const signInDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.sidebar.signIn',
-		signInProvider,
+		{
+			resolveWebviewView(webviewView) {
+				settingsView.resolveWebviewView(webviewView);
+				const openPanel = (): void => {
+					void openBottomPanel();
+				};
+				openPanel();
+				const visibility = webviewView.onDidChangeVisibility(() => {
+					if (webviewView.visible) {
+						openPanel();
+					}
+				});
+				webviewView.onDidDispose(() => visibility.dispose());
+			},
+		},
+		{ webviewOptions: { retainContextWhenHidden: true } },
 	);
 
 	context.subscriptions.push(
 		githubAuth.onDidChangeAuth(() => {
 			void (async () => {
-				await refreshSignInPanel(signInProvider);
+				await refreshSignInPanel();
 				if (await githubAuth.isAuthenticated()) {
 					startScanner();
 				} else {
@@ -798,6 +976,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	// ── Diagnostic / inline highlight manager ───────────────────────────
 	const diagnosticManager = new DiagnosticManager(context);
 	registerHoverProvider(context, diagnosticManager);
+
+	markScannerBroken = () => {
+		acceptFindings = false;
+		scannerBroken = true;
+		scannerChecked = true;
+		latestVulnerabilities = [];
+		diagnosticManager.clearAll();
+		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, featuresUnlocked, true));
+		activeVulnsProvider.setBadgeCount(0);
+	};
+
+	const confirmScannerProcess = async (): Promise<void> => {
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		if (!featuresUnlocked) {
+			return;
+		}
+		scannerChecked = true;
+		if (session.isRunning()) {
+			scannerBroken = false;
+			activeVulnsProvider.updateHtml(
+				buildVulnsHtml(latestVulnerabilities, store, true, false),
+			);
+			return;
+		}
+		markScannerBroken();
+	};
+
+	applyScannerSelection = async () => {
+		if (featuresUnlocked) {
+			try {
+				acceptFindings = true;
+				await session.restart();
+				await confirmScannerProcess();
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : String(error);
+				vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				markScannerBroken();
+			}
+		} else {
+			try {
+				const exe = await ensureAriadneExecutable();
+				scannerChecked = true;
+				scannerBroken = !(await probeAriadneExecutable(exe));
+			} catch (error: unknown) {
+				scannerChecked = true;
+				scannerBroken = true;
+				const message = error instanceof Error ? error.message : String(error);
+				vscode.window.showErrorMessage(`Ariadne: ${message}`);
+			}
+		}
+		await refreshSignInPanel();
+	};
+
+	session.onSessionEnded(() => {
+		if (!featuresUnlocked) {
+			return;
+		}
+		markScannerBroken();
+		void refreshSignInPanel();
+	});
 
 	// ── Settlement helpers ──────────────────────────────────────────────
 
@@ -961,18 +1199,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	startScanner = () => {
 		featuresUnlocked = true;
-		session.start();
+		acceptFindings = true;
 		if (!rulesLanguageRegistered) {
 			registerRuleLanguage(context);
 			rulesLanguageRegistered = true;
 		}
-		activeVulnsProvider.updateHtml(
-			buildVulnsHtml(latestVulnerabilities, store, true),
-		);
-		refreshSessionMetricsPanel();
-		if (activeSession) {
-			startHourlyScanTimer();
-		}
+		void (async () => {
+			try {
+				await session.start();
+				await confirmScannerProcess();
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : String(error);
+				vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				markScannerBroken();
+			}
+			refreshSessionMetricsPanel();
+			if (activeSession && !scannerBroken) {
+				startHourlyScanTimer();
+			}
+			await refreshSignInPanel();
+		})();
 	};
 
 	stopScanner = () => {
@@ -981,11 +1227,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		session.kill();
 		diagnosticManager.clearAll();
 		latestVulnerabilities = [];
-		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false));
+		scannerBroken = false;
+		scannerChecked = false;
+		acceptFindings = false;
+		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshSessionMetricsPanel();
 		console.log('[Ariadne] Scanner stopped (signed out).');
 	};
+
+	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+		if (!event.affectsConfiguration('ariadne.executable')) {
+			return;
+		}
+		console.log('[Ariadne] Scanner executable changed');
+		void applyScannerSelection();
+	}));
 
 	void githubAuth.isAuthenticated().then(async (signedIn) => {
 		if (!signedIn) {
@@ -1000,10 +1257,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// ── Wire findings from the engine to every UI surface ───────────────
 	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
+		if (!acceptFindings) {
+			return;
+		}
 		// ── 1. Active Vulnerabilities panel (always updated) ────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
-		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked));
+		scannerBroken = false;
+		scannerChecked = true;
+		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
 		// ── 2. Session Metrics panel (always updated on live scan) ──────
@@ -1198,7 +1460,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openSignInPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSignInPanel',
 		async () => {
-			await focusSignInSidebar();
+			await openAriadneSettings();
+		},
+	);
+
+	const openSettingsCommand = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openSettings',
+		async () => {
+			await openAriadneSettings();
+		},
+	);
+
+	const openPanelCommand = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openPanel',
+		async () => {
+			await openBottomPanel();
 		},
 	);
 
@@ -1691,6 +1967,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		sessionMetricsDisposable,
 		signInDisposable,
 		openSignInPanel,
+		openSettingsCommand,
+		openPanelCommand,
 		openTermsOfUse,
 		openPrivacyPolicy,
 		openFeedbackPanel,

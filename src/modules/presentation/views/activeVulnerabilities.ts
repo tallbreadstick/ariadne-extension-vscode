@@ -12,6 +12,7 @@ import { collectVulnFilterFacets, formatCategoryLabel } from './vulnFilters.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
+const OPEN_SETTINGS_COMMAND = 'ariadne-extension-vscode.openSettings';
 
 const SEVERITY_OPTIONS: Severity[] = ['critical', 'high', 'medium', 'low'];
 
@@ -20,6 +21,8 @@ export interface ActiveVulnerabilitiesOptions {
 	expandedKey?: string;
 	/** When false, the panel asks the user to sign in instead of showing findings. */
 	signedIn?: boolean;
+	/** When true, the selected scanner binary failed its health check. */
+	scannerBroken?: boolean;
 }
 
 /** Stable key for accordion persistence across scans and workspace reopens. */
@@ -968,6 +971,26 @@ export function buildActiveVulnerabilitiesHtml(
 	options: ActiveVulnerabilitiesOptions = {},
 ): string {
 	const signedIn = options.signedIn !== false;
+	if (signedIn && options.scannerBroken) {
+		return /* html */ `<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Ariadne Active Vulnerabilities</title>
+		<style>${CSS}</style>
+	</head>
+	<body>
+		<section class="empty-state" role="status">
+			<div class="empty-title">The current scanner binary is not working</div>
+			<div class="empty-subtitle">
+				Ariadne could not run the selected scanner, so this panel is not a clean scan.
+			</div>
+			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Ariadne Settings</a>
+		</section>
+	</body>
+</html>`;
+	}
 	if (!signedIn) {
 		return /* html */ `<!DOCTYPE html>
 <html lang="en">

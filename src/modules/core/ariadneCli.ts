@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { resolveAriadneExecutable } from './ariadneExecutable.js';
+import { ensureAriadneExecutable } from './ariadneExecutable.js';
 import {
 	INIT_RULE_SCRIPT_ARGS,
 	RESET_RULE_SCRIPT_ARGS,
@@ -9,11 +9,11 @@ import {
  * Runs the `ariadne` CLI in a workspace and resolves with combined output
  * when the process exits 0.
  */
-export function runAriadneCli(
+export async function runAriadneCli(
 	args: readonly string[],
 	cwd: string,
 ): Promise<string> {
-	const exe = resolveAriadneExecutable();
+	const exe = await ensureAriadneExecutable();
 	return new Promise((resolve, reject) => {
 		const proc = spawn(exe, [...args], { cwd });
 		let stdout = '';

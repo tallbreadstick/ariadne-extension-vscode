@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import * as vscode from 'vscode';
-import { resolveAriadneExecutable } from '../core/ariadneExecutable';
+import { ensureAriadneExecutable } from '../core/ariadneExecutable';
 
 const DEBOUNCE_MS = 400;
 const DIAGNOSTIC_SOURCE = 'ariadne-rules';
@@ -231,8 +231,8 @@ function writeDirtyOverlay(workspaceRoot: string): string | undefined {
 	return overlayRoot;
 }
 
-function spawnCheck(projectRoot: string): Promise<CheckReport> {
-	const exe = resolveAriadneExecutable();
+async function spawnCheck(projectRoot: string): Promise<CheckReport> {
+	const exe = await ensureAriadneExecutable();
 	return new Promise((resolve, reject) => {
 		const proc = spawn(exe, ['check', '--path', projectRoot], { cwd: projectRoot });
 		let stdout = '';

@@ -51,7 +51,7 @@ Current system shape, module boundaries, and conventions.
 
 | Module | Path | Responsibility |
 |---|---|---|
-| Core | `src/modules/core/` | Packaged-binary resolution (`ariadneExecutable.ts`, `bundledAriadneBinary.ts`) |
+| Core | `src/modules/core/` | Scanner download and resolution (`scannerRelease.ts`, `ariadneExecutable.ts`) |
 | Bridge | `src/modules/detection/bridge/` | Spawn scanner, serialize/deserialize IPC messages, convert results to TS types |
 | Presentation | `src/modules/presentation/` | AriadneViewProvider, severity colors, panel type definitions |
 | Diagnostics | `src/modules/presentation/diagnostics/` | DiagnosticManager (inline squiggles + decorations), HoverProvider, finding types |

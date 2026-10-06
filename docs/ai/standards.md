@@ -149,7 +149,7 @@ Security is integrated throughout the development lifecycle, not bolted on after
 src/
   extension.ts                    # activate / deactivate entrypoint
   modules/
-    core/                         # Packaged binary resolution (ariadneExecutable, bundledAriadneBinary)
+    core/                         # Scanner download and resolution (scannerRelease, ariadneExecutable)
     detection/
       bridge/                     # TS ↔ scanner IPC (iostream, messages, convert, documentEvents)
     presentation/

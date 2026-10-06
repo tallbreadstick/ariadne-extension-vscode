@@ -2,7 +2,7 @@
  * View builder for the Ariadne sidebar (accordion settings).
  */
 
-import type { SignInPanelViewModel } from '../auth/authTypes.js';
+import type { ScannerSettingsViewModel, SignInPanelViewModel } from '../auth/authTypes.js';
 import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js';
 import { LOCKED_COPILOT_MODEL_LABEL } from '../settings/extensionSettings.js';
 
@@ -68,6 +68,14 @@ const CSS = /* css */ `
 		display: flex;
 		flex-direction: column;
 		min-height: 100%;
+		max-width: 560px;
+	}
+
+	.settings-title {
+		margin: 0;
+		padding: 12px 8px 0;
+		font-size: 16px;
+		font-weight: 600;
 	}
 
 	.accordion-item {
@@ -367,6 +375,115 @@ const CSS = /* css */ `
 		height: 16px;
 		flex-shrink: 0;
 	}
+
+	.switch {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.switch-track {
+		width: 32px;
+		height: 18px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--muted) 35%, transparent);
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.switch[aria-checked="true"] .switch-track {
+		background: var(--vscode-button-background);
+	}
+
+	.switch-knob {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		background: var(--vscode-foreground);
+		transition: transform 0.15s ease-out;
+	}
+
+	.switch[aria-checked="true"] .switch-knob {
+		transform: translateX(14px);
+	}
+
+	.field {
+		display: grid;
+		gap: 4px;
+	}
+
+	.field-label {
+		font-size: 12px;
+		color: var(--muted);
+	}
+
+	.field select {
+		width: 100%;
+		background: var(--input-bg);
+		color: var(--input-fg);
+		border: 1px solid var(--input-border);
+		padding: 4px 6px;
+		font: inherit;
+	}
+
+	.binary-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 2px;
+	}
+
+	.binary-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 4px 0;
+	}
+
+	.binary-meta {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+	}
+
+	.binary-check {
+		color: var(--success);
+		font-weight: 700;
+	}
+
+	.icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+	}
+
+	.icon-btn:hover {
+		color: var(--error);
+	}
+
+	.trash-icon {
+		width: 14px;
+		height: 14px;
+	}
 `;
 
 function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
@@ -541,6 +658,78 @@ function buildScriptingSection(model: SignInPanelViewModel): string {
 		</p>`;
 }
 
+const TRASH_SVG = /* html */ `
+	<svg class="trash-icon" viewBox="0 0 16 16" aria-hidden="true">
+		<path fill="currentColor" d="M5.5 2h5l.5 1H14v1.2H2V3h3l.5-1zM3.2 5h9.6l-.7 8.2H3.9L3.2 5z"/>
+	</svg>`;
+
+function defaultScannerSettings(): ScannerSettingsViewModel {
+	return {
+		auto: true,
+		os: 'linux',
+		osOptions: [
+			{ id: 'windows', label: 'Windows' },
+			{ id: 'linux', label: 'Linux' },
+			{ id: 'macos', label: 'macOS' },
+		],
+		target: 'x86_64-unknown-linux-gnu',
+		binaries: [],
+		downloaded: [],
+	};
+}
+
+function buildScannerSection(model: SignInPanelViewModel): string {
+	const scanner = model.scanner ?? defaultScannerSettings();
+	const osOptions = scanner.osOptions.map((option) => {
+		const selected = option.id === scanner.os ? 'selected' : '';
+		return `<option value="${escapeHtml(option.id)}" ${selected}>${escapeHtml(option.label)}</option>`;
+	}).join('');
+	const binaryOptions = scanner.binaries.map((binary) => {
+		const selected = binary.id === scanner.target ? 'selected' : '';
+		return `<option value="${escapeHtml(binary.id)}" ${selected}>${escapeHtml(binary.label)}</option>`;
+	}).join('');
+	const downloadedRows = scanner.downloaded.length === 0
+		? '<p class="subtitle">No scanner binaries downloaded yet.</p>'
+		: `<ul class="binary-list">${scanner.downloaded.map((binary) => /* html */ `
+			<li class="binary-row">
+				<span>${escapeHtml(binary.label)}</span>
+				<span class="binary-meta">
+					<span class="binary-check" aria-label="Downloaded">✓</span>
+					<button class="icon-btn" type="button" data-delete-target="${escapeHtml(binary.id)}" aria-label="Delete ${escapeHtml(binary.label)}">
+						${TRASH_SVG}
+					</button>
+				</span>
+			</li>`).join('')}</ul>`;
+	const health = scanner.overrideActive
+		? 'A local executable path is in use. Set Ariadne: Executable back to ariadne to use the binary selected here.'
+		: scanner.working === true
+			? 'The current scanner binary is working.'
+			: scanner.working === false
+				? 'The current scanner binary is not working.'
+				: 'The selected binary is checked when it is downloaded or a scan starts.';
+	const manualHidden = scanner.auto ? 'hidden' : '';
+
+	return /* html */ `
+		<button class="switch" id="scanner-auto" type="button" role="switch" aria-checked="${scanner.auto ? 'true' : 'false'}">
+			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+			<span>Auto</span>
+		</button>
+		<p class="subtitle">Auto downloads the binary that matches this computer. Turn it off to choose an operating system and binary.</p>
+		<div id="scanner-manual" ${manualHidden}>
+			<label class="field">
+				<span class="field-label">Operating system</span>
+				<select id="scanner-os" aria-label="Operating system">${osOptions}</select>
+			</label>
+			<label class="field">
+				<span class="field-label">Binary</span>
+				<select id="scanner-target" aria-label="Scanner binary">${binaryOptions}</select>
+			</label>
+		</div>
+		${downloadedRows}
+		<button class="btn btn-danger" id="scanner-delete-all" type="button">Delete all binaries</button>
+		<p class="footer-note">${escapeHtml(health)}</p>`;
+}
+
 function buildSessionSection(): string {
 	return /* html */ `
 		<p class="subtitle">Manage local scan history and metrics for this workspace.</p>
@@ -574,76 +763,34 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 	</head>
 	<body>
 		<div class="sidebar">
-			<details class="accordion-item" id="accordion-account" name="ariadne-settings" open>
-				<summary>Account<span class="chevron" aria-hidden="true"></span></summary>
+			<h1 class="settings-title">Ariadne Settings</h1>
+			<details class="accordion-item" id="accordion-account" open>
+				<summary>Sign in<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildAuthBody(model)}
 				</div>
 			</details>
-			<details class="accordion-item" id="accordion-scripting" name="ariadne-settings">
+			<details class="accordion-item" id="accordion-session" open>
+				<summary>Sessions<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildSessionSection()}
+				</div>
+			</details>
+			<details class="accordion-item" id="accordion-scanner" open>
+				<summary>Core<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildScannerSection(model)}
+				</div>
+			</details>
+			<details class="accordion-item" id="accordion-scripting" open>
 				<summary>Scripting<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildScriptingSection(model)}
 				</div>
 			</details>
-			<details class="accordion-item" id="accordion-session" name="ariadne-settings">
-				<summary>Session<span class="chevron" aria-hidden="true"></span></summary>
-				<div class="accordion-body">
-					${buildSessionSection()}
-				</div>
-			</details>
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
-			const ACCORDION_IDS = ['accordion-account', 'accordion-scripting', 'accordion-session'];
-			let syncingAccordion = false;
-
-			function persistOpenAccordion(openId) {
-				vscode.setState({ ...(vscode.getState() || {}), openAccordion: openId });
-			}
-
-			function restoreAccordionState() {
-				const state = vscode.getState();
-				const savedId = state && state.openAccordion;
-				if (typeof savedId !== 'string' || !ACCORDION_IDS.includes(savedId)) {
-					return;
-				}
-				syncingAccordion = true;
-				for (const id of ACCORDION_IDS) {
-					const el = document.getElementById(id);
-					if (el) {
-						el.open = id === savedId;
-					}
-				}
-				syncingAccordion = false;
-			}
-
-			restoreAccordionState();
-			for (const id of ACCORDION_IDS) {
-				document.getElementById(id)?.addEventListener('toggle', (event) => {
-					if (syncingAccordion) {
-						return;
-					}
-					const el = event.currentTarget;
-					if (!el.open) {
-						persistOpenAccordion(null);
-						return;
-					}
-					syncingAccordion = true;
-					for (const otherId of ACCORDION_IDS) {
-						if (otherId === el.id) {
-							continue;
-						}
-						const other = document.getElementById(otherId);
-						if (other) {
-							other.open = false;
-						}
-					}
-					syncingAccordion = false;
-					persistOpenAccordion(el.id);
-				});
-			}
-
 			const termsCheckbox = document.getElementById('terms-checkbox');
 			const privacyCheckbox = document.getElementById('privacy-checkbox');
 			const signInBtn = document.getElementById('sign-in-btn');
@@ -704,6 +851,33 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 
 			clearSessionBtn?.addEventListener('click', () => {
 				vscode.postMessage({ type: 'clear-session-data' });
+			});
+
+			document.getElementById('scanner-auto')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				const auto = button.getAttribute('aria-checked') !== 'true';
+				vscode.postMessage({ type: 'scanner-set-auto', auto });
+			});
+
+			document.getElementById('scanner-os')?.addEventListener('change', (event) => {
+				vscode.postMessage({ type: 'scanner-set-os', os: event.currentTarget.value });
+			});
+
+			document.getElementById('scanner-target')?.addEventListener('change', (event) => {
+				vscode.postMessage({ type: 'scanner-set-target', target: event.currentTarget.value });
+			});
+
+			for (const button of document.querySelectorAll('[data-delete-target]')) {
+				button.addEventListener('click', () => {
+					vscode.postMessage({
+						type: 'scanner-delete',
+						target: button.getAttribute('data-delete-target'),
+					});
+				});
+			}
+
+			document.getElementById('scanner-delete-all')?.addEventListener('click', () => {
+				vscode.postMessage({ type: 'scanner-delete-all' });
 			});
 
 			window.addEventListener('message', (event) => {

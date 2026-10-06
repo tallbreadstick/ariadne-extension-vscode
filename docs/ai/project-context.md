@@ -7,7 +7,7 @@ Durable product context every agent should read before making changes.
 - **Project**: Ariadne — VSCode Extension
 - **What it is**: A student-first VS Code extension that performs real-time, diagnostic-only static application security testing (SAST) on student-written Java code, providing structured plain-language explanations of vulnerabilities via an LLM without generating, suggesting, or completing code — preserving academic integrity.
 - **Status**: post-MVP; implementing additional features
-- **Primary surface**: VSCode extension — sidebar panel, bottom panel (Active Vulnerabilities + Session Metrics), diagnostics, editor decorations, hover popups, command palette, status bar
+- **Primary surface**: VSCode extension — activity-bar shield (opens the side panel and the bottom panel), side panel (Sign in, Sessions, Core, Scripting), bottom panel (Active Vulnerabilities and Session Metrics), diagnostics, editor decorations, hover popups, command palette
 - **Repo visibility**: public
 - **Target users**: CSIT undergraduate students at CIT-U enrolled in project-based Java web development courses
 - **Academic context**: Capstone project, 2nd semester AY 2025–2026, IT332 section 04
@@ -18,7 +18,7 @@ The scanning engine is developed in a separate **private** Rust repository. It i
 
 - **Integration mechanism**: `child_process` spawning the `ariadne` binary with `session` subcommand
 - **Communication format**: Newline-delimited JSON over stdin/stdout (IPC messages)
-- **Scanner binary location**: Packaged under `bin/linux-x64/ariadne`, `bin/win32-x64/ariadne.exe`, and `bin/win32-arm64/ariadne.exe`. Selected at activation from `context.extensionPath` for the host OS. An existing `ariadne.executable` path still overrides the bundle.
+- **Scanner binary location**: Downloaded from the latest public release at `https://github.com/tallbreadstick/ariadne-binaries/releases` into VS Code global storage. Auto is the default and matches this computer. Turning Auto off in the sidebar Core section picks an operating system and binary. The choice is stored in extension global state. An existing `ariadne.executable` path still overrides the download. Preferences > Settings keeps the scan interval, notification level, and executable path.
 - **Core technology**: Rust + Tree-sitter Java parser for AST construction, taint analysis engine with dataflow graph traversal
 - Do not reference the private repo URL, internal module names, or proprietary rule logic in any committed file.
 

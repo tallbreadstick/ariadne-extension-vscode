@@ -120,11 +120,28 @@ Within each section, newest decision at the top.
 ### Ship Linux and Windows scanner binaries inside the extension
 
 - date: 2026-09-23
-- status: accepted
+- status: superseded
 - context: Deployed students should not need a PATH install or a local cargo build of the scanner. The extension already spawns `ariadne session` as a child process; the missing piece was a reliable, per-OS binary next to the extension.
 - decision: Package x64 Linux and Windows scanner binaries under `bin/linux-x64/` and `bin/win32-x64/`. On activate, `configureAriadneExecutable(context.extensionPath)` selects the host binary. Session, CLI, and rule-script spawns use that path. An explicit existing `ariadne.executable` setting still overrides the bundle.
 - consequences: VSIX size grows by ~7MB. macOS and ARM hosts have no bundled binary until those builds exist. Linux hosts need a reasonably current glibc. Updating the scanner means replacing the files in `bin/`.
 - task: docs/ai/tasks/2026-09-23-bundled-scanner-binaries.md
+
+### Ariadne Settings page and activity-bar panel launcher
+
+- date: 2026-10-05
+- status: accepted
+- context: Account, scripting, and session controls lived in the activity-bar sidebar, and the bottom panel was hard to find. The scanner picker also needs a per-OS binary list, download checkmarks, and delete actions that the native settings dropdown cannot render.
+- decision: The activity-bar Ariadne shield opens the side panel and the bottom panel together. The side panel holds Sign in, Sessions, Core, and Scripting. Core stores Auto, operating system, and binary in extension global state. Preferences > Settings keeps `ariadne.executable`, `ariadne.notifications.level`, and `ariadne.autoScan.intervalMinutes`. A failed scanner process replaces the vulnerabilities empty state with a message that the current binary is not working.
+- consequences: Sign-in, session, scripting, and binary controls stay in the side panel. Delete-all still asks for confirmation there.
+
+### Download the scanner from the latest core release
+
+- date: 2026-10-05
+- status: accepted
+- context: Shipping every scanner binary inside the VSIX made the Marketplace package large, and a new core release required rebuilding the extension. The core now publishes per-target binaries on a public GitHub release.
+- decision: The extension downloads the selected scanner asset from `https://github.com/tallbreadstick/ariadne-binaries/releases` into global storage on first use. The published release is a pre-release, so the client reads the newest item from the releases list rather than `/releases/latest`. `bin/` is not packed into the VSIX. An existing `ariadne.executable` path still overrides the download. The Auto / OS / binary choice is stored by the sidebar Core section.
+- consequences: First scan needs network access. Later scans reuse the cached file until the release asset name changes. Unsupported hosts must pick a target explicitly.
+- supersedes: Ship Linux and Windows scanner binaries inside the extension
 
 ### Hourly auto full scan with seamless session rollover and K=3 policy
 
