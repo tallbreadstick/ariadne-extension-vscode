@@ -1,5 +1,9 @@
 import * as assert from 'assert';
-import { formatDisplayPath, buildFeedbackPanelHtml } from '../modules/feedback/views/feedbackPanel.js';
+import {
+	askAriadneRequestId,
+	buildFeedbackPanelHtml,
+	formatDisplayPath,
+} from '../modules/feedback/views/feedbackPanel.js';
 import type { VulnerabilityMetadata } from '../modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 
 describe('Feedback Panel File Path Display Test Suite', () => {
@@ -60,6 +64,18 @@ describe('Feedback Panel File Path Display Test Suite', () => {
 				html.includes('title="c:\\Users\\Florence\\Documents\\! PROJECTS\\arinda-housing\\back\\arinda-backend\\src\\main\\java\\com\\abemivi\\arinda\\arindabackend\\controller\\LandlordController.java:41"'),
 				'HTML should contain the full path in title attribute for hover tooltip',
 			);
+		});
+
+		it('keeps the request id on the tab that will receive the answer', () => {
+			const requestId = askAriadneRequestId({
+				cwe: mockMeta.cwe_id,
+				title: mockMeta.type,
+				filePath: mockMeta.file_path,
+				line: mockMeta.line_number,
+			});
+			const html = buildFeedbackPanelHtml(mockMeta, requestId);
+			assert.ok(html.includes(`data-request-id="${requestId}"`));
+			assert.ok(html.includes('msg.requestId !== requestId'));
 		});
 
 		it('includes CSS rules preventing horizontal overflow', () => {

@@ -60,8 +60,20 @@ export interface ScannerSettingsViewModel {
 	os: string;
 	osOptions: readonly { id: string; label: string }[];
 	target: string;
+	/** Binary actually in use. Auto uses this computer's build. */
+	activeTarget?: string;
+	/** Build that matches this computer. Used when Auto is turned on. */
+	hostTarget?: string;
 	binaries: readonly ScannerBinaryOption[];
 	downloaded: readonly ScannerBinaryOption[];
 	working?: boolean;
 	overrideActive?: boolean;
+	/** True while a scanner choice or download is in progress. */
+	busy?: boolean;
+	/** Which control the busy spinner replaces. */
+	busyAction?: 'download' | 'delete' | 'status';
+	/** Editor highlights. The scanner keeps running when this is off. */
+	highlightsVisible?: boolean;
+	/** When true, showing the sidebar also opens the bottom Ariadne panel. */
+	openPanelOnStartup?: boolean;
 }

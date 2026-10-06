@@ -1,9 +1,9 @@
 {
   "name": "ariadne-extension-vscode",
-  "displayName": "ariadne",
+  "displayName": "Ariadne for VSCode",
   "publisher": "tallbreadstick",
   "description": "A student-first VS Code tool that reviews code for security flaws without compromising academic integrity.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",

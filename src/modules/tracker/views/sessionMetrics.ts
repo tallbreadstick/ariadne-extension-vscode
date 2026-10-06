@@ -10,6 +10,7 @@ import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, Co
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
 import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
+import { buildStartupLoadingHtml } from '../../presentation/views/startupLoading.js';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
@@ -764,8 +765,11 @@ const CSS = /* css */ `
  */
 export function buildSessionMetricsHtml(
 	metrics: SessionMetrics,
-	options: { signedIn?: boolean } = {},
+	options: { signedIn?: boolean; loading?: boolean } = {},
 ): string {
+	if (options.loading) {
+		return buildStartupLoadingHtml('Session Metrics');
+	}
 	if (options.signedIn === false) {
 		return /* html */ `<!DOCTYPE html>
 <html lang="en">

@@ -9,6 +9,8 @@
 import { Vulnerability, Severity } from '../panelTypes.js';
 import { severityCssVars } from '../severityColors.js';
 import { collectVulnFilterFacets, formatCategoryLabel } from './vulnFilters.js';
+import { buildStartupLoadingHtml } from './startupLoading.js';
+import { askAriadneCommandQuery } from '../../feedback/views/feedbackPanel.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
@@ -23,6 +25,8 @@ export interface ActiveVulnerabilitiesOptions {
 	signedIn?: boolean;
 	/** When true, the selected scanner binary failed its health check. */
 	scannerBroken?: boolean;
+	/** When true, auth has not finished and the panel must not ask for sign-in yet. */
+	loading?: boolean;
 }
 
 /** Stable key for accordion persistence across scans and workspace reopens. */
@@ -102,8 +106,12 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const label = capitalize(vuln.severity);
 	const location = `${vuln.filePath} : Line ${vuln.line}`;
 	const openAttr = expanded ? ' open' : '';
-	const commandArgs = encodeURIComponent(JSON.stringify([vuln.cwe, vuln.title]));
-	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${commandArgs}`;
+	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${askAriadneCommandQuery({
+		cwe: vuln.cwe,
+		title: vuln.title,
+		filePath: vuln.filePath,
+		line: vuln.line,
+	})}`;
 	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
 	const searchText = escapeAttr(
 		[vuln.title, vuln.filePath].join(' ').toLowerCase(),
@@ -970,6 +978,9 @@ export function buildActiveVulnerabilitiesHtml(
 	vulns: Vulnerability[],
 	options: ActiveVulnerabilitiesOptions = {},
 ): string {
+	if (options.loading) {
+		return buildStartupLoadingHtml('Ariadne Active Vulnerabilities');
+	}
 	const signedIn = options.signedIn !== false;
 	if (signedIn && options.scannerBroken) {
 		return /* html */ `<!DOCTYPE html>

@@ -1,170 +1,123 @@
-# ariadne-extension-vscode
+# Ariadne for VS Code
 
-VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by GitHub Copilot.
+Ariadne is a student-first security assistant for Java projects in VS Code. It scans your code for common vulnerabilities, highlights issues inline, and explains what went wrong in plain language.
 
-The scanner binary is downloaded from the [latest Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases) the first time a scan runs. **Auto** in the sidebar Core section picks the build for this computer. You can choose a specific build there.
+## Requirements
+
+| Requirement | Notes |
+|---|---|
+| [Visual Studio Code](https://code.visualstudio.com/) | **1.107 or newer** |
+| A Java workspace | Open a folder that contains `.java` source files |
+| GitHub account | Required to sign in and run scans |
+| Supported OS | Linux, Windows, or macOS (see **Core** below) |
+
+On first scan, Ariadne downloads the scanner for your computer from the [latest Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases). Leave **Auto** enabled in the sidebar unless you need a specific build.
 
 ## Install
 
-Supported hosts are the builds published on that release (Linux, Windows, and macOS).
+1. Obtain the packaged `.vsix` file for this release.
+2. In VS Code, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+3. Run **Extensions: Install from VSIX...** and select the file.
+4. Reload VS Code if prompted.
 
-For the data-collection release, install the packaged `.vsix` with **Extensions: Install from VSIX...**. Leave Core set to **Auto** unless you need a different build.
+## Quick start
 
-## Prerequisites
+1. Click the **Ariadne** shield icon in the activity bar (left sidebar).
+2. Sign in with **GitHub** when prompted.
+3. Open a folder that contains Java source files.
+4. Wait for the first scan to finish — the status bar and bottom panel update as findings arrive.
+5. Click a highlighted line in the editor or open **ARIADNE (ACTIVE VULNERABILITIES)** in the bottom panel to review issues.
 
-| Requirement | Version / notes |
+## Sidebar (activity bar)
+
+The Ariadne sidebar is organized into sections:
+
+- **Sign in** — Connect your GitHub account. Scanning, custom rules, and AI explanations require an active session.
+- **Sessions** — View session-related options and status.
+- **Core** — Control editor highlights, whether the bottom panel opens on startup, **Auto** scanner selection, operating system, and scanner binary.
+- **Scripting** — Manage `.ariadne` rule files when present in your workspace.
+
+### Core settings
+
+| Option | What it does |
 |---|---|
-| [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
-| npm | Bundled with Node.js |
-| [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
-| OS | A published Ariadne scanner build for this computer (downloaded on first scan) |
+| **Highlights** | Show or hide colored marks on vulnerable code in the editor. Turning highlights off does not stop scanning. |
+| **Open panel on startup** | Open the Ariadne bottom panel when the extension activates. |
+| **Auto** | Automatically pick the scanner build for this computer (recommended). |
+| **Operating system / binary** | Choose a specific platform or build when Auto is off. |
 
-## Install dependencies
+## Bottom panel
 
-Open a terminal in **`ariadne-extension-vscode`** (this folder):
+Open the **Ariadne** area in the bottom panel bar:
 
-```powershell
-cd path\to\ariadne\ariadne-extension-vscode
-npm install
-```
+| Panel | Purpose |
+|---|---|
+| **ARIADNE (ACTIVE VULNERABILITIES)** | Browse current findings, filter by severity, and jump to code |
+| **SESSION METRICS** | See counts, trends, and session progress over time |
 
-This installs TypeScript, esbuild, ESLint, and other dev dependencies listed in `package.json`.
+## In the editor
 
-## Compile the extension
+After a scan completes:
 
-```powershell
-npm run compile
-```
+- **Highlights** — Vulnerable lines are marked with a severity-colored background and an end-of-line label.
+- **Hover** — Point at highlighted code for a short summary and a link to **Ask Ariadne**.
+- **Status bar** — A summary of active issues appears in the VS Code status bar.
 
-This runs, in order:
+Findings appear in the Ariadne panels, not the standard Problems panel.
 
-1. `npm run check-types` — TypeScript type-check (`tsc --noEmit`)
-2. `npm run lint` — ESLint on `src/`
-3. `node esbuild.js` — bundles `src/extension.ts` to `dist/extension.js`
+## Ask Ariadne
 
-You must compile (or run watch mode) before launching the extension. VS Code loads `./dist/extension.js` as the extension entry point.
+**Ask Ariadne** opens an explanation panel for a selected finding. It describes the issue, why it matters, and which security concept to study — it does not provide code fixes or completions.
 
-### Watch mode (optional, while developing)
+Ways to open it:
 
-Recompiles automatically when you save files:
+- Click **Ask Ariadne** from a finding in the **Active Vulnerabilities** panel.
+- Use the link in the editor hover popup.
+- Run **Ariadne: Ask Ariadne** from the Command Palette.
 
-```powershell
-npm run watch
-```
+Explanations use Gemini Flash through your GitHub Copilot allowance. Ensure Copilot is available in your VS Code setup.
 
-This runs esbuild and TypeScript in parallel. The default **Run Extension** launch config uses the watch task as its pre-launch build.
+## Commands
 
-## Run and debug in VS Code
+Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for **Ariadne**:
 
-1. Open the **`ariadne-extension-vscode`** folder in VS Code (File → Open Folder).
-2. Ensure dependencies are installed and the project has been compiled at least once (`npm install`, `npm run compile`).
-3. Confirm `ariadne` is available:
+| Command | Description |
+|---|---|
+| **Ariadne: Analyze** | Run a full analysis on the workspace |
+| **Ariadne: Ask Ariadne** | Open the AI explanation panel for a finding |
+| **Ariadne: Sign In to GitHub** | Open the sign-in panel |
+| **Ariadne: Open Panel** | Focus the Ariadne bottom panel |
+| **Ariadne: Settings** | Open Ariadne settings in the sidebar |
+| **Ariadne: Terms of Use** | View terms of use |
+| **Ariadne: Privacy Policy** | View the privacy policy |
 
-   ```powershell
-   ariadne --help
-   ```
+## VS Code settings
 
-4. Press **F5** or go to **Run and Debug** → select **Run Extension** → click the green play button.
-
-VS Code opens a second window titled **Extension Development Host**. That window loads this extension from your workspace.
-
-5. In the Extension Development Host, open a folder containing **Java** source files (File → Open Folder). The extension activates on Java files and starts `ariadne session` in the background.
-
-### Launch configuration
-
-The repo includes `.vscode/launch.json`:
-
-- **Configuration:** `Run Extension`
-- **Type:** `extensionHost`
-- **Pre-launch task:** default build task (`watch` — runs esbuild + TypeScript watchers)
-
-If F5 fails with a missing build, run `npm run compile` once manually, then try again.
-
-### Recommended VS Code extensions
-
-See `.vscode/extensions.json` for suggested extensions (ESLint, esbuild problem matchers, etc.). VS Code may prompt you to install them when you open the folder.
-
-## Using the extension
-
-### Commands (Command Palette: `Ctrl+Shift+P`)
-
-| Command | Title | Description |
-|---|---|---|
-| `ariadne-extension-vscode.analyze` | **Ariadne: Analyze** | Run analysis on the workspace |
-| `ariadne-extension-vscode.openFeedbackPanel` | **Ariadne: Ask Ariadne** | Open AI explanation panel for a finding |
-| `ariadne-extension-vscode.helloWorld` | Hello World | Development stub |
-
-### Panels
-
-Open the **Ariadne** panel area in the bottom panel bar:
-
-- **ARIADNE (ACTIVE VULNERABILITIES)** — current findings
-- **SESSION METRICS** — counts and session stats
-
-A colored highlight and a hover appear on vulnerable code after analysis.
-
-## Settings
-
-Open **File → Preferences → Settings** and search for **Ariadne**, or edit `settings.json`:
-
-Sign in, Sessions, Core, and Scripting live in the Ariadne side panel. Core is where Auto, the operating system, and the scanner binary are chosen.
+You can also adjust behavior under **File → Preferences → Settings** (search for **Ariadne**):
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `ariadne.executable` | `"ariadne"` | Optional path to a local scanner binary. Leave the default to use the binary selected in the sidebar Core section. |
-| `ariadne.notifications.level` | `"milestones"` | How many popup notifications Ariadne shows. |
-| `ariadne.autoScan.intervalMinutes` | `60` | Minutes between automatic full scans. Minimum 2, maximum 180. |
+| `ariadne.executable` | `"ariadne"` | Optional path to a local scanner binary. Leave the default to use the binary selected in the sidebar **Core** section. |
+| `ariadne.notifications.level` | `"milestones"` | Popup notification verbosity: `milestones`, `all`, or `quiet`. |
+| `ariadne.autoScan.intervalMinutes` | `60` | Minutes between automatic full scans (2–180). |
 
-GitHub sign-in is required to use the extension (scanning, rule scripts, and AI explanations). Explanations always use Gemini Flash via the user's Copilot allowance.
+Most day-to-day options — highlights, scanner selection, sign-in — are in the **Ariadne** sidebar rather than the Settings UI.
 
-## npm scripts (reference)
+## Notifications
 
-| Script | Command | Purpose |
-|---|---|---|
-| `compile` | `npm run compile` | One-shot typecheck + lint + bundle |
-| `watch` | `npm run watch` | Watch mode for development |
-| `package` | `npm run package` | Production bundle (minified) |
-| `lint` | `npm run lint` | ESLint only |
-| `check-types` | `npm run check-types` | TypeScript check only |
-| `test` | `npm test` | Extension tests (`vscode-test`) |
-| `workflow` | `npm run workflow` | Agentic workflow CLI |
+Ariadne can show toast notifications when findings change (new issues, fixes, recurrences, and similar milestones). Set **Notifications** to **quiet** in settings if you prefer to check the panels and status bar only.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
-| No findings / core errors in Debug Console | Scanner download or process failed | Check the notification and Debug Console; change Core in the sidebar or set `ariadne.executable` |
-| Stale results after a new core release | Old scanner process still running | Reload the extension window |
-| Ask Ariadne errors | Copilot auth failure | Check VS Code Copilot extension status |
-
-Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.
-
-## Project structure
-
-```
-ariadne-extension-vscode/
-├── src/
-│   ├── extension.ts              ← activation entry point
-│   └── modules/
-│       ├── core/                 ← binary resolution
-│       ├── detection/bridge/     ← IPC with scanner (spawn, messages, convert)
-│       ├── presentation/         ← diagnostics, webviews, panels
-│       ├── feedback/             ← Copilot "Ask Ariadne", auth, settings
-│       ├── tracker/              ← status bar, session metrics, storage
-│       └── rules/                ← .ariadne rule file support
-├── scripts/                      ← workflow CLI tooling
-├── docs/                         ← specs, plans, architecture, agent docs
-├── dist/extension.js             ← built output (after compile)
-├── package.json
-└── .vscode/launch.json           ← F5 “Run Extension”
-```
+| Problem | What to try |
+|---|---|
+| Extension asks you to sign in | Open the Ariadne sidebar and complete GitHub sign-in. |
+| No findings after opening a Java project | Run **Ariadne: Analyze** from the Command Palette. Check for a scanner download notification. |
+| Scanner or download errors | In the sidebar **Core** section, confirm **Auto** is on or pick the correct OS and binary. |
+| Highlights missing | Turn **Highlights** on in the sidebar **Core** section. |
+| Stale results after an update | Reload the VS Code window (**Developer: Reload Window**). |
+| Ask Ariadne fails | Confirm GitHub sign-in and that Copilot is available in VS Code. |
 
 ## License
 
 Proprietary. Users may install and run it during data collection. See [LICENSE](LICENSE).
-
-## See also
-
-- Full-stack quick start — see the parent repository README
-- Scanner core — see the scanner core documentation for building and installing the `ariadne` CLI

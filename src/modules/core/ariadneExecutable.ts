@@ -1,8 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rename, unlink } from 'node:fs/promises';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import {
@@ -89,6 +87,63 @@ async function resolveExecutable(): Promise<string> {
 	const prefs = readPrefs();
 	const configured = prefs.auto ? SCANNER_AUTO : prefs.target;
 	const target = selectedScannerTarget(configured, process.platform, process.arch);
+	const cached = await cachedScannerPath(target);
+	if (cached) {
+		await markExecutable(cached);
+		console.log(`[Ariadne] Scanner setting "${configured}" -> ${cached}`);
+		return cached;
+	}
+	if (!prefs.auto) {
+		throw new Error('Download the selected scanner binary from the Core section.');
+	}
+	const outcome = await downloadReleaseAsset(target);
+	if (outcome === 'cancelled') {
+		throw new DownloadCancelled();
+	}
+	if (outcome === 'failed') {
+		throw new Error('Ariadne: download failed.');
+	}
+	const ready = await cachedScannerPath(target);
+	if (!ready) {
+		throw new Error('Download finished without a scanner file.');
+	}
+	console.log(`[Ariadne] Scanner setting "${configured}" -> ${ready}`);
+	return ready;
+}
+
+/** Local path for a target that is already on disk. */
+export async function cachedScannerPath(target: ScannerTarget): Promise<string | undefined> {
+	if (!cacheDir) {
+		return undefined;
+	}
+	const names = await cacheFileNames();
+	const match = names.find((name) => targetFromAssetName(name) === target);
+	return match ? join(cacheDir, match) : undefined;
+}
+
+export class DownloadCancelled extends Error {
+	constructor() {
+		super('Download cancelled.');
+		this.name = 'DownloadCancelled';
+	}
+}
+
+/**
+ * Downloads one release binary. Auto is the only caller that starts this
+ * without a Download click. The notification can be cancelled and reports
+ * percent complete, then finished, failed, or cancelled.
+ */
+export async function downloadReleaseAsset(
+	target: ScannerTarget,
+): Promise<'finished' | 'cancelled' | 'failed'> {
+	if (!cacheDir) {
+		throw new Error('Ariadne scanner cache is not configured.');
+	}
+	const existing = await cachedScannerPath(target);
+	if (existing) {
+		await markExecutable(existing);
+		return 'finished';
+	}
 	const asset = selectReleaseAsset(await fetchLatestAssets(), target);
 	if (!asset) {
 		throw new Error(
@@ -96,23 +151,27 @@ async function resolveExecutable(): Promise<string> {
 		);
 	}
 	assertDownloadUrl(asset.browser_download_url);
-
 	const destination = join(cacheDir, asset.name);
-	if (existsSync(destination)) {
-		await markExecutable(destination);
-		console.log(`[Ariadne] Scanner setting "${configured}" -> ${destination}`);
-		return destination;
+	try {
+		await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Notification,
+				title: `Ariadne: downloading ${asset.name}`,
+				cancellable: true,
+			},
+			(progress, token) => downloadAsset(asset, destination, progress, token),
+		);
+		void vscode.window.showInformationMessage('Ariadne: download finished.');
+		return 'finished';
+	} catch (error: unknown) {
+		if (error instanceof DownloadCancelled) {
+			void vscode.window.showInformationMessage('Ariadne: download cancelled.');
+			return 'cancelled';
+		}
+		console.error('[Ariadne] Scanner download failed:', error);
+		void vscode.window.showErrorMessage('Ariadne: download failed.');
+		return 'failed';
 	}
-
-	await vscode.window.withProgress(
-		{
-			location: vscode.ProgressLocation.Notification,
-			title: `Ariadne: downloading ${asset.name}`,
-		},
-		() => downloadAsset(asset, destination),
-	);
-	console.log(`[Ariadne] Scanner setting "${configured}" -> ${destination}`);
-	return destination;
 }
 
 export function localExecutableOverride(): string | undefined {
@@ -155,19 +214,98 @@ function assertDownloadUrl(url: string): void {
 	}
 }
 
-async function downloadAsset(asset: ReleaseAsset, destination: string): Promise<void> {
-	const response = await fetch(asset.browser_download_url, {
-		headers: { 'User-Agent': 'ariadne-extension-vscode' },
-		redirect: 'follow',
-	});
+async function downloadAsset(
+	asset: ReleaseAsset,
+	destination: string,
+	progress: vscode.Progress<{ message?: string; increment?: number }>,
+	token: vscode.CancellationToken,
+): Promise<void> {
+	if (token.isCancellationRequested) {
+		throw new DownloadCancelled();
+	}
+	const controller = new AbortController();
+	token.onCancellationRequested(() => controller.abort());
+	let response: Response;
+	try {
+		response = await fetch(asset.browser_download_url, {
+			headers: { 'User-Agent': 'ariadne-extension-vscode' },
+			redirect: 'follow',
+			signal: controller.signal,
+		});
+	} catch (error: unknown) {
+		if (controller.signal.aborted) {
+			throw new DownloadCancelled();
+		}
+		throw error;
+	}
 	if (!response.ok || !response.body) {
 		throw new Error(`Could not download ${asset.name} (HTTP ${response.status}).`);
 	}
 	await mkdir(cacheDir!, { recursive: true });
 	const partial = `${destination}.partial`;
-	await pipeline(Readable.fromWeb(response.body), createWriteStream(partial));
+	const total = Number(response.headers.get('content-length') || 0);
+	const reader = response.body.getReader();
+	const file = createWriteStream(partial);
+	let received = 0;
+	let reported = 0;
+	try {
+		while (true) {
+			if (token.isCancellationRequested) {
+				throw new DownloadCancelled();
+			}
+			const { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+			if (!value) {
+				continue;
+			}
+			await writeChunk(file, value);
+			received += value.byteLength;
+			if (total > 0) {
+				const pct = Math.min(99, Math.floor((received / total) * 100));
+				progress.report({ message: `${pct}%`, increment: pct - reported });
+				reported = pct;
+			} else {
+				progress.report({ message: `${Math.max(1, Math.floor(received / 1024))} KB` });
+			}
+		}
+		await endFile(file);
+		progress.report({ message: '100%', increment: Math.max(0, 100 - reported) });
+	} catch (error: unknown) {
+		file.destroy();
+		await unlink(partial).catch(() => undefined);
+		if (controller.signal.aborted || error instanceof DownloadCancelled) {
+			throw new DownloadCancelled();
+		}
+		throw error;
+	}
 	await rename(partial, destination);
 	await markExecutable(destination);
+}
+
+function writeChunk(file: ReturnType<typeof createWriteStream>, chunk: Uint8Array): Promise<void> {
+	return new Promise((resolve, reject) => {
+		file.write(chunk, (error) => {
+			if (error) {
+				reject(error);
+				return;
+			}
+			resolve();
+		});
+	});
+}
+
+function endFile(file: ReturnType<typeof createWriteStream>): Promise<void> {
+	return new Promise((resolve, reject) => {
+		file.end((error?: Error | null) => {
+			if (error) {
+				reject(error);
+				return;
+			}
+			resolve();
+		});
+	});
 }
 
 export async function listDownloadedScannerTargets(): Promise<ScannerTarget[]> {
@@ -200,14 +338,6 @@ export async function deleteDownloadedScanner(target: ScannerTarget): Promise<vo
 	await Promise.all(names.filter((name) => {
 		return targetFromAssetName(name) === target || name.startsWith(`${target}-`);
 	}).map((name) => unlink(join(cacheDir!, name))));
-}
-
-export async function deleteAllDownloadedScanners(): Promise<void> {
-	if (!cacheDir) {
-		return;
-	}
-	const names = await cacheFileNames();
-	await Promise.all(names.map((name) => unlink(join(cacheDir!, name))));
 }
 
 /**

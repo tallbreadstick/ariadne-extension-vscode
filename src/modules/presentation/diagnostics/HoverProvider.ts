@@ -22,6 +22,7 @@
 
 import * as vscode from "vscode";
 import { DiagnosticManager } from "./DiagnosticManager";
+import { askAriadneCommandQuery } from "../../feedback/views/feedbackPanel.js";
 import { AriadneFinding } from "./diagnosticTypes";
 
 /**
@@ -104,9 +105,14 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
   md.appendMarkdown("---\n\n");
 
   // ── Ask Ariadne CTA — italic link ────────────────────────────────────
-  // Encodes [cweId, vulnerabilityName] as JSON query args, matching the
-  // same (cwe, title) signature used by the Active Vulnerabilities panel.
-  const commandArgs = encodeURIComponent(JSON.stringify([finding.cweId, finding.vulnerabilityName]));
+  // The query is this finding's artifact. startLine is 0-based; the
+  // vulnerability list uses the 1-based engine line.
+  const commandArgs = askAriadneCommandQuery({
+    cwe: finding.cweId,
+    title: finding.vulnerabilityName,
+    filePath: finding.filePath,
+    line: finding.startLine + 1,
+  });
   md.appendMarkdown(`*[Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs})*`);
 
   return md;

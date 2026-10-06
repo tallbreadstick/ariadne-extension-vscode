@@ -54,15 +54,19 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(html.includes('id="accordion-scripting"'), 'Scripting accordion missing');
 		assert.ok(html.includes('id="accordion-session"'), 'Sessions accordion missing');
 		assert.ok(html.includes('id="accordion-scanner"'), 'Core accordion missing');
-		assert.match(html, /<summary[^>]*>\s*Sign in/);
+		assert.match(html, /<summary[^>]*>\s*Account/);
 		assert.match(html, /<summary[^>]*>\s*Sessions/);
 		assert.match(html, /<summary[^>]*>\s*Core/);
 		assert.match(html, /<summary[^>]*>\s*Scripting/);
-		assert.ok(html.indexOf('>Sign in<span') < html.indexOf('>Sessions<span'));
+		assert.ok(html.indexOf('>Account<span') < html.indexOf('>Sessions<span'));
 		assert.ok(html.indexOf('>Sessions<span') < html.indexOf('>Core<span'));
 		assert.ok(html.indexOf('>Core<span') < html.indexOf('>Scripting<span'));
-		assert.ok(html.includes('id="scanner-auto"'));
-		assert.ok(html.includes('Delete all binaries'));
+		assert.ok(html.includes('id="highlights-visible"'));
+		assert.ok(html.includes('id="open-panel-on-startup"'));
+		assert.ok(html.includes('Open on startup'));
+		assert.ok(html.indexOf('id="highlights-visible"') < html.indexOf('id="open-panel-on-startup"'));
+		assert.ok(html.indexOf('id="open-panel-on-startup"') < html.indexOf('id="scanner-auto"'));
+		assert.ok(!html.includes('Delete all binaries'));
 	});
 
 	it('opens the Sign in section by default', () => {
@@ -76,12 +80,12 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(!html.includes('update-copilot-model'));
 	});
 
-	it('shows a locked Gemini Flash label in Sign in', () => {
+	it('does not show the model in Account', () => {
 		const html = buildSignInPanelHtml(signedInModel());
-		assert.ok(html.includes('Gemini Flash'));
+		assert.ok(!html.includes('Gemini Flash'));
+		assert.ok(!html.includes('AI model'));
+		assert.ok(!html.includes('model-lock'));
 		assert.strictEqual(DEFAULT_COPILOT_MODEL, 'gemini-3.5-flash');
-		assert.ok(!/other models are not/i.test(html));
-		assert.ok(!/not available/i.test(html));
 	});
 
 	it('keeps one accordion section open and restores it after a refresh', () => {
@@ -179,9 +183,72 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(html.includes('>Linux<'));
 		assert.ok(html.includes('>macOS<'));
 		assert.ok(html.includes('id="scanner-target"'));
-		assert.ok(html.includes('aria-label="Downloaded"'));
+		assert.ok(html.includes('title="Incompatible"'));
+		assert.ok(html.includes('class="binary-bad"'));
+		assert.ok(html.includes('title="Delete"'));
 		assert.ok(html.includes('data-delete-target="x86_64-pc-windows-msvc"'));
-		assert.match(html, /current scanner binary is not working/i);
+		assert.ok(!html.includes('data-download-target="x86_64-pc-windows-msvc"'));
+		assert.ok(!/Auto downloads the binary/i.test(html));
+		assert.ok(html.includes('aarch64-apple-darwin'));
+		assert.ok(html.includes('setScannerBusy()'));
+	});
+
+	it('shows a download control only for the current binary', () => {
+		const html = buildSignInPanelHtml(signedOutModel({
+			scanner: {
+				auto: false,
+				os: 'linux',
+				osOptions: [
+					{ id: 'windows', label: 'Windows' },
+					{ id: 'linux', label: 'Linux' },
+					{ id: 'macos', label: 'macOS' },
+				],
+				target: 'aarch64-unknown-linux-gnu',
+				binaries: [
+					{ id: 'x86_64-unknown-linux-gnu', label: 'Linux 64-bit x86', downloaded: true },
+					{ id: 'aarch64-unknown-linux-gnu', label: 'Linux 64-bit ARM', downloaded: false },
+				],
+				downloaded: [
+					{ id: 'x86_64-unknown-linux-gnu', label: 'Linux 64-bit x86', downloaded: true },
+				],
+			},
+		}));
+		assert.equal(html.match(/data-download-target=/g)?.length, 1);
+		assert.ok(html.includes('data-download-target="aarch64-unknown-linux-gnu"'));
+		assert.ok(html.includes('title="Download"'));
+		assert.ok(html.includes('class="download-icon"'));
+		assert.ok(!html.includes('title="Delete"'));
+		assert.ok(!html.includes('data-delete-target="x86_64-unknown-linux-gnu"'));
+	});
+
+	it('greys out scanner controls and shows a spinner while a change is running', () => {
+		const html = buildSignInPanelHtml(signedOutModel({
+			scanner: {
+				auto: false,
+				busy: true,
+				os: 'linux',
+				osOptions: [
+					{ id: 'windows', label: 'Windows' },
+					{ id: 'linux', label: 'Linux' },
+					{ id: 'macos', label: 'macOS' },
+				],
+				target: 'aarch64-unknown-linux-gnu',
+				binaries: [
+					{ id: 'x86_64-unknown-linux-gnu', label: 'Linux 64-bit x86', downloaded: true },
+					{ id: 'aarch64-unknown-linux-gnu', label: 'Linux 64-bit ARM', downloaded: false },
+				],
+				downloaded: [
+					{ id: 'x86_64-unknown-linux-gnu', label: 'Linux 64-bit x86', downloaded: true },
+				],
+			},
+		}));
+		assert.ok(html.includes('scanner-controls is-busy'));
+		assert.ok(html.includes('class="spin"'));
+		assert.match(html, /id="scanner-auto"[^>]*disabled/);
+		assert.match(html, /id="scanner-os"[^>]*disabled/);
+		assert.match(html, /id="scanner-target"[^>]*disabled/);
+		assert.ok(!html.includes('>Download<'));
+		assert.ok(!html.includes('data-delete-target='));
 	});
 
 	it('keeps session data actions available while signed out', () => {
@@ -205,6 +272,14 @@ describe('Active Vulnerabilities signed-out state', () => {
 		const html = buildActiveVulnerabilitiesHtml([], { signedIn: true });
 		assert.ok(html.includes('No active vulnerabilities'));
 		assert.ok(!/Sign in required/i.test(html));
+	});
+
+	it('shows a loading state before sign-in is known', () => {
+		const html = buildActiveVulnerabilitiesHtml([], { loading: true, signedIn: false });
+		assert.match(html, /Loading Ariadne/);
+		assert.ok(html.includes('class="beam beam-h beam-top"'));
+		assert.ok(!/Sign in required/i.test(html));
+		assert.ok(!html.includes('No active vulnerabilities'));
 	});
 
 	it('says the scanner binary is not working instead of reporting a clean scan', () => {

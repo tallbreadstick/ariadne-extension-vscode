@@ -56,7 +56,23 @@ export function formatDisplayPath(filePath: string): string {
  * a postMessage with { type: 'llm-result', sections } or { type: 'llm-error', message }
  * to populate or show the fallback.
  */
-export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
+/** Identity of one Ask Ariadne request. The opened tab keeps this artifact. */
+export interface AskAriadneArtifact {
+	cwe: string;
+	title: string;
+	filePath: string;
+	line: number;
+}
+
+export function askAriadneCommandQuery(artifact: AskAriadneArtifact): string {
+	return encodeURIComponent(JSON.stringify([artifact]));
+}
+
+export function askAriadneRequestId(artifact: AskAriadneArtifact): string {
+	return `${artifact.cwe}|${artifact.filePath}|${artifact.line}|${artifact.title}`;
+}
+
+export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = ''): string {
     const title = escapeHtml(meta.type);
     const severity = escapeHtml(severityLabel(meta.severity));
     const severityClass = meta.severity;
@@ -392,7 +408,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
             }
         </style>
     </head>
-    <body>
+    <body data-request-id="${escapeHtml(requestId)}">
         <div class="panel">
             <header class="header">
                 <div class="header-icon-box ${severityClass}">
@@ -469,8 +485,13 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata): string {
                 return div.innerHTML;
             }
 
+            const requestId = document.body.dataset.requestId || '';
+
             window.addEventListener('message', (event) => {
                 const msg = event.data;
+                if (requestId && msg.requestId !== requestId) {
+                    return;
+                }
 
                 if (msg.type === 'llm-result') {
                     // Populate the 3 sections from the FeedbackFinding

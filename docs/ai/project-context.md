@@ -43,7 +43,7 @@ The scanning engine is developed in a separate **private** Rust repository. It i
 - `AriadneMessage` — IPC message union type (Init, OpenFile, UpdateFile, CloseFile, CreateFile, DeleteFile, RenameFile, Analyze, ReloadRules) sent from TypeScript to the Rust engine.
 - `AriadneSession` — Session interface wrapping the child process: send(), kill(), restart(), onFindings().
 - `Bridge` — The TypeScript ↔ scanner communication layer: iostream.ts (process management), messages.ts (IPC contract), convert.ts (type transformers), documentEvents.ts (VS Code event → IPC message dispatcher).
-- `DiagnosticManager` — Manages VS Code DiagnosticCollection for background highlights and end-of-line labels. Vulnerable code is highlighted, not underlined.
+- `DiagnosticManager` — Paints background highlights and end-of-line labels. Vulnerable code is highlighted, not underlined, and is listed in the Ariadne tab rather than the Problems panel.
 - `SessionStore` — Persists scan snapshots to VS Code workspaceState for cross-session tracking.
 
 ## MVP scope (shipped)

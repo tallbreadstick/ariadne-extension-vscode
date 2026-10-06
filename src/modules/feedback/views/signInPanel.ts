@@ -3,8 +3,13 @@
  */
 
 import type { ScannerSettingsViewModel, SignInPanelViewModel } from '../auth/authTypes.js';
+import {
+	SCANNER_TARGET_LABELS,
+	targetsForOs,
+	type ScannerOs,
+	type ScannerTarget,
+} from '../../core/scannerRelease.js';
 import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js';
-import { LOCKED_COPILOT_MODEL_LABEL } from '../settings/extensionSettings.js';
 
 function escapeHtml(value: string): string {
 	return value
@@ -347,29 +352,6 @@ const CSS = /* css */ `
 		font-size: 11px;
 	}
 
-	.model-lock {
-		display: grid;
-		gap: 2px;
-		padding: 8px;
-		border: 1px solid var(--border);
-		border-radius: 2px;
-		background: color-mix(in srgb, var(--muted) 8%, transparent);
-	}
-
-	.model-lock-label {
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--muted);
-	}
-
-	.model-lock-value {
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--text);
-	}
-
 	.github-mark {
 		width: 16px;
 		height: 16px;
@@ -416,6 +398,41 @@ const CSS = /* css */ `
 		transform: translateX(14px);
 	}
 
+	.core-toggle {
+		margin: 0 0 10px;
+	}
+
+	.scanner-controls.is-busy {
+		opacity: 0.45;
+	}
+
+	.scanner-controls.is-busy,
+	.scanner-controls.is-busy * {
+		cursor: default;
+		pointer-events: none;
+	}
+
+	.spin {
+		width: 14px;
+		height: 14px;
+		border: 2px solid color-mix(in srgb, var(--muted) 45%, transparent);
+		border-top-color: var(--text);
+		border-radius: 50%;
+		animation: ariadne-spin 0.7s linear infinite;
+		display: inline-block;
+	}
+
+	@keyframes ariadne-spin {
+		to { transform: rotate(360deg); }
+	}
+
+	.binary-bad {
+		color: #f14c4c;
+		font-size: 14px;
+		font-weight: 700;
+		line-height: 1;
+	}
+
 	.field {
 		display: grid;
 		gap: 4px;
@@ -460,27 +477,46 @@ const CSS = /* css */ `
 
 	.binary-check {
 		color: var(--success);
+		font-size: 14px;
 		font-weight: 700;
+		line-height: 1;
+	}
+
+	.status-slot,
+	.trash-slot {
+		width: 16px;
+		height: 16px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
 	}
 
 	.icon-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 24px;
-		height: 24px;
+		width: 16px;
+		height: 16px;
 		padding: 0;
 		border: none;
 		background: transparent;
-		color: var(--muted);
+		color: var(--text);
 		cursor: pointer;
 	}
 
-	.icon-btn:hover {
+	.icon-btn[data-delete-target]:hover {
 		color: var(--error);
 	}
 
-	.trash-icon {
+	.icon-btn:disabled {
+		color: var(--muted);
+		opacity: 0.35;
+		cursor: default;
+	}
+
+	.trash-icon,
+	.download-icon {
 		width: 14px;
 		height: 14px;
 	}
@@ -525,14 +561,6 @@ function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
 		</div>`;
 }
 
-function buildModelLock(): string {
-	return /* html */ `
-		<div class="model-lock">
-			<div class="model-lock-label">AI model</div>
-			<div class="model-lock-value">${escapeHtml(LOCKED_COPILOT_MODEL_LABEL)}</div>
-		</div>`;
-}
-
 function buildSignedOutBody(model: SignInPanelViewModel): string {
 	const termsChecked = model.hasConsent ? 'checked' : '';
 	const privacyChecked = model.analyticsConsent ? 'checked' : '';
@@ -566,7 +594,6 @@ function buildSignedOutBody(model: SignInPanelViewModel): string {
 				Sign in with GitHub
 			</button>
 		</div>
-		${buildModelLock()}
 		<p class="footer-note">
 			Your GitHub credentials are stored securely by VS Code. Ariadne never embeds
 			API keys in the extension bundle.
@@ -584,7 +611,6 @@ function buildSignedInBody(model: SignInPanelViewModel): string {
 		<div class="account-label">${label}</div>
 		<div class="meta-line">Signed in ${signedInAt}</div>
 		${buildCopilotUsageBlock(model)}
-		${buildModelLock()}
 		<div class="actions">
 			<button class="btn btn-secondary" id="sign-out-btn" type="button">
 				Sign out
@@ -663,6 +689,12 @@ const TRASH_SVG = /* html */ `
 		<path fill="currentColor" d="M5.5 2h5l.5 1H14v1.2H2V3h3l.5-1zM3.2 5h9.6l-.7 8.2H3.9L3.2 5z"/>
 	</svg>`;
 
+const DOWNLOAD_SVG = /* html */ `
+	<svg class="download-icon" viewBox="0 0 16 16" aria-hidden="true">
+		<path fill="currentColor" d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/>
+		<path fill="currentColor" d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06Z"/>
+	</svg>`;
+
 function defaultScannerSettings(): ScannerSettingsViewModel {
 	return {
 		auto: true,
@@ -678,56 +710,101 @@ function defaultScannerSettings(): ScannerSettingsViewModel {
 	};
 }
 
+function scannerCatalog(): Record<ScannerOs, { id: ScannerTarget; label: string }[]> {
+	return {
+		windows: targetsForOs('windows').map((id) => ({ id, label: SCANNER_TARGET_LABELS[id] })),
+		linux: targetsForOs('linux').map((id) => ({ id, label: SCANNER_TARGET_LABELS[id] })),
+		macos: targetsForOs('macos').map((id) => ({ id, label: SCANNER_TARGET_LABELS[id] })),
+	};
+}
+
+const SPINNER_HTML = '<span class="spin" role="status" aria-label="Loading"></span>';
+
 function buildScannerSection(model: SignInPanelViewModel): string {
 	const scanner = model.scanner ?? defaultScannerSettings();
-	const osOptions = scanner.osOptions.map((option) => {
-		const selected = option.id === scanner.os ? 'selected' : '';
-		return `<option value="${escapeHtml(option.id)}" ${selected}>${escapeHtml(option.label)}</option>`;
+	const catalog = scannerCatalog();
+	const os = (scanner.os === 'windows' || scanner.os === 'linux' || scanner.os === 'macos')
+		? scanner.os
+		: 'linux';
+	const downloaded = new Set([
+		...scanner.downloaded.filter((binary) => binary.downloaded).map((binary) => binary.id),
+		...scanner.binaries.filter((binary) => binary.downloaded).map((binary) => binary.id),
+	]);
+	const options = catalog[os];
+	const selectedId = options.some((binary) => binary.id === scanner.target)
+		? scanner.target
+		: options[0]?.id ?? scanner.target;
+	const activeId = scanner.auto
+		? (scanner.activeTarget && SCANNER_TARGET_LABELS[scanner.activeTarget as ScannerTarget]
+			? scanner.activeTarget
+			: selectedId)
+		: selectedId;
+	const activeLabel = SCANNER_TARGET_LABELS[activeId as ScannerTarget] ?? activeId;
+	const isDownloaded = downloaded.has(activeId);
+	const osOptions = [
+		{ id: 'windows', label: 'Windows' },
+		{ id: 'linux', label: 'Linux' },
+		{ id: 'macos', label: 'macOS' },
+	].map((option) => {
+		const selected = option.id === os ? 'selected' : '';
+		return `<option value="${option.id}" ${selected}>${option.label}</option>`;
 	}).join('');
-	const binaryOptions = scanner.binaries.map((binary) => {
-		const selected = binary.id === scanner.target ? 'selected' : '';
+	const binaryOptions = options.map((binary) => {
+		const selected = binary.id === selectedId ? 'selected' : '';
 		return `<option value="${escapeHtml(binary.id)}" ${selected}>${escapeHtml(binary.label)}</option>`;
 	}).join('');
-	const downloadedRows = scanner.downloaded.length === 0
-		? '<p class="subtitle">No scanner binaries downloaded yet.</p>'
-		: `<ul class="binary-list">${scanner.downloaded.map((binary) => /* html */ `
-			<li class="binary-row">
-				<span>${escapeHtml(binary.label)}</span>
-				<span class="binary-meta">
-					<span class="binary-check" aria-label="Downloaded">✓</span>
-					<button class="icon-btn" type="button" data-delete-target="${escapeHtml(binary.id)}" aria-label="Delete ${escapeHtml(binary.label)}">
-						${TRASH_SVG}
-					</button>
-				</span>
-			</li>`).join('')}</ul>`;
-	const health = scanner.overrideActive
-		? 'A local executable path is in use. Set Ariadne: Executable back to ariadne to use the binary selected here.'
-		: scanner.working === true
-			? 'The current scanner binary is working.'
-			: scanner.working === false
-				? 'The current scanner binary is not working.'
-				: 'The selected binary is checked when it is downloaded or a scan starts.';
 	const manualHidden = scanner.auto ? 'hidden' : '';
+	const busy = scanner.busy === true;
+	const disabled = busy ? 'disabled' : '';
+	const highlightsOn = scanner.highlightsVisible !== false;
+	const openOnStartup = scanner.openPanelOnStartup !== false;
+	const spinnerInTrash = busy && scanner.busyAction === 'delete';
+	const statusIcon = busy && !spinnerInTrash
+		? SPINNER_HTML
+		: !isDownloaded
+			? `<button class="icon-btn" type="button" data-download-target="${escapeHtml(activeId)}" title="Download" aria-label="Download">${DOWNLOAD_SVG}</button>`
+			: scanner.working === false
+				? '<span class="binary-bad" title="Incompatible" aria-label="Incompatible">✕</span>'
+				: '<span class="binary-check" title="Running" aria-label="Running">✓</span>';
+	const trash = spinnerInTrash
+		? SPINNER_HTML
+		: isDownloaded && !busy
+			? `<button class="icon-btn" type="button" data-delete-target="${escapeHtml(activeId)}" title="Delete" aria-label="Delete">${TRASH_SVG}</button>`
+			: `<button class="icon-btn" type="button" disabled>${TRASH_SVG}</button>`;
 
 	return /* html */ `
-		<button class="switch" id="scanner-auto" type="button" role="switch" aria-checked="${scanner.auto ? 'true' : 'false'}">
+		<button class="switch core-toggle" id="highlights-visible" type="button" role="switch" aria-checked="${highlightsOn ? 'true' : 'false'}">
 			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-			<span>Auto</span>
+			<span>Highlights</span>
 		</button>
-		<p class="subtitle">Auto downloads the binary that matches this computer. Turn it off to choose an operating system and binary.</p>
-		<div id="scanner-manual" ${manualHidden}>
-			<label class="field">
-				<span class="field-label">Operating system</span>
-				<select id="scanner-os" aria-label="Operating system">${osOptions}</select>
-			</label>
-			<label class="field">
-				<span class="field-label">Binary</span>
-				<select id="scanner-target" aria-label="Scanner binary">${binaryOptions}</select>
-			</label>
+		<button class="switch core-toggle" id="open-panel-on-startup" type="button" role="switch" aria-checked="${openOnStartup ? 'true' : 'false'}">
+			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+			<span>Open on startup</span>
+		</button>
+		<div id="scanner-controls" class="scanner-controls${busy ? ' is-busy' : ''}" data-host-target="${escapeHtml(scanner.hostTarget ?? '')}" aria-busy="${busy ? 'true' : 'false'}">
+			<button class="switch" id="scanner-auto" type="button" role="switch" aria-checked="${scanner.auto ? 'true' : 'false'}" ${disabled}>
+				<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+				<span>Auto</span>
+			</button>
+			<div id="scanner-manual" ${manualHidden}>
+				<label class="field">
+					<span class="field-label">Operating system</span>
+					<select id="scanner-os" aria-label="Operating system" ${disabled}>${osOptions}</select>
+				</label>
+				<label class="field">
+					<span class="field-label">Binary</span>
+					<select id="scanner-target" aria-label="Scanner binary" ${disabled}>${binaryOptions}</select>
+				</label>
+			</div>
+			<div class="binary-row" id="scanner-current">
+				<span id="scanner-current-label">${escapeHtml(activeLabel)}</span>
+				<span class="binary-meta" id="scanner-current-actions">
+					<span class="status-slot" id="scanner-status">${statusIcon}</span>
+					<span class="trash-slot" id="scanner-trash">${trash}</span>
+				</span>
+			</div>
 		</div>
-		${downloadedRows}
-		<button class="btn btn-danger" id="scanner-delete-all" type="button">Delete all binaries</button>
-		<p class="footer-note">${escapeHtml(health)}</p>`;
+		<script type="application/json" id="scanner-catalog">${JSON.stringify(catalog)}</script>`;
 }
 
 function buildSessionSection(): string {
@@ -765,7 +842,7 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		<div class="sidebar">
 			<h1 class="settings-title">Ariadne Settings</h1>
 			<details class="accordion-item" id="accordion-account" name="ariadne-settings" open>
-				<summary>Sign in<span class="chevron" aria-hidden="true"></span></summary>
+				<summary>Account<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
 					${buildAuthBody(model)}
 				</div>
@@ -884,22 +961,143 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				vscode.postMessage({ type: 'clear-session-data' });
 			});
 
+			const scannerSpinner = '<span class="spin" role="status" aria-label="Loading"></span>';
+
+			function readScannerCatalog() {
+				const node = document.getElementById('scanner-catalog');
+				try {
+					return JSON.parse(node && node.textContent ? node.textContent : '{}');
+				} catch {
+					return {};
+				}
+			}
+
+			function labelForTarget(id) {
+				const catalog = readScannerCatalog();
+				for (const items of Object.values(catalog)) {
+					if (!Array.isArray(items)) {
+						continue;
+					}
+					const match = items.find((item) => item && item.id === id);
+					if (match) {
+						return match.label;
+					}
+				}
+				return '';
+			}
+
+			function setScannerBusy(icon) {
+				const controls = document.getElementById('scanner-controls');
+				if (!controls) {
+					return;
+				}
+				controls.classList.add('is-busy');
+				controls.setAttribute('aria-busy', 'true');
+				for (const el of controls.querySelectorAll('button, select')) {
+					el.disabled = true;
+				}
+				if (icon && icon.hasAttribute('data-delete-target')) {
+					icon.outerHTML = scannerSpinner;
+					return;
+				}
+				const status = document.getElementById('scanner-status');
+				if (status) {
+					status.innerHTML = scannerSpinner;
+				}
+			}
+
+			function showCurrentTarget(id) {
+				const label = document.getElementById('scanner-current-label');
+				const text = labelForTarget(id);
+				if (label && text) {
+					label.textContent = text;
+				}
+			}
+
+			function fillBinarySelect(os) {
+				const select = document.getElementById('scanner-target');
+				const items = readScannerCatalog()[os] || [];
+				if (!select || items.length === 0) {
+					return select ? select.value : '';
+				}
+				const current = select.value;
+				const next = items.some((item) => item.id === current) ? current : items[0].id;
+				select.replaceChildren();
+				for (const item of items) {
+					const option = document.createElement('option');
+					option.value = item.id;
+					option.textContent = item.label;
+					if (item.id === next) {
+						option.selected = true;
+					}
+					select.appendChild(option);
+				}
+				showCurrentTarget(next);
+				return next;
+			}
+
 			document.getElementById('scanner-auto')?.addEventListener('click', (event) => {
 				const button = event.currentTarget;
+				if (button.disabled) {
+					return;
+				}
 				const auto = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', auto ? 'true' : 'false');
+				const manual = document.getElementById('scanner-manual');
+				if (manual) {
+					if (auto) {
+						manual.setAttribute('hidden', '');
+					} else {
+						manual.removeAttribute('hidden');
+					}
+				}
+				const controls = document.getElementById('scanner-controls');
+				const host = controls ? controls.getAttribute('data-host-target') : '';
+				const selected = document.getElementById('scanner-target');
+				showCurrentTarget(auto ? host : (selected ? selected.value : ''));
+				setScannerBusy();
 				vscode.postMessage({ type: 'scanner-set-auto', auto });
 			});
 
 			document.getElementById('scanner-os')?.addEventListener('change', (event) => {
-				vscode.postMessage({ type: 'scanner-set-os', os: event.currentTarget.value });
+				const select = event.currentTarget;
+				if (select.disabled) {
+					return;
+				}
+				fillBinarySelect(select.value);
+				setScannerBusy();
+				vscode.postMessage({ type: 'scanner-set-os', os: select.value });
 			});
 
 			document.getElementById('scanner-target')?.addEventListener('change', (event) => {
-				vscode.postMessage({ type: 'scanner-set-target', target: event.currentTarget.value });
+				const select = event.currentTarget;
+				if (select.disabled) {
+					return;
+				}
+				showCurrentTarget(select.value);
+				setScannerBusy();
+				vscode.postMessage({ type: 'scanner-set-target', target: select.value });
 			});
+
+			for (const button of document.querySelectorAll('[data-download-target]')) {
+				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					setScannerBusy(button);
+					vscode.postMessage({
+						type: 'scanner-download',
+						target: button.getAttribute('data-download-target'),
+					});
+				});
+			}
 
 			for (const button of document.querySelectorAll('[data-delete-target]')) {
 				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					setScannerBusy(button);
 					vscode.postMessage({
 						type: 'scanner-delete',
 						target: button.getAttribute('data-delete-target'),
@@ -907,8 +1105,18 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				});
 			}
 
-			document.getElementById('scanner-delete-all')?.addEventListener('click', () => {
-				vscode.postMessage({ type: 'scanner-delete-all' });
+			document.getElementById('highlights-visible')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				const visible = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', visible ? 'true' : 'false');
+				vscode.postMessage({ type: 'highlights-set-visible', visible });
+			});
+
+			document.getElementById('open-panel-on-startup')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				const enabled = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', enabled ? 'true' : 'false');
+				vscode.postMessage({ type: 'open-panel-on-startup', enabled });
 			});
 
 			window.addEventListener('message', (event) => {

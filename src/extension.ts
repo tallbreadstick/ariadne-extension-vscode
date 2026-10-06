@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { AriadneViewProvider } from './modules/presentation/AriadneViewProvider';
 import { runSession } from './modules/detection/bridge/iostream';
 import {
@@ -24,7 +24,11 @@ import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presenta
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
-import { buildFeedbackPanelHtml } from './modules/feedback/views/feedbackPanel.js';
+import {
+	askAriadneRequestId,
+	buildFeedbackPanelHtml,
+	type AskAriadneArtifact,
+} from './modules/feedback/views/feedbackPanel.js';
 import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
 import { buildTermsOfUseHtml } from './modules/feedback/views/termsOfUsePanel.js';
 import { buildPrivacyPolicyHtml } from './modules/feedback/views/privacyPolicyPanel.js';
@@ -36,9 +40,11 @@ import {
 } from './modules/feedback/settings/extensionSettings.js';
 import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
 import {
+	cachedScannerPath,
 	configureAriadneExecutable,
-	deleteAllDownloadedScanners,
 	deleteDownloadedScanner,
+	DownloadCancelled,
+	downloadReleaseAsset,
 	listDownloadedScannerTargets,
 	localExecutableOverride,
 	probeAriadneExecutable,
@@ -205,11 +211,13 @@ function buildVulnsHtml(
 	store: SessionStore,
 	signedIn: boolean,
 	scannerBroken = false,
+	loading = false,
 ): string {
 	return buildActiveVulnerabilitiesHtml(vulns, {
 		expandedKey: resolveExpandedVulnKey(vulns, store),
 		signedIn,
 		scannerBroken,
+		loading,
 	});
 }
 
@@ -250,6 +258,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let featuresUnlocked = false;
 	let scannerBroken = false;
 	let scannerChecked = false;
+	let scannerBusy = false;
+	let scannerBusyAction: 'download' | 'delete' | 'status' = 'status';
+	let highlightsVisible = context.globalState.get<boolean>('ariadne.highlightsVisible') !== false;
+	let openPanelOnStartup = context.globalState.get<boolean>('ariadne.openPanelOnStartup') !== false;
+	let applyHighlightVisibility: (visible: boolean) => void = () => undefined;
+	let startupLoading = true;
 	let acceptFindings = true;
 	let settingsView: AriadneViewProvider | undefined;
 	let startScanner: () => void = () => undefined;
@@ -273,20 +287,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			label: SCANNER_TARGET_LABELS[id],
 			downloaded: downloadedIds.has(id),
 		});
+		const hostTarget = hostScannerTarget(process.platform, process.arch);
 		return {
 			auto: prefs.auto,
 			os: prefs.os,
 			osOptions: SCANNER_OS_OPTIONS,
 			target: prefs.target,
+			activeTarget: prefs.auto ? hostTarget : prefs.target,
+			hostTarget,
 			binaries: targetsForOs(prefs.os).map(toOption),
 			downloaded: [...downloadedIds].map(toOption),
 			working: scannerChecked ? !scannerBroken : undefined,
 			overrideActive: localExecutableOverride() !== undefined,
+			busy: scannerBusy,
+			busyAction: scannerBusyAction,
+			highlightsVisible,
+			openPanelOnStartup,
 		};
 	};
 
 	const refreshSignInPanel = async (
 		override?: AuthPanelState,
+		options?: { skipQuota?: boolean },
 	): Promise<void> => {
 		const settings = getSidebarSettings();
 		let model: SignInPanelViewModel = {
@@ -295,7 +317,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			scanner: await loadScannerSettings(),
 		};
 
-		if (model.status === 'signed-in' && !override) {
+		if (model.status === 'signed-in' && !override && !options?.skipQuota) {
 			const token = await githubAuth.getAccessToken();
 			if (token) {
 				const usage = await fetchCopilotQuotaUsage(
@@ -592,12 +614,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const metrics = buildCurrentSessionMetrics();
 		sessionMetricsProvider.updateHtml(buildSessionMetricsHtml(metrics, {
 			signedIn: featuresUnlocked,
+			loading: startupLoading,
 		}));
 	}
 
-	let initialVulnsHtml = buildVulnsHtml([], store, false);
+	let initialVulnsHtml = buildVulnsHtml([], store, false, false, true);
 	let initialMetricsHtml = buildSessionMetricsHtml(buildCurrentSessionMetrics(), {
 		signedIn: false,
+		loading: true,
 	});
 
 	// Restore UI from lifecycle data if available
@@ -618,7 +642,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken),
+		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -632,6 +656,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	sessionMetricsProvider.setResolveHtml(() =>
 		buildSessionMetricsHtml(buildCurrentSessionMetrics(), {
 			signedIn: featuresUnlocked,
+			loading: startupLoading,
 		}),
 	);
 
@@ -644,13 +669,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		sessionMetricsProvider,
 	);
 
-	const saveScannerPreferences = async (next: ScannerPreferences): Promise<void> => {
+	const writeScannerPreferences = async (next: ScannerPreferences): Promise<void> => {
 		await context.globalState.update('ariadne.scannerPreferences', {
 			auto: next.auto,
 			os: next.os,
 			target: next.target,
 		});
-		await applyScannerSelection();
+	};
+
+	const runScannerChange = async (
+		work: () => Promise<void>,
+		action: 'download' | 'delete' | 'status' = 'status',
+	): Promise<void> => {
+		scannerBusy = true;
+		scannerBusyAction = action;
+		await refreshSignInPanel(undefined, { skipQuota: true });
+		try {
+			await work();
+		} finally {
+			scannerBusy = false;
+			scannerBusyAction = 'status';
+			await refreshSignInPanel(undefined, { skipQuota: true });
+		}
+	};
+
+	const saveScannerPreferences = async (next: ScannerPreferences): Promise<void> => {
+		await writeScannerPreferences(next);
+		await runScannerChange(() => applyScannerSelection());
 	};
 
 	const activeScannerTarget = (): string | undefined => {
@@ -693,35 +738,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
+			if (msg.type === 'scanner-download') {
+				const target = typeof msg.target === 'string' ? msg.target : '';
+				if (!isScannerTarget(target)) {
+					return;
+				}
+				const os = scannerOsForTarget(target);
+				if (!os) {
+					return;
+				}
+				await writeScannerPreferences({ auto: false, os, target });
+				await runScannerChange(async () => {
+					const outcome = await downloadReleaseAsset(target);
+					if (outcome === 'finished') {
+						await applyScannerSelection();
+					}
+				}, 'download');
+				return;
+			}
+
 			if (msg.type === 'scanner-delete') {
 				const target = typeof msg.target === 'string' ? msg.target : '';
 				if (!isScannerTarget(target)) {
 					return;
 				}
-				await deleteDownloadedScanner(target);
-				if (featuresUnlocked && activeScannerTarget() === target) {
-					session.kill();
-					markScannerBroken();
-				}
-				await refreshSignInPanel();
+				await runScannerChange(async () => {
+					await deleteDownloadedScanner(target);
+					if (featuresUnlocked && activeScannerTarget() === target) {
+						session.kill();
+						markScannerBroken();
+					}
+				}, 'delete');
 				return;
 			}
 
-			if (msg.type === 'scanner-delete-all') {
-				const confirmed = await vscode.window.showWarningMessage(
-					'Delete all downloaded Ariadne scanner binaries?',
-					{ modal: true },
-					'Delete all',
-				);
-				if (confirmed !== 'Delete all') {
-					return;
-				}
-				await deleteAllDownloadedScanners();
-				if (featuresUnlocked) {
-					session.kill();
-					markScannerBroken();
-				}
-				await refreshSignInPanel();
+			if (msg.type === 'highlights-set-visible') {
+				highlightsVisible = msg.visible === true;
+				await context.globalState.update('ariadne.highlightsVisible', highlightsVisible);
+				applyHighlightVisibility(highlightsVisible);
+				await refreshSignInPanel(undefined, { skipQuota: true });
+				return;
+			}
+
+			if (msg.type === 'open-panel-on-startup') {
+				openPanelOnStartup = msg.enabled === true;
+				await context.globalState.update('ariadne.openPanelOnStartup', openPanelOnStartup);
+				await refreshSignInPanel(undefined, { skipQuota: true });
 				return;
 			}
 
@@ -945,6 +1007,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			resolveWebviewView(webviewView) {
 				settingsView.resolveWebviewView(webviewView);
 				const openPanel = (): void => {
+					if (!openPanelOnStartup) {
+						return;
+					}
 					void openBottomPanel();
 				};
 				openPanel();
@@ -975,6 +1040,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// ── Diagnostic / inline highlight manager ───────────────────────────
 	const diagnosticManager = new DiagnosticManager(context);
+	applyHighlightVisibility = (visible) => diagnosticManager.setHighlightsVisible(visible);
+	diagnosticManager.setHighlightsVisible(highlightsVisible);
 	registerHoverProvider(context, diagnosticManager);
 
 	markScannerBroken = () => {
@@ -1004,14 +1071,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	};
 
 	applyScannerSelection = async () => {
+		const prefs = readScannerPreferencesFromConfig();
+		if (!localExecutableOverride() && !prefs.auto) {
+			const cached = await cachedScannerPath(prefs.target);
+			if (!cached) {
+				scannerChecked = true;
+				scannerBroken = true;
+				if (featuresUnlocked) {
+					session.kill();
+					markScannerBroken();
+				}
+				return;
+			}
+		}
 		if (featuresUnlocked) {
 			try {
 				acceptFindings = true;
 				await session.restart();
 				await confirmScannerProcess();
 			} catch (error: unknown) {
-				const message = error instanceof Error ? error.message : String(error);
-				vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				if (!(error instanceof DownloadCancelled)) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (message !== 'Ariadne: download failed.') {
+						vscode.window.showErrorMessage(`Ariadne: ${message}`);
+					}
+				}
 				markScannerBroken();
 			}
 		} else {
@@ -1022,8 +1106,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			} catch (error: unknown) {
 				scannerChecked = true;
 				scannerBroken = true;
-				const message = error instanceof Error ? error.message : String(error);
-				vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				if (!(error instanceof DownloadCancelled)) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (message !== 'Download the selected scanner binary from the Core section.'
+						&& message !== 'Ariadne: download failed.') {
+						vscode.window.showErrorMessage(`Ariadne: ${message}`);
+					}
+				}
 			}
 		}
 		await refreshSignInPanel();
@@ -1205,19 +1294,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			rulesLanguageRegistered = true;
 		}
 		void (async () => {
+			scannerBusy = true;
+			await refreshSignInPanel();
 			try {
 				await session.start();
 				await confirmScannerProcess();
 			} catch (error: unknown) {
-				const message = error instanceof Error ? error.message : String(error);
-				vscode.window.showErrorMessage(`Ariadne: ${message}`);
+				if (!(error instanceof DownloadCancelled)) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (message !== 'Download the selected scanner binary from the Core section.'
+						&& message !== 'Ariadne: download failed.') {
+						vscode.window.showErrorMessage(`Ariadne: ${message}`);
+					}
+				}
 				markScannerBroken();
+			} finally {
+				scannerBusy = false;
+				startupLoading = false;
+				activeVulnsProvider.updateHtml(
+					buildVulnsHtml(latestVulnerabilities, store, true, scannerBroken, false),
+				);
+				refreshSessionMetricsPanel();
+				await refreshSignInPanel();
 			}
-			refreshSessionMetricsPanel();
 			if (activeSession && !scannerBroken) {
 				startHourlyScanTimer();
 			}
-			await refreshSignInPanel();
 		})();
 	};
 
@@ -1246,6 +1348,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	void githubAuth.isAuthenticated().then(async (signedIn) => {
 		if (!signedIn) {
+			startupLoading = false;
+			activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, false));
+			refreshSessionMetricsPanel();
 			return;
 		}
 		startScanner();
@@ -1265,7 +1370,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		latestVulnerabilities = vulns;
 		scannerBroken = false;
 		scannerChecked = true;
-		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false));
+		startupLoading = false;
+		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 
 		// ── 2. Session Metrics panel (always updated on live scan) ──────
@@ -1874,24 +1980,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 
+	const resolveAskedVulnerability = (
+		target?: AskAriadneArtifact | string,
+		legacyTitle?: string,
+	): Vulnerability | undefined => {
+		if (target && typeof target === 'object') {
+			return latestVulnerabilities.find((item) =>
+				item.cwe === target.cwe
+				&& item.title === target.title
+				&& item.filePath === target.filePath
+				&& item.line === target.line
+			);
+		}
+		if (typeof target !== 'string' || typeof legacyTitle !== 'string') {
+			return undefined;
+		}
+		const matches = latestVulnerabilities.filter((item) =>
+			item.cwe === target && item.title === legacyTitle
+		);
+		return matches.length === 1 ? matches[0] : undefined;
+	};
+
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
-		async (cwe?: string, title?: string) => {
-			// Look up the vulnerability in the latest engine results first;
-			// fall back to the first item if no match.
-			const vuln =
-				latestVulnerabilities.find(
-					(item) => item.cwe === cwe || item.title === title,
-				) ?? latestVulnerabilities[0];
+		async (target?: AskAriadneArtifact | string, legacyTitle?: string) => {
+			const vuln = resolveAskedVulnerability(target, legacyTitle);
 
 			if (!vuln) {
 				vscode.window.showWarningMessage(
-					'Ariadne: No vulnerability data available yet. Wait for the engine to finish its first analysis.',
+					latestVulnerabilities.length === 0
+						? 'Ariadne: No vulnerability data available yet. Wait for the engine to finish its first analysis.'
+						: 'Ariadne: Open Ask Ariadne from the vulnerability you want explained.',
 				);
 				return;
 			}
 
+			const artifact: AskAriadneArtifact = {
+				cwe: vuln.cwe,
+				title: vuln.title,
+				filePath: vuln.filePath,
+				line: vuln.line,
+			};
+			const requestId = askAriadneRequestId(artifact);
 			const vulnMetadata = toVulnerabilityMetadata(vuln);
+			const sourcePath = isAbsolute(vuln.filePath)
+				? vuln.filePath
+				: join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', vuln.filePath);
+			const fileContent = getWorkspaceFileContent(sourcePath)
+				?? getWorkspaceFileContent(vuln.filePath)
+				?? '';
 
 			const isSignedIn = await githubAuth.isAuthenticated();
 			if (!isSignedIn) {
@@ -1912,21 +2049,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 			const panel = vscode.window.createWebviewPanel(
 				'ariadne.feedback',
-				'Ariadne: Explanation',
+				`Ariadne: ${vuln.title}`,
 				vscode.ViewColumn.Beside,
 				{ enableScripts: true },
 			);
-			panel.webview.html = buildFeedbackPanelHtml(vulnMetadata);
-
-			const activeEditor = vscode.window.activeTextEditor;
-			const activeFileContent = activeEditor?.document.getText() ?? '';
-			const activeFilePath = activeEditor?.document.uri.fsPath ?? '';
+			let panelOpen = true;
+			panel.onDidDispose(() => {
+				panelOpen = false;
+			});
+			panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId);
+			const deliver = (message: { type: string; requestId: string; finding?: FeedbackFinding; message?: string }): void => {
+				if (panelOpen) {
+					void panel.webview.postMessage(message);
+				}
+			};
 
 			try {
 				const requestBody = serializePayload(
 					vulnMetadata,
-					activeFileContent,
-					activeFilePath,
+					fileContent,
+					sourcePath,
 					DEFAULT_COPILOT_MODEL,
 				);
 				const rawResponse = await callLLM(requestBody, {
@@ -1945,13 +2087,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					...sections,
 				};
 
-				panel.webview.postMessage({ type: 'llm-result', finding });
+				deliver({ type: 'llm-result', requestId, finding });
 			} catch (error: unknown) {
 				const rawMessage =
 					error instanceof Error ? error.message : 'Unknown error';
 				console.error('[Ariadne] LLM pipeline error:', rawMessage);
-				panel.webview.postMessage({
+				deliver({
 					type: 'llm-error',
+					requestId,
 					message: sanitizeLlmError(rawMessage),
 				});
 			}
