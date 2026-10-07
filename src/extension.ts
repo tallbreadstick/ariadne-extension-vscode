@@ -491,6 +491,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		let recurringPatterns = 0;
 
 		const persistingMap = new Map<string, number>();
+		const typePersistingReportCount = new Map<string, number>();
 		const recurringMap = new Map<string, number>();
 		const resolvedMap = new Map<string, number>();
 		const improvingMap = new Map<string, ImprovingSubItem>();
@@ -523,6 +524,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				persistingPatterns++;
 				persistingMap.set(flc.type, (persistingMap.get(flc.type) ?? 0) + 1);
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
+				const repCount = flc.reportCount ?? Math.max(flc.confirmationCount ?? 0, 2);
+				typePersistingReportCount.set(
+					flc.type,
+					Math.max(typePersistingReportCount.get(flc.type) ?? 0, repCount),
+				);
 			} else if (flc.lifecycleState === 'improving') {
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
 			}
@@ -554,7 +560,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 
 		const persistingItems = persistingMap.size > 0
-			? Array.from(persistingMap.entries()).map(([type, instances]) => ({ type, instances }))
+			? Array.from(persistingMap.entries()).map(([type, instances]) => {
+				const reportCount = typePersistingReportCount.get(type) ?? 2;
+				const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+				return {
+					type,
+					instances,
+					reportCount,
+					subtitle: `Present since ${countStr}`,
+				};
+			})
 			: undefined;
 		const recurringItems = recurringMap.size > 0
 			? Array.from(recurringMap.entries()).map(([type, instances]) => ({ type, instances }))
@@ -1229,6 +1244,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				getWorkspaceFileContent,
 			);
 			lifecycles = result.lifecycles;
+
+			// Increment reportCount for persisting findings observed in this successful full report
+			for (const flc of lifecycles) {
+				const isObservedInRollover = observed.some(o => o.logicalFingerprint === flc.logicalFingerprint);
+				if (isObservedInRollover && (flc.lifecycleState === 'persisting' || flc.isCommentedOut)) {
+					const current = flc.reportCount ?? Math.max((flc.confirmationCount ?? 1) - 1, 2);
+					flc.reportCount = current + 1;
+				}
+			}
+
 			void store.saveFindingLifecycles(lifecycles);
 
 			// Record hourly checkpoint on active session without ending or resetting the session

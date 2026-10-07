@@ -1166,4 +1166,34 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			assert.strictEqual(common.size, 0, 'Recurring finding present in 2 of 3 sessions should NOT reach K=3');
 		});
 	});
+
+	describe('5. Terminology Refinement & Persisting Patterns Subtitle', () => {
+		it('renders "Full Report" header and persisting items subtitle', () => {
+			const metrics: SessionMetrics = {
+				critical: 1,
+				high: 2,
+				medium: 0,
+				low: 0,
+				trends: {
+					persistingPatterns: 1,
+					improvingTrends: 0,
+					resolvedThisSession: 0,
+					recurringPatterns: 0,
+					persistingItems: [
+						{ type: 'SQL Injection', instances: 2, subtitle: 'Present since 3 reports' },
+						{ type: 'XSS', instances: 1 },
+					],
+				},
+				totalSessionsAnalyzed: 2,
+			};
+
+			const html = buildSessionMetricsHtml(metrics);
+			assert.ok(html.includes('Full Report'), 'Header should display "Full Report"');
+			assert.ok(!html.includes('Full scan'), 'Header should not display "Full scan"');
+			assert.ok(html.includes('Present since 3 reports'), 'Custom persisting subtitle should be rendered');
+			assert.ok(html.includes('Present since 2 reports'), 'Default persisting subtitle should be rendered for items without custom subtitle');
+			assert.ok(html.includes('persisting-subtitle'), 'CSS class for persisting subtitle should be present');
+		});
+	});
 });
+

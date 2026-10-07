@@ -42,6 +42,10 @@ export interface TrendSubItem {
 	type: string;
 	/** Current instance count. */
 	instances: number;
+	/** Optional number of reports or sessions this pattern has persisted across. */
+	reportCount?: number;
+	/** Optional subtitle shown alongside the finding (e.g. "Present since 2 reports"). */
+	subtitle?: string;
 }
 
 /** A single sub-item entry for an improving trend row, with progress label. */

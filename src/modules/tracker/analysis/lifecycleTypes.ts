@@ -209,6 +209,12 @@ export interface FindingLifecycleRecord {
 	 * source file. Prevents false transition to 'resolved' and keeps it 'persisting'.
 	 */
 	isCommentedOut?: boolean;
+
+	/**
+	 * Number of successful full reports across which this finding has persisted.
+	 * Incremented after each successful full report where the finding remains active.
+	 */
+	reportCount?: number;
 }
 
 // ══════════════════════════════════════════════════════════════════════

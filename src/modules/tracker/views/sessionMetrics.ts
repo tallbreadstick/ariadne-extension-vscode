@@ -71,11 +71,13 @@ const COMMON_VULN_SVG =
 		<circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
 	</svg>`;
 
-const FULL_SCAN_SVG =
+const FULL_REPORT_SVG =
 	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2m-10 0H5a2 2 0 01-2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 		<line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 	</svg>`;
+
+const FULL_SCAN_SVG = FULL_REPORT_SVG;
 
 const NOTIFICATION_ICON_SVG =
 	`<svg class="notif-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -105,8 +107,26 @@ function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): s
 	return items.map((item) => /* html */ `
 		<div class="trend-sub-item">
 			<span class="sub-label">${item.type}</span>
+			${item.subtitle ? `<span class="sub-subtitle">${item.subtitle}</span>` : ''}
 			<span class="sub-count">${item.instances}</span>
 		</div>`).join('');
+}
+
+function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: number): string {
+	if (!items || items.length === 0) {
+		return '';
+	}
+	return items.map((item) => {
+		const reportCount = item.reportCount ?? 2;
+		const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+		const subtitleText = item.subtitle ?? `Present since ${countStr}`;
+		return /* html */ `
+			<div class="trend-sub-item">
+				<span class="sub-label">${item.type}</span>
+				<span class="sub-subtitle persisting-subtitle">${subtitleText}</span>
+				<span class="sub-count">${item.instances}</span>
+			</div>`;
+	}).join('');
 }
 
 function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: number): string {
@@ -286,13 +306,15 @@ const CSS = /* css */ `
 
 	.dashboard { display: grid; gap: 16px; }
 
-	/* ── Full scan section ── */
+	/* ── Full report section ── */
+	.full-report-section,
 	.full-scan-section {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 	}
 
+	.full-report-header,
 	.full-scan-header {
 		display: flex;
 		align-items: center;
@@ -455,6 +477,16 @@ const CSS = /* css */ `
 		font-size: 12px;
 		font-weight: 500;
 		white-space: nowrap;
+	}
+
+	.sub-subtitle {
+		font-size: 12px;
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.persisting-subtitle {
+		color: var(--muted);
 	}
 
 	.progress-some  { color: var(--orange); }
@@ -783,7 +815,7 @@ export function buildSessionMetricsHtml(
 		<section class="signin-state" role="status">
 			<p class="signin-title">Sign in required</p>
 			<p class="signin-copy">
-				GitHub sign-in is needed to run scans and show session metrics for
+				GitHub sign-in is needed to generate reports and show session metrics for
 				this workspace.
 			</p>
 			<a class="signin-cta" href="command:ariadne-extension-vscode.openSignInPanel">Sign in to Ariadne</a>
@@ -794,7 +826,7 @@ export function buildSessionMetricsHtml(
 
 	const { critical, high, medium, low, trends } = metrics;
 
-	const persistingSubItems = buildBasicSubItems(trends.persistingItems, trends.persistingPatterns);
+	const persistingSubItems = buildPersistingSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
 	const recurringSubItems = buildBasicSubItems(trends.recurringItems, trends.recurringPatterns);
 	const resolvedSubItems = buildBasicSubItems(trends.resolvedItems, trends.resolvedThisSession);
@@ -809,10 +841,10 @@ export function buildSessionMetricsHtml(
 	</head>
 	<body>
 		<section class="dashboard">
-			<div class="full-scan-section">
-				<div class="full-scan-header">
-					${FULL_SCAN_SVG}
-					<span>Full scan</span>
+			<div class="full-report-section">
+				<div class="full-report-header">
+					${FULL_REPORT_SVG}
+					<span>Full Report</span>
 				</div>
 				<div class="metrics-grid">
 					${buildMetricCard('Critical Issues', critical, 'critical')}
