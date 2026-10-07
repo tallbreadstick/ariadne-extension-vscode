@@ -170,7 +170,7 @@ export class DiagnosticManager {
         range: new vscode.Range(line, end, line, end),
         renderOptions: {
           after: {
-            contentText: `  ${lineFindings.map((f) => f.vulnerabilityName).join("  ·  ")}`,
+            contentText: `  [Ariadne] ${lineFindings.map((f) => f.vulnerabilityName).join("  ·  ")}`,
             color: SEVERITY_COLOR[lead.severity],
             fontStyle: "italic",
             margin: "0 0 0 16px",

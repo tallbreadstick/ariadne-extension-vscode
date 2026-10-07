@@ -1030,6 +1030,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await refreshSignInPanel();
 				if (await githubAuth.isAuthenticated()) {
 					startScanner();
+					void openBottomPanel();
 				} else {
 					stopScanner();
 				}
@@ -2122,6 +2123,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		triggerHourlyRollover,
 		debugSimulateAbruptRecovery,
 	);
+
+	// ── First-run Onboarding & Welcome Orientation ───────────────────────
+	const hasSeenWelcome = context.globalState.get<boolean>('ariadne.hasSeenWelcome');
+	if (!hasSeenWelcome) {
+		void (async () => {
+			const choice = await vscode.window.showInformationMessage(
+				'Welcome to Ariadne! We are actively monitoring your Java code for security vulnerabilities. Ariadne provides guided conceptual explanations to help you fix issues independently.',
+				'Open Panel (Ctrl+J)',
+				'Got it',
+			);
+			if (choice === 'Open Panel (Ctrl+J)') {
+				void openBottomPanel();
+			}
+			await context.globalState.update('ariadne.hasSeenWelcome', true);
+		})();
+	}
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
 	deactivationHandler = async (): Promise<void> => {
