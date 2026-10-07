@@ -162,4 +162,6 @@ export interface SessionMetrics {
 	commonVulnerabilities?: CommonVulnerabilityItem[];
 	/** Total sessions analyzed (completed + active). */
 	totalSessionsAnalyzed?: number;
+	/** Optional human-readable session label or badge (e.g. "Session 1"). */
+	sessionLabel?: string;
 }

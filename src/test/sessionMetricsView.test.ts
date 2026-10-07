@@ -82,4 +82,45 @@ describe('Session Metrics Terminology & Subtitles', () => {
 		assert.ok(html.includes('generate reports'), 'Sign-in prompt should mention generating reports');
 		assert.ok(!html.includes('run scans'), 'Sign-in prompt should not mention running scans');
 	});
+
+	it('renders Session Metrics header and session badge with current session number', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+			},
+			sessionLabel: 'Session 2',
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('full-report-header'), 'Should render full report header container');
+		assert.ok(html.includes('Full Report'), 'Should render Full Report title');
+		assert.ok(html.includes('session-badge'), 'Should render session badge');
+		assert.ok(html.includes('SESSION 2'), 'Should render SESSION 2 badge text');
+		assert.ok(html.includes('session-dot'), 'Should render bullet dot');
+	});
+
+	it('defaults to SESSION 1 badge when sessionLabel is omitted', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+			},
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('SESSION 1'), 'Should default to SESSION 1');
+	});
 });

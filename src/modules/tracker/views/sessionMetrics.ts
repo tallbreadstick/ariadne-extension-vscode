@@ -12,6 +12,15 @@ import type { Severity } from '../../presentation/panelTypes.js';
 import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 import { buildStartupLoadingHtml } from '../../presentation/views/startupLoading.js';
 
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
+
 // ── SVGs ─────────────────────────────────────────────────────────────
 
 const TREND_CHART_SVG =
@@ -318,12 +327,41 @@ const CSS = /* css */ `
 	.full-scan-header {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		justify-content: space-between;
+		gap: 8px;
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
+	}
+
+	.full-report-header-left {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* ── Session Context Badge ── */
+	.session-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.3px;
+		padding: 2px 8px;
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
+		color: var(--vscode-badge-foreground, var(--text));
+		border: 1px solid var(--border);
+		text-transform: uppercase;
+	}
+
+	.session-dot {
+		font-size: 8px;
+		color: var(--accent);
+		line-height: 1;
 	}
 
 	.metrics-grid {
@@ -825,6 +863,7 @@ export function buildSessionMetricsHtml(
 	}
 
 	const { critical, high, medium, low, trends } = metrics;
+	const sessionLabel = (metrics.sessionLabel || 'Session 1').toUpperCase();
 
 	const persistingSubItems = buildPersistingSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
@@ -843,8 +882,11 @@ export function buildSessionMetricsHtml(
 		<section class="dashboard">
 			<div class="full-report-section">
 				<div class="full-report-header">
-					${FULL_REPORT_SVG}
-					<span>Full Report</span>
+					<div class="full-report-header-left">
+						${FULL_REPORT_SVG}
+						<span>Full Report</span>
+					</div>
+					<span class="session-badge"><span class="session-dot">●</span> ${escapeHtml(sessionLabel)}</span>
 				</div>
 				<div class="metrics-grid">
 					${buildMetricCard('Critical Issues', critical, 'critical')}

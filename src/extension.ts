@@ -433,6 +433,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const graduationHistory = store.loadGraduationHistory();
 		const totalSessionsAnalyzed = completedSessions.length + (activeSession ? 1 : 0);
 
+		let sessionNum = 1;
+		if (activeSession) {
+			const match = /^session-0*(\d+)$/i.exec(activeSession.sessionId.trim());
+			if (match) {
+				sessionNum = parseInt(match[1], 10);
+			} else {
+				sessionNum = completedSessions.length + 1;
+			}
+		} else {
+			sessionNum = Math.max(completedSessions.length + 1, (store.loadSessionMeta().sessionIdSeed ?? 0) + 1);
+		}
+		const sessionLabel = `Session ${sessionNum}`;
+
 		const commonVulns = computeCommonVulnerabilities(
 			completedSessions,
 			activeSession,
@@ -441,7 +454,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		);
 
 		if (latestSessionAnalysis) {
-			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed);
+			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed, sessionLabel);
 			if (latestVulnerabilities.length > 0) {
 				metrics.critical = latestVulnerabilities.filter(v => v.severity === 'critical').length;
 				metrics.high = latestVulnerabilities.filter(v => v.severity === 'high').length;
@@ -622,6 +635,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			notifications: undefined,
 			commonVulnerabilities: commonItems.length > 0 ? commonItems : undefined,
 			totalSessionsAnalyzed,
+			sessionLabel,
 		};
 	}
 
