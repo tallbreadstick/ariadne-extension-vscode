@@ -60,4 +60,17 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(!html.includes('id="active-filter-bar"'), 'Active filter bar should be removed');
 		assert.ok(!html.includes('id="empty-clear-btn"'), 'Empty clear button should be removed');
 	});
+
+	it('renders sticky header with total count and "Explain Vulnerability" button in finding cards', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
+		assert.ok(html.includes('class="active-vuln-header"'), 'Sticky header missing');
+		assert.ok(html.includes('Active Vulnerabilities'), 'Header title missing');
+		assert.ok(html.includes('id="total-vuln-badge"'), 'Total badge missing');
+		assert.ok(html.includes('2 Issues Total'), 'Total badge count missing');
+		assert.ok(html.includes('btn-explain'), 'Explain Vulnerability button class missing');
+		assert.ok(html.includes('Explain Vulnerability'), 'Explain Vulnerability button label missing');
+		assert.ok(html.includes('sparkle-icon'), 'Sparkle icon missing');
+		assert.ok(!html.includes('Ask Ariadne</span>'), 'Ask Ariadne label should be replaced');
+	});
 });
+
