@@ -151,7 +151,7 @@
         {
           "type": "webview",
           "id": "ariadne.panel.activeVulnerabilities",
-          "name": "ARIADNE (ACTIVE VULNERABILITIES)",
+          "name": "ACTIVE VULNERABILITIES",
           "group": "left",
           "icon": "$(shield)"
         },

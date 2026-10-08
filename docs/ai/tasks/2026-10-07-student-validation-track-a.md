@@ -23,7 +23,7 @@
 
 - status: in progress
 - current owner: Abel
-- next action: Implement Active Vulnerabilities header redesign (gamified progress bar and filter drawer) once aligned with Ervin
+- next action: Implement Step 2 (Session resolution progress and next focus target modeling)
 - blockers: none
 - last checked: 2026-10-08
 
@@ -33,6 +33,7 @@
 - [x] Task A2: Reword hover popup CTA to code-pill button with `$(lightbulb)` icon in HoverProvider.ts
 - [x] Task A3: Update status bar text to single authoritative total (`$(shield) Ariadne: N Issues`) and click command in statusBar.ts
 - [x] Task A4: Add auto-open panel on sign-in and first-run welcome onboarding toast in extension.ts
+- [x] Task A5: Move search bar into filter drawer, rename tab to ACTIVE VULNERABILITIES, and align header with Live Scan badge
 - [x] Validation: Typecheck and lint (`npm run check-types`, `npm run lint`, `npm run compile`) passed with 0 errors
 
 ## Scope

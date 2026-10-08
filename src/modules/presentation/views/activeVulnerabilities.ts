@@ -104,6 +104,11 @@ const SPARKLE_SVG =
 		<path d="M7.5 0.75a.75.75 0 0 1 .7.49l1.32 3.65 3.65 1.32a.75.75 0 0 1 0 1.4l-3.65 1.32-1.32 3.65a.75.75 0 0 1-1.4 0L5.48 8.93 1.83 7.61a.75.75 0 0 1 0-1.4l3.65-1.32 1.32-3.65a.75.75 0 0 1 .7-.49zm5.25 8.25a.5.5 0 0 1 .47.33l.66 1.83 1.83.66a.5.5 0 0 1 0 .94l-1.83.66-.66 1.83a.5.5 0 0 1-.94 0l-.66-1.83-1.83-.66a.5.5 0 0 1 0-.94l1.83-.66.66-1.83a.5.5 0 0 1 .47-.33z"/>
 	</svg>`;
 
+const SHIELD_HEADER_SVG =
+	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+	</svg>`;
+
 // ── Card builder ──────────────────────────────────────────────────────
 
 function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
@@ -224,18 +229,57 @@ const CSS = /* css */ `
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 12px;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--muted);
+        letter-spacing: 0.04em;
         padding-bottom: 10px;
         margin-bottom: 10px;
         border-bottom: 1px solid var(--border);
     }
 
-    .active-vuln-header h3 {
+    .active-vuln-header-left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .active-vuln-header-left h3 {
         margin: 0;
-        font-size: 13px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+    }
+
+    .section-icon {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+    }
+
+    .live-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
         font-weight: 600;
-        color: var(--text);
-        letter-spacing: 0.2px;
+        letter-spacing: 0.3px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
+        color: var(--vscode-badge-foreground, var(--text));
+        border: 1px solid var(--border);
+        text-transform: uppercase;
+    }
+
+    .live-dot {
+        font-size: 8px;
+        color: #4EC9B0;
+        line-height: 1;
     }
 
     .total-badge {
@@ -262,9 +306,10 @@ const CSS = /* css */ `
     }
 
     .toolbar-row {
-        display: grid;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         gap: 8px;
-		grid-template-columns: minmax(0, 1fr) auto;
     }
 
 	.search-wrap {
@@ -353,17 +398,21 @@ const CSS = /* css */ `
 
 	.filter-toggle {
 		position: relative;
-		display: inline-grid;
-		place-items: center;
-		width: 32px;
-		min-width: 32px;
-		padding: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 28px;
+		padding: 0 10px;
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		background: var(--vscode-button-secondaryBackground, var(--card));
 		color: var(--vscode-button-secondaryForeground, var(--text));
 		cursor: pointer;
+		font-family: inherit;
+		font-size: 11px;
+		font-weight: 500;
 		transition: background 0.15s ease-out, border-color 0.15s ease-out;
+		white-space: nowrap;
 	}
 
 	.filter-toggle:hover,
@@ -382,8 +431,14 @@ const CSS = /* css */ `
 	}
 
 	.filter-icon {
-		width: 16px;
-		height: 16px;
+		width: 14px;
+		height: 14px;
+		flex-shrink: 0;
+	}
+
+	.filter-toggle-label {
+		font-size: 11px;
+		font-weight: 500;
 	}
 
 	.filter-badge {
@@ -570,7 +625,11 @@ const CSS = /* css */ `
 
 	.filter-menu-footer {
 		display: flex;
-		justify-content: flex-end;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding-top: 6px;
+		border-top: 1px solid var(--border);
 	}
 
 	.reset-filters {
@@ -949,6 +1008,22 @@ function buildToolbar(vulns: Vulnerability[]): string {
 	return /* html */ `
 		<div class="toolbar">
 			<div class="toolbar-row">
+				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
+				<button
+					class="filter-toggle"
+					type="button"
+					id="filter-toggle"
+					aria-controls="filter-menu"
+					aria-expanded="false"
+					title="Filter and search vulnerabilities"
+					aria-label="Filter and search vulnerabilities"
+				>
+					${FILTER_SVG}
+					<span class="filter-toggle-label">Filter &amp; Search</span>
+					<span class="filter-badge" id="filter-badge" hidden>0</span>
+				</button>
+			</div>
+			<div class="filter-menu" id="filter-menu" aria-hidden="true">
 				<div class="search-wrap">
 					${SEARCH_SVG}
 					<input
@@ -969,20 +1044,6 @@ function buildToolbar(vulns: Vulnerability[]): string {
 						${CLOSE_SVG}
 					</button>
 				</div>
-				<button
-					class="filter-toggle"
-					type="button"
-					id="filter-toggle"
-					aria-controls="filter-menu"
-					aria-expanded="false"
-					title="Show filters"
-					aria-label="Show filters"
-				>
-					${FILTER_SVG}
-					<span class="filter-badge" id="filter-badge" hidden>0</span>
-				</button>
-			</div>
-			<div class="filter-menu" id="filter-menu" aria-hidden="true">
 				<fieldset class="filter-fieldset">
 					<legend class="filter-legend">Severity</legend>
 					<div class="chip-row" role="group" aria-label="Filter by severity">
@@ -1004,12 +1065,12 @@ function buildToolbar(vulns: Vulnerability[]): string {
 					</label>
 				</div>
 				<div class="filter-menu-footer">
+					<div class="results-meta" id="results-meta" aria-live="polite">Showing ${vulns.length} of ${vulns.length} issues</div>
 					<button class="reset-filters" type="button" id="reset-filters-btn" disabled>
 						Reset filters
 					</button>
 				</div>
 			</div>
-			<div class="results-meta" id="results-meta" aria-live="polite">Live scan • ${vulns.length} vulnerabilit${vulns.length === 1 ? 'y' : 'ies'}</div>
 		</div>`;
 }
 
@@ -1099,8 +1160,11 @@ export function buildActiveVulnerabilitiesHtml(
 	<body>
 		<div class="sticky-top-bar">
 			<header class="active-vuln-header">
-				<h3>Active Vulnerabilities</h3>
-				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
+				<div class="active-vuln-header-left">
+					${SHIELD_HEADER_SVG}
+					<h3>Active Vulnerabilities</h3>
+				</div>
+				<span class="live-badge" id="live-scan-badge"><span class="live-dot">●</span> Live Scan</span>
 			</header>
 			${buildToolbar(vulns)}
 		</div>
@@ -1224,8 +1288,8 @@ export function buildActiveVulnerabilitiesHtml(
 
 					if (resultsMeta) {
 						resultsMeta.textContent = visibleCount === totalCount
-							? 'Live scan • ' + totalCount + ' vulnerabilit' + (totalCount === 1 ? 'y' : 'ies')
-							: 'Live scan • Showing ' + visibleCount + ' of ' + totalCount;
+							? 'Showing ' + totalCount + ' of ' + totalCount + ' issues'
+							: 'Showing ' + visibleCount + ' of ' + totalCount + ' issues';
 					}
 
 					const totalVulnBadge = document.getElementById('total-vuln-badge');

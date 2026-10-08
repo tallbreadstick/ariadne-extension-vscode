@@ -65,6 +65,8 @@ describe('Active Vulnerabilities filter menu', () => {
 		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
 		assert.ok(html.includes('class="active-vuln-header"'), 'Sticky header missing');
 		assert.ok(html.includes('Active Vulnerabilities'), 'Header title missing');
+		assert.ok(html.includes('id="live-scan-badge"'), 'Live scan badge missing');
+		assert.ok(html.includes('Live Scan'), 'Live Scan label missing');
 		assert.ok(html.includes('id="total-vuln-badge"'), 'Total badge missing');
 		assert.ok(html.includes('2 Issues Total'), 'Total badge count missing');
 		assert.ok(html.includes('btn-explain'), 'Explain Vulnerability button class missing');
