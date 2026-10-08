@@ -23,7 +23,7 @@
 
 - status: in progress
 - current owner: Abel
-- next action: Implement Step 2 (Session resolution progress and next focus target modeling)
+- next action: Test and validate integrated features across active workspace
 - blockers: none
 - last checked: 2026-10-08
 
@@ -34,6 +34,7 @@
 - [x] Task A3: Update status bar text to single authoritative total (`$(shield) Ariadne: N Issues`) and click command in statusBar.ts
 - [x] Task A4: Add auto-open panel on sign-in and first-run welcome onboarding toast in extension.ts
 - [x] Task A5: Move search bar into filter drawer, rename tab to ACTIVE VULNERABILITIES, and align header with Live Scan badge
+- [x] Task A6: Add real-time session progress bar (`X of Y Resolved`) and Next Focus recommendation chip
 - [x] Validation: Typecheck and lint (`npm run check-types`, `npm run lint`, `npm run compile`) passed with 0 errors
 
 ## Scope
