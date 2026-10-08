@@ -95,6 +95,26 @@ export function determineNextFocus(
 	};
 }
 
+/** Formats an urgent, actionable tooltip for the Next Focus recommendation chip. */
+export function buildNextFocusTooltip(target: NextFocusTarget): string {
+	const loc = `${target.vuln.filePath}:${target.vuln.line}`;
+	if (target.isCommonHabit) {
+		return `Recurring Habit (${capitalize(target.vuln.severity)}) — Repeated pattern detected in your coding habits. Address ${target.vuln.title} at ${loc} to break the cycle.`;
+	}
+	switch (target.vuln.severity) {
+		case 'critical':
+			return `Critical Risk — Address ${target.vuln.title} immediately at ${loc} to protect your code.`;
+		case 'high':
+			return `High Priority — Vulnerability needs prompt attention at ${loc} (${target.vuln.title}).`;
+		case 'medium':
+			return `Medium Priority — Review and resolve ${target.vuln.title} at ${loc}.`;
+		case 'low':
+			return `Low Priority — Resolve ${target.vuln.title} at ${loc} when convenient.`;
+		default:
+			return `Fix ${target.vuln.title} at ${loc}`;
+	}
+}
+
 /** Stable key for accordion persistence across scans and workspace reopens. */
 export function buildVulnKey(vuln: Vulnerability): string {
 	return `${vuln.cwe}|${vuln.filePath}|${vuln.line}|${vuln.title}`;
@@ -193,8 +213,8 @@ const VICTORY_ICON_SVG =
 		<path d="M5.5 14.5h5"/>
 	</svg>`;
 
-const FOCUS_ICON_SVG =
-	`<svg class="focus-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+const FOCUS_ICON_SVG = (severity?: Severity) =>
+	`<svg class="focus-icon${severity ? ' ' + severity : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 		<circle cx="8" cy="8" r="6"/>
 		<circle cx="8" cy="8" r="2.25"/>
 		<path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>
@@ -486,11 +506,16 @@ const CSS = /* css */ `
         flex-shrink: 0;
     }
 
+    .focus-icon.critical { color: var(--critical, #ff5370); }
+    .focus-icon.high { color: var(--high, #ff9e64); }
+    .focus-icon.medium { color: var(--medium, #ffcb6b); }
+    .focus-icon.low { color: var(--low, #82aaff); }
+
     .next-focus-chip {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 3px 8px;
+        padding: 3px 10px;
         border-radius: 4px;
         background: color-mix(in srgb, var(--accent, #46d5c4) 10%, var(--card));
         border: 1px solid color-mix(in srgb, var(--accent, #46d5c4) 30%, var(--border));
@@ -504,9 +529,43 @@ const CSS = /* css */ `
         transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
     }
 
-    .next-focus-chip:hover {
-        background: color-mix(in srgb, var(--accent, #46d5c4) 20%, var(--card));
-        border-color: var(--accent, #46d5c4);
+    .next-focus-chip.critical {
+        background: color-mix(in srgb, var(--critical, #ff5370) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--critical, #ff5370) 50%, var(--border));
+    }
+    .next-focus-chip.critical:hover {
+        background: color-mix(in srgb, var(--critical, #ff5370) 25%, var(--card));
+        border-color: var(--critical, #ff5370);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip.high {
+        background: color-mix(in srgb, var(--high, #ff9e64) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--high, #ff9e64) 50%, var(--border));
+    }
+    .next-focus-chip.high:hover {
+        background: color-mix(in srgb, var(--high, #ff9e64) 25%, var(--card));
+        border-color: var(--high, #ff9e64);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip.medium {
+        background: color-mix(in srgb, var(--medium, #ffcb6b) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--medium, #ffcb6b) 50%, var(--border));
+    }
+    .next-focus-chip.medium:hover {
+        background: color-mix(in srgb, var(--medium, #ffcb6b) 25%, var(--card));
+        border-color: var(--medium, #ffcb6b);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip.low {
+        background: color-mix(in srgb, var(--low, #82aaff) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--low, #82aaff) 50%, var(--border));
+    }
+    .next-focus-chip.low:hover {
+        background: color-mix(in srgb, var(--low, #82aaff) 25%, var(--card));
+        border-color: var(--low, #82aaff);
         transform: translateY(-0.5px);
     }
 
@@ -521,46 +580,6 @@ const CSS = /* css */ `
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-    }
-
-    .focus-badge {
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-        padding: 2px 6px;
-        border-radius: 3px;
-        flex-shrink: 0;
-    }
-
-    .focus-badge.habit {
-        background: color-mix(in srgb, #e09850 25%, transparent);
-        color: #e09850;
-        border: 1px solid color-mix(in srgb, #e09850 45%, transparent);
-    }
-
-    .focus-badge.critical {
-        background: color-mix(in srgb, var(--critical) 25%, transparent);
-        color: var(--critical);
-        border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent);
-    }
-
-    .focus-badge.high {
-        background: color-mix(in srgb, var(--high) 25%, transparent);
-        color: var(--high);
-        border: 1px solid color-mix(in srgb, var(--high) 45%, transparent);
-    }
-
-    .focus-badge.medium {
-        background: color-mix(in srgb, var(--medium) 25%, transparent);
-        color: var(--medium);
-        border: 1px solid color-mix(in srgb, var(--medium) 45%, transparent);
-    }
-
-    .focus-badge.low {
-        background: color-mix(in srgb, var(--low) 25%, transparent);
-        color: var(--low);
-        border: 1px solid color-mix(in srgb, var(--low) 45%, transparent);
     }
 
     @keyframes focusPulse {
@@ -1405,20 +1424,17 @@ function buildSessionProgressSection(
 		? /* html */ `
 			<div class="next-focus-row">
 				<span class="next-focus-label">
-					${FOCUS_ICON_SVG}
+					${FOCUS_ICON_SVG(nextFocus.vuln.severity)}
 					<span>Next Focus:</span>
 				</span>
 				<button
-					class="next-focus-chip"
+					class="next-focus-chip ${nextFocus.vuln.severity}"
 					type="button"
 					data-vuln-key="${encodeURIComponent(buildVulnKey(nextFocus.vuln))}"
-					title="Focus ${escapeAttr(nextFocus.vuln.title)} (${capitalize(nextFocus.vuln.severity)}) at ${escapeAttr(nextFocus.vuln.filePath)} : Line ${nextFocus.vuln.line}"
+					title="${escapeAttr(buildNextFocusTooltip(nextFocus))}"
 					aria-label="Focus ${escapeAttr(nextFocus.vuln.title)}"
 				>
 					<span class="focus-title">${escapeHtml(nextFocus.vuln.title)}</span>
-					<span class="focus-badge ${nextFocus.vuln.severity}">
-						${capitalize(nextFocus.vuln.severity)}
-					</span>
 				</button>
 			</div>`
 		: '';

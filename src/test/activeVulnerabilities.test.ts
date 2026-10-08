@@ -136,13 +136,16 @@ describe('Session Progress Bar & Victory State', () => {
 		assert.ok(html.includes('50%'), 'Percentage calculation missing');
 		assert.ok(html.includes('next-focus-chip'), 'Next focus chip missing');
 		assert.ok(html.includes('Next Focus:'), 'Next focus label missing');
-		assert.ok(html.includes('class="focus-icon"'), 'Focus SVG icon missing');
+		assert.ok(html.includes('focus-icon'), 'Focus SVG icon missing');
 		assert.ok(html.includes('class="progress-icon"'), 'Progress SVG icon missing');
 		assert.ok(!html.includes('🎯'), 'Emoji 🎯 should not be present');
 		assert.ok(!html.includes('⚡'), 'Emoji ⚡ should not be present');
 		assert.ok(!html.includes('class="focus-loc"'), 'File path should not be displayed in next focus chip');
 		assert.ok(!html.includes('focus-arrow'), 'Arrow icon should not be present in next focus chip');
 		assert.ok(!html.includes('→'), 'Arrow character should not be present in next focus chip');
+		assert.ok(html.includes('class="next-focus-chip critical"'), 'Next focus chip should have severity class');
+		assert.ok(!html.includes('class="focus-badge"'), 'Explicit severity badge should be removed from chip');
+		assert.ok(html.includes('Critical Risk — Address'), 'Tooltip should be urgent and actionable');
 	});
 
 	it('renders victory state when all issues tracked in session are resolved', () => {
