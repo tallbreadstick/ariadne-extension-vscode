@@ -582,14 +582,30 @@ const CSS = /* css */ `
         text-overflow: ellipsis;
     }
 
+    .vuln-card {
+        --pulse-color: var(--accent, #46d5c4);
+    }
+    .vuln-card[data-severity="critical"] {
+        --pulse-color: var(--critical, #ff5370);
+    }
+    .vuln-card[data-severity="high"] {
+        --pulse-color: var(--high, #ff9e64);
+    }
+    .vuln-card[data-severity="medium"] {
+        --pulse-color: var(--medium, #ffcb6b);
+    }
+    .vuln-card[data-severity="low"] {
+        --pulse-color: var(--low, #82aaff);
+    }
+
     @keyframes focusPulse {
         0% {
-            box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #46d5c4) 70%, transparent);
-            border-color: var(--accent, #46d5c4);
+            box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-color) 75%, transparent);
+            border-color: var(--pulse-color);
         }
         50% {
-            box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #46d5c4) 40%, transparent);
-            border-color: var(--accent, #46d5c4);
+            box-shadow: 0 0 0 5px color-mix(in srgb, var(--pulse-color) 45%, transparent);
+            border-color: var(--pulse-color);
         }
         100% {
             box-shadow: 0 0 0 0 transparent;
@@ -1389,7 +1405,7 @@ function buildSessionProgressSection(
 		options.totalSessionIssues ?? (activeCount + resolvedCount),
 	);
 
-	if (totalSessionIssues === 0) {
+	if (options.loading || totalSessionIssues === 0) {
 		return '';
 	}
 

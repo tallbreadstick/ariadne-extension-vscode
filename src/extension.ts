@@ -216,7 +216,17 @@ function buildVulnsHtml(
 ): string {
 	const lifecycles = store.loadFindingLifecycles();
 	const activeSession = store.loadActiveSession();
+	const activeKeys = new Set(
+		vulns.map((v) => `${v.filePath}|${v.cwe}|${v.title}`.toLowerCase()),
+	);
+
 	const resolvedCount = lifecycles.filter((flc) => {
+		// A finding actively present in the workspace cannot be considered resolved
+		const flcKey = `${flc.filePath}|${flc.cweId}|${flc.type}`.toLowerCase();
+		if (activeKeys.has(flcKey)) {
+			return false;
+		}
+
 		if (flc.lifecycleState === 'resolved') {
 			return true;
 		}
@@ -1402,7 +1412,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				scannerBusy = false;
 				startupLoading = false;
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, true, scannerBroken, false),
+					buildVulnsHtml(latestVulnerabilities, store, true, scannerBroken, !scannerChecked),
 				);
 				refreshSessionMetricsPanel();
 				await refreshSignInPanel();
