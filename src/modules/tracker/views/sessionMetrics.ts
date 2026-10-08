@@ -100,7 +100,12 @@ const NOTIFICATION_ICON_SVG =
 function buildMetricCard(title: string, value: number, severity: Severity): string {
 	const accent = SEVERITY_COLORS[severity];
 	return /* html */ `
-		<div class="metric-card" style="border-left: 3px solid ${accent};">
+		<div class="metric-card filterable-metric-card"
+		     data-severity="${severity}"
+		     role="button"
+		     tabindex="0"
+		     title="Filter active vulnerabilities by ${title}"
+		     style="border-left: 3px solid ${accent};">
 			<div class="metric-title">${title}</div>
 			<div class="metric-trend" style="color: ${accent};">
 				${TREND_CHART_SVG}
@@ -114,7 +119,11 @@ function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): s
 		return '';
 	}
 	return items.map((item) => /* html */ `
-		<div class="trend-sub-item">
+		<div class="trend-sub-item filterable-type-item"
+		     data-vuln-type="${escapeHtml(item.type)}"
+		     role="button"
+		     tabindex="0"
+		     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
 			<span class="sub-label">${item.type}</span>
 			${item.subtitle ? `<span class="sub-subtitle">${item.subtitle}</span>` : ''}
 			<span class="sub-count">${item.instances}</span>
@@ -130,7 +139,11 @@ function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: numbe
 		const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
 		const subtitleText = item.subtitle ?? `Present since ${countStr}`;
 		return /* html */ `
-			<div class="trend-sub-item">
+			<div class="trend-sub-item filterable-type-item"
+			     data-vuln-type="${escapeHtml(item.type)}"
+			     role="button"
+			     tabindex="0"
+			     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
 				<span class="sub-label">${item.type}</span>
 				<span class="sub-subtitle persisting-subtitle">${subtitleText}</span>
 				<span class="sub-count">${item.instances}</span>
@@ -155,9 +168,14 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 			: item.progressDelta === 'N/A'
 				? ' (N/A)'
 				: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
+		const vulnType = item.type || 'Unknown';
 		return /* html */ `
-			<div class="trend-sub-item">
-				<span class="sub-label">${item.type || 'Unknown'}</span>
+			<div class="trend-sub-item filterable-type-item"
+			     data-vuln-type="${escapeHtml(vulnType)}"
+			     role="button"
+			     tabindex="0"
+			     title="Filter active vulnerabilities by ${escapeHtml(vulnType)}">
+				<span class="sub-label">${vulnType}</span>
 				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
@@ -172,6 +190,8 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
  * @param label    - Row label text
  * @param count    - Instance count shown in the header
  * @param subItems - Rendered HTML string of sub-item rows
+ * @param instanceLabel - Text label describing instance count
+ * @param tooltip  - Optional explanatory tooltip description
  */
 function buildCollapsibleTrendRow(
 	id: string,
@@ -180,11 +200,13 @@ function buildCollapsibleTrendRow(
 	count: number,
 	subItems: string,
 	instanceLabel: string,
+	tooltip?: string,
 ): string {
+	const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
 	return /* html */ `
 		<div class="trend-group" data-trend-id="${id}">
 			<button class="trend-header" type="button" aria-expanded="false"
-			        aria-controls="trend-body-${id}" data-trend-toggle="${id}">
+			        aria-controls="trend-body-${id}" data-trend-toggle="${id}"${tooltipAttr}>
 				<span class="trend-header-left">
 					${icon}
 					<span class="trend-header-label">${label}</span>
@@ -257,7 +279,11 @@ function buildCommonVulnerabilitiesPanel(
 				? /* html */ `<span class="cv-active">${item.activeFindingCount} active</span>`
 				: /* html */ `<span class="cv-resolved">all resolved</span>`;
 			return /* html */ `
-				<div class="cv-card">
+				<div class="cv-card filterable-type-item"
+				     data-vuln-type="${escapeHtml(item.type)}"
+				     role="button"
+				     tabindex="0"
+				     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
 					<div class="cv-card-left">
 						<span class="cv-type">${item.type}</span>
 						${statusLabel}
@@ -379,12 +405,42 @@ const CSS = /* css */ `
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		transition: border-color 0.2s ease, box-shadow 0.2s ease;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
 	}
 
 	.metric-card:hover {
 		border-color: rgba(70, 213, 196, 0.55);
 		box-shadow: var(--shadow);
+	}
+
+	.filterable-metric-card {
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.filterable-metric-card:hover {
+		transform: translateY(-1px);
+	}
+
+	.filterable-metric-card:active {
+		transform: translateY(0);
+	}
+
+	.filterable-metric-card:focus-visible,
+	.filterable-type-item:focus-visible {
+		outline: 1px solid var(--accent);
+		outline-offset: -1px;
+	}
+
+	.filterable-type-item {
+		cursor: pointer;
+		user-select: none;
+		transition: background-color 0.15s ease;
+		border-radius: 4px;
+	}
+
+	.filterable-type-item:hover {
+		background: rgba(255, 255, 255, 0.06);
 	}
 
 	.metric-title {
@@ -413,6 +469,15 @@ const CSS = /* css */ `
 		overflow: hidden;
 	}
 
+	.trends-header-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 12px 14px 8px;
+		flex-wrap: wrap;
+	}
+
 	.trends-title {
 		display: inline-flex;
 		align-items: center;
@@ -421,7 +486,13 @@ const CSS = /* css */ `
 		text-transform: uppercase;
 		font-weight: 700;
 		color: var(--muted);
-		padding: 12px 14px 8px;
+	}
+
+	.trends-subtitle {
+		font-size: 11px;
+		color: var(--muted);
+		font-weight: 400;
+		line-height: 1.3;
 	}
 
 	/* ── Collapsible trend row ── */
@@ -899,9 +970,12 @@ export function buildSessionMetricsHtml(
 			<div class="divider"></div>
 
 			<div class="trends-card">
-				<div class="trends-title">
-					${TRENDS_HEADER_SVG}
-					Trends
+				<div class="trends-header-row">
+					<div class="trends-title">
+						${TRENDS_HEADER_SVG}
+						<span>Trends</span>
+					</div>
+					<span class="trends-subtitle">Compares reports to track progress and unresolved risks.</span>
 				</div>
 
 				${buildCollapsibleTrendRow(
@@ -911,6 +985,7 @@ export function buildSessionMetricsHtml(
 		trends.persistingPatterns,
 		persistingSubItems,
 		'Instances Open',
+		'Vulnerabilities that remain unaddressed across multiple reports.',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -920,6 +995,7 @@ export function buildSessionMetricsHtml(
 		trends.improvingTrends,
 		improvingSubItems,
 		'Instances Remaining',
+		'Vulnerabilities where occurrences are decreasing.',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -929,6 +1005,7 @@ export function buildSessionMetricsHtml(
 		trends.recurringPatterns,
 		recurringSubItems,
 		'Instances Returned',
+		'Previously resolved vulnerabilities that have reappeared.',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -938,6 +1015,7 @@ export function buildSessionMetricsHtml(
 		trends.resolvedThisSession,
 		resolvedSubItems,
 		'Instances Fixed',
+		'Vulnerabilities successfully and durably remediated in this session.',
 	)}
 			</div>
 			
@@ -986,6 +1064,33 @@ export function buildSessionMetricsHtml(
 					}
 
 					vscode.postMessage({ type: 'dismiss-notification', notifId: id });
+				});
+
+				// ── Cross-filtering to Active Vulnerabilities ────────────
+				document.addEventListener('click', function (e) {
+					const metricCard = e.target.closest('.filterable-metric-card');
+					if (metricCard && metricCard.dataset.severity) {
+						vscode.postMessage({ type: 'filter-severity', severity: metricCard.dataset.severity });
+						return;
+					}
+					const typeItem = e.target.closest('.filterable-type-item');
+					if (typeItem && typeItem.dataset.vulnType) {
+						vscode.postMessage({ type: 'filter-type', vulnType: typeItem.dataset.vulnType });
+						return;
+					}
+				});
+
+				document.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter' || e.key === ' ') {
+						const target = e.target;
+						if (target && target.classList && target.classList.contains('filterable-metric-card') && target.dataset.severity) {
+							e.preventDefault();
+							vscode.postMessage({ type: 'filter-severity', severity: target.dataset.severity });
+						} else if (target && target.classList && target.classList.contains('filterable-type-item') && target.dataset.vulnType) {
+							e.preventDefault();
+							vscode.postMessage({ type: 'filter-type', vulnType: target.dataset.vulnType });
+						}
+					}
 				});
 			})();
 		</script>

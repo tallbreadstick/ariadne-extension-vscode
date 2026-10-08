@@ -675,10 +675,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
-		// Handle dismiss-notification messages from the Session Metrics webview.
+		// Handle messages from the Session Metrics webview.
 		(msg) => {
 			if (msg.type === 'dismiss-notification' && typeof msg.notifId === 'string') {
 				store.dismissNotification(msg.notifId);
+			} else if (msg.type === 'filter-severity' && typeof msg.severity === 'string') {
+				void (async () => {
+					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+					activeVulnsProvider.postMessage({ type: 'set-filter-severity', severity: msg.severity });
+				})();
+			} else if (msg.type === 'filter-type' && typeof msg.vulnType === 'string') {
+				void (async () => {
+					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+					activeVulnsProvider.postMessage({ type: 'set-filter-type', vulnType: msg.vulnType });
+				})();
 			}
 		},
 	);

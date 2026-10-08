@@ -1384,6 +1384,82 @@ export function buildActiveVulnerabilitiesHtml(
 				if (totalCount > 0) {
 					applyFilters();
 				}
+
+				// Cross-filtering message listener from Session Metrics or external commands
+				window.addEventListener('message', (event) => {
+					const msg = event.data;
+					if (!msg || typeof msg !== 'object') return;
+					if (msg.type === 'set-filter-severity') {
+						const targetSeverity = String(msg.severity || '').toLowerCase();
+						const currentSelected = selectedSeverities();
+						const isAlreadyActive =
+							currentSelected.length === 1 &&
+							currentSelected[0] === targetSeverity &&
+							!(searchInput?.value ?? '').trim() &&
+							!categoryFilter?.value &&
+							!typeFilter?.value;
+
+						if (isAlreadyActive) {
+							resetFilters();
+							return;
+						}
+
+						if (searchInput) searchInput.value = '';
+						if (categoryFilter) categoryFilter.value = '';
+						if (typeFilter) typeFilter.value = '';
+						severityChips.forEach((chip) => {
+							const matches = chip.dataset.severity === targetSeverity;
+							chip.setAttribute('aria-pressed', matches ? 'true' : 'false');
+							chip.setAttribute('aria-checked', matches ? 'true' : 'false');
+						});
+						setFilterVisibility(true);
+						persistFilters();
+						applyFilters();
+					} else if (msg.type === 'set-filter-type') {
+						const targetType = String(msg.vulnType || '').trim();
+						const currentSelected = selectedSeverities();
+						const isAlreadyActiveInSelect =
+							Boolean(typeFilter?.value) &&
+							typeFilter.value.toLowerCase() === targetType.toLowerCase() &&
+							currentSelected.length === 0 &&
+							!(searchInput?.value ?? '').trim() &&
+							!categoryFilter?.value;
+						const isAlreadyActiveInSearch =
+							Boolean((searchInput?.value ?? '').trim()) &&
+							searchInput.value.toLowerCase() === targetType.toLowerCase() &&
+							currentSelected.length === 0 &&
+							!typeFilter?.value &&
+							!categoryFilter?.value;
+
+						if (isAlreadyActiveInSelect || isAlreadyActiveInSearch) {
+							resetFilters();
+							return;
+						}
+
+						if (searchInput) searchInput.value = '';
+						severityChips.forEach((chip) => {
+							chip.setAttribute('aria-pressed', 'false');
+							chip.setAttribute('aria-checked', 'false');
+						});
+						if (categoryFilter) categoryFilter.value = '';
+						if (typeFilter) {
+							const option = Array.from(typeFilter.options).find(
+								(opt) => opt.value.toLowerCase() === targetType.toLowerCase(),
+							);
+							if (option) {
+								typeFilter.value = option.value;
+							} else {
+								typeFilter.value = '';
+								if (searchInput) searchInput.value = targetType;
+							}
+						} else if (searchInput) {
+							searchInput.value = targetType;
+						}
+						setFilterVisibility(true);
+						persistFilters();
+						applyFilters();
+					}
+				});
 			})();
 		</script>
 	</body>

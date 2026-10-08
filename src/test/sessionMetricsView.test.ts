@@ -123,4 +123,87 @@ describe('Session Metrics Terminology & Subtitles', () => {
 		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
 		assert.ok(html.includes('SESSION 1'), 'Should default to SESSION 1');
 	});
+
+	it('renders visible subtitle beside Trends and explanatory tooltips on all 4 trend categories', () => {
+		const metrics: SessionMetrics = {
+			critical: 2,
+			high: 1,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 1,
+				improvingTrends: 1,
+				resolvedThisSession: 1,
+				recurringPatterns: 1,
+			},
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		// Trends subtitle (visible text, not tooltip)
+		assert.ok(html.includes('trends-subtitle'), 'Should render trends-subtitle class');
+		assert.ok(
+			html.includes('Compares reports to track progress and unresolved risks.'),
+			'Should render short visible subtitle beside Trends',
+		);
+
+		// Tooltips for the 4 trend categories
+		assert.ok(
+			html.includes('title="Vulnerabilities that remain unaddressed across multiple reports."'),
+			'Persisting patterns should have explanatory tooltip',
+		);
+		assert.ok(
+			html.includes('title="Vulnerabilities where occurrences are decreasing."'),
+			'Improving trends should have explanatory tooltip',
+		);
+		assert.ok(
+			html.includes('title="Previously resolved vulnerabilities that have reappeared."'),
+			'Recurring patterns should have explanatory tooltip',
+		);
+		assert.ok(
+			html.includes('title="Vulnerabilities successfully and durably remediated in this session."'),
+			'Resolved this session should have explanatory tooltip',
+		);
+	});
+
+	it('renders filterable attributes on metric cards, sub-items, and common vulnerabilities', () => {
+		const metrics: SessionMetrics = {
+			critical: 2,
+			high: 1,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 1,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+				persistingItems: [
+					{
+						type: 'Cross-Site Scripting',
+						instances: 2,
+					},
+				],
+			},
+			commonVulnerabilities: [
+				{
+					cweId: 'CWE-79',
+					type: 'Cross-Site Scripting',
+					sessionCount: 2,
+					totalSessions: 3,
+					totalInstanceCount: 2,
+					activeFindingCount: 2,
+				},
+			],
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+
+		// Metric cards should have filterable attributes
+		assert.ok(html.includes('filterable-metric-card'), 'Should include filterable-metric-card class');
+		assert.ok(html.includes('data-severity="critical"'), 'Should include data-severity attribute');
+		assert.ok(html.includes('Filter active vulnerabilities by Critical Issues'), 'Should include title tooltip for filtering');
+
+		// Sub-item and common vulnerability cards should be filterable
+		assert.ok(html.includes('filterable-type-item'), 'Should include filterable-type-item class');
+		assert.ok(html.includes('data-vuln-type="Cross-Site Scripting"'), 'Should include data-vuln-type attribute');
+	});
 });
