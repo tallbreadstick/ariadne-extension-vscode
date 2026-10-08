@@ -214,11 +214,40 @@ function buildVulnsHtml(
 	scannerBroken = false,
 	loading = false,
 ): string {
+	const lifecycles = store.loadFindingLifecycles();
+	const activeSession = store.loadActiveSession();
+	const resolvedCount = lifecycles.filter((flc) => {
+		if (flc.lifecycleState === 'resolved') {
+			return true;
+		}
+		if (flc.durableResolutionAt !== null) {
+			return activeSession === null || flc.durableResolutionAt >= activeSession.startedAt;
+		}
+		return false;
+	}).length;
+
+	let commonVulnTypes: string[] = [];
+	try {
+		const completedSessions = store.loadCompletedSessions();
+		const gradHistory = store.loadGraduationHistory();
+		const commonMap = computeCommonVulnerabilities(
+			completedSessions,
+			activeSession,
+			lifecycles,
+			gradHistory,
+		);
+		commonVulnTypes = Array.from(commonMap.keys());
+	} catch {
+		// graceful fallback if common vulnerabilities cannot be computed yet
+	}
+
 	return buildActiveVulnerabilitiesHtml(vulns, {
 		expandedKey: resolveExpandedVulnKey(vulns, store),
 		signedIn,
 		scannerBroken,
 		loading,
+		resolvedCount,
+		commonVulnTypes,
 	});
 }
 

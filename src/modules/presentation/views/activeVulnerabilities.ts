@@ -27,6 +27,70 @@ export interface ActiveVulnerabilitiesOptions {
 	scannerBroken?: boolean;
 	/** When true, auth has not finished and the panel must not ask for sign-in yet. */
 	loading?: boolean;
+	/** Number of vulnerabilities resolved so far in this session. */
+	resolvedCount?: number;
+	/** Common vulnerability habit types (for Next Focus prioritization). */
+	commonVulnTypes?: string[];
+}
+
+export interface NextFocusTarget {
+	vuln: Vulnerability;
+	isCommonHabit: boolean;
+	reason: string;
+}
+
+/**
+ * Determines the highest pedagogical priority finding for the student to resolve next.
+ * Prioritizes active findings that match recurring Common Vulnerability habits,
+ * followed by highest severity (Critical > High > Medium > Low).
+ */
+export function determineNextFocus(
+	vulns: Vulnerability[],
+	commonVulnTypes: string[] = [],
+): NextFocusTarget | null {
+	if (vulns.length === 0) {
+		return null;
+	}
+
+	const severityWeights: Record<Severity, number> = {
+		critical: 4,
+		high: 3,
+		medium: 2,
+		low: 1,
+	};
+
+	const normalizedCommon = new Set(
+		commonVulnTypes.map((t) => t.trim().toLowerCase()),
+	);
+
+	// 1. Check for active findings that match recurring Common Vulnerability habits
+	const habitFindings = vulns.filter((v) => {
+		const titleKey = v.title.trim().toLowerCase();
+		const cweKey = v.cwe.trim().toLowerCase();
+		return normalizedCommon.has(titleKey) || normalizedCommon.has(cweKey);
+	});
+
+	if (habitFindings.length > 0) {
+		habitFindings.sort(
+			(a, b) => (severityWeights[b.severity] ?? 0) - (severityWeights[a.severity] ?? 0),
+		);
+		return {
+			vuln: habitFindings[0],
+			isCommonHabit: true,
+			reason: 'Recurring Habit',
+		};
+	}
+
+	// 2. Otherwise prioritize highest severity (Critical > High > Medium > Low)
+	const sorted = [...vulns].sort(
+		(a, b) => (severityWeights[b.severity] ?? 0) - (severityWeights[a.severity] ?? 0),
+	);
+
+	return {
+		vuln: sorted[0],
+		isCommonHabit: false,
+		reason: `${capitalize(sorted[0].severity)} Priority`,
+	};
 }
 
 /** Stable key for accordion persistence across scans and workspace reopens. */
@@ -280,6 +344,212 @@ const CSS = /* css */ `
         border: 1px solid var(--border);
         text-transform: uppercase;
         white-space: nowrap;
+    }
+
+    /* ── Session Progress & Next Focus ── */
+    .session-progress-card {
+        margin-bottom: 10px;
+        padding: 8px 10px;
+        background: color-mix(in srgb, var(--card) 60%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .session-progress-card.victory {
+        background: color-mix(in srgb, #2ea043 15%, var(--card));
+        border-color: color-mix(in srgb, #2ea043 40%, var(--border));
+    }
+
+    .progress-info-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+    }
+
+    .progress-title {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--text);
+        font-weight: 500;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .progress-title strong {
+        color: var(--text);
+        font-weight: 700;
+    }
+
+    .victory-title {
+        color: #3fb950;
+        font-weight: 600;
+    }
+
+    .progress-icon {
+        font-size: 12px;
+        flex-shrink: 0;
+    }
+
+    .progress-pct {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent-strong, #5ce6d7);
+        flex-shrink: 0;
+    }
+
+    .victory .progress-pct {
+        color: #3fb950;
+    }
+
+    .progress-track {
+        height: 6px;
+        background: color-mix(in srgb, var(--border) 60%, transparent);
+        border-radius: 3px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #46d5c4, #5ce6d7);
+        border-radius: 3px;
+        transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .progress-bar-fill.victory-fill {
+        background: linear-gradient(90deg, #3fb950, #2ea043);
+    }
+
+    .next-focus-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        padding-top: 2px;
+    }
+
+    .next-focus-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .next-focus-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--accent, #46d5c4) 12%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent, #46d5c4) 35%, var(--border));
+        color: var(--text);
+        font-family: inherit;
+        font-size: 11px;
+        cursor: pointer;
+        text-align: left;
+        min-width: 0;
+        max-width: 100%;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .next-focus-chip:hover {
+        background: color-mix(in srgb, var(--accent, #46d5c4) 22%, var(--card));
+        border-color: var(--accent, #46d5c4);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip:active {
+        transform: translateY(0);
+    }
+
+    .focus-title {
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .focus-loc {
+        font-size: 10px;
+        color: var(--file, #569CD6);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .focus-badge {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        flex-shrink: 0;
+    }
+
+    .focus-badge.habit {
+        background: color-mix(in srgb, #e09850 25%, transparent);
+        color: #e09850;
+        border: 1px solid color-mix(in srgb, #e09850 45%, transparent);
+    }
+
+    .focus-badge.critical {
+        background: color-mix(in srgb, var(--critical) 25%, transparent);
+        color: var(--critical);
+        border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent);
+    }
+
+    .focus-badge.high {
+        background: color-mix(in srgb, var(--high) 25%, transparent);
+        color: var(--high);
+        border: 1px solid color-mix(in srgb, var(--high) 45%, transparent);
+    }
+
+    .focus-badge.medium {
+        background: color-mix(in srgb, var(--medium) 25%, transparent);
+        color: var(--medium);
+        border: 1px solid color-mix(in srgb, var(--medium) 45%, transparent);
+    }
+
+    .focus-badge.low {
+        background: color-mix(in srgb, var(--low) 25%, transparent);
+        color: var(--low);
+        border: 1px solid color-mix(in srgb, var(--low) 45%, transparent);
+    }
+
+    .focus-arrow {
+        color: var(--accent, #46d5c4);
+        font-weight: bold;
+        flex-shrink: 0;
+    }
+
+    @keyframes focusPulse {
+        0% {
+            box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #46d5c4) 70%, transparent);
+            border-color: var(--accent, #46d5c4);
+        }
+        50% {
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #46d5c4) 40%, transparent);
+            border-color: var(--accent, #46d5c4);
+        }
+        100% {
+            box-shadow: 0 0 0 0 transparent;
+        }
+    }
+
+    .vuln-card.highlight-pulse {
+        animation: focusPulse 1.6s ease-out;
     }
 
     .vuln-stack { display: grid; gap: 12px; }
@@ -1060,6 +1330,89 @@ function buildToolbar(vulns: Vulnerability[]): string {
 		</div>`;
 }
 
+function buildSessionProgressSection(
+	vulns: Vulnerability[],
+	options: ActiveVulnerabilitiesOptions,
+): string {
+	const resolvedCount = Math.max(0, options.resolvedCount ?? 0);
+	const activeCount = vulns.length;
+	const totalSessionIssues = activeCount + resolvedCount;
+
+	if (totalSessionIssues === 0) {
+		return '';
+	}
+
+	// Victory State: All issues tracked in this session have been resolved
+	if (activeCount === 0 && resolvedCount > 0) {
+		return /* html */ `
+			<section class="session-progress-card victory" aria-label="Session Resolution Progress">
+				<div class="progress-info-row">
+					<div class="progress-title victory-title">
+						<span class="progress-icon">🏆</span>
+						<span>All ${resolvedCount} Vulnerabilit${resolvedCount === 1 ? 'y' : 'ies'} Resolved! Workspace is Clean!</span>
+					</div>
+					<span class="progress-pct">100%</span>
+				</div>
+				<div class="progress-track">
+					<div
+						class="progress-bar-fill victory-fill"
+						style="width: 100%;"
+						role="progressbar"
+						aria-valuenow="100"
+						aria-valuemin="0"
+						aria-valuemax="100"
+					></div>
+				</div>
+			</section>`;
+	}
+
+	const pct = Math.min(100, Math.round((resolvedCount / totalSessionIssues) * 100));
+	const nextFocus = determineNextFocus(vulns, options.commonVulnTypes);
+
+	const nextFocusHtml = nextFocus
+		? /* html */ `
+			<div class="next-focus-row">
+				<span class="next-focus-label">⚡ Next Focus:</span>
+				<button
+					class="next-focus-chip"
+					type="button"
+					data-vuln-key="${encodeURIComponent(buildVulnKey(nextFocus.vuln))}"
+					title="Focus ${escapeAttr(nextFocus.vuln.title)} at ${escapeAttr(nextFocus.vuln.filePath)} : Line ${nextFocus.vuln.line}"
+					aria-label="Focus ${escapeAttr(nextFocus.vuln.title)}"
+				>
+					<span class="focus-title">${escapeHtml(nextFocus.vuln.title)}</span>
+					<span class="focus-loc">${escapeHtml(nextFocus.vuln.filePath)} : Line ${nextFocus.vuln.line}</span>
+					<span class="focus-badge ${nextFocus.isCommonHabit ? 'habit' : nextFocus.vuln.severity}">
+						${nextFocus.isCommonHabit ? 'Common Habit' : capitalize(nextFocus.vuln.severity)}
+					</span>
+					<span class="focus-arrow" aria-hidden="true">→</span>
+				</button>
+			</div>`
+		: '';
+
+	return /* html */ `
+		<section class="session-progress-card" aria-label="Session Resolution Progress">
+			<div class="progress-info-row">
+				<div class="progress-title">
+					<span class="progress-icon">🎯</span>
+					<span>Session Progress: <strong>${resolvedCount} of ${totalSessionIssues}</strong> Issue${totalSessionIssues === 1 ? '' : 's'} Resolved</span>
+				</div>
+				<span class="progress-pct">${pct}%</span>
+			</div>
+			<div class="progress-track">
+				<div
+					class="progress-bar-fill"
+					style="width: ${pct}%;"
+					role="progressbar"
+					aria-valuenow="${pct}"
+					aria-valuemin="0"
+					aria-valuemax="100"
+				></div>
+			</div>
+			${nextFocusHtml}
+		</section>`;
+}
+
 /**
  * Builds the complete HTML document for the Active Vulnerabilities panel.
  *
@@ -1152,6 +1505,7 @@ export function buildActiveVulnerabilitiesHtml(
 				</div>
 				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
 			</header>
+			${buildSessionProgressSection(vulns, options)}
 			${buildToolbar(vulns)}
 		</div>
 		<section class="vuln-stack" id="vuln-stack">
@@ -1420,6 +1774,35 @@ export function buildActiveVulnerabilitiesHtml(
 						persistFilters();
 						applyFilters();
 					}
+				});
+
+				document.querySelectorAll('.next-focus-chip').forEach((chip) => {
+					chip.addEventListener('click', () => {
+						const rawKey = chip.getAttribute('data-vuln-key');
+						if (!rawKey) return;
+						const decodedKey = decodeURIComponent(rawKey);
+
+						const targetCard = cards.find((c) => {
+							const cardKey = c.getAttribute('data-vuln-key');
+							return cardKey === rawKey || decodeURIComponent(cardKey || '') === decodedKey;
+						});
+
+						if (targetCard) {
+							if (targetCard.classList.contains('hidden') || targetCard.style.display === 'none') {
+								if (resetBtn && !resetBtn.disabled) {
+									resetBtn.click();
+								}
+							}
+							targetCard.open = true;
+							applyAccordion(targetCard);
+							persistExpandedKey(decodedKey);
+							targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+							targetCard.classList.remove('highlight-pulse');
+							void targetCard.offsetWidth;
+							targetCard.classList.add('highlight-pulse');
+							setTimeout(() => targetCard.classList.remove('highlight-pulse'), 1800);
+						}
+					});
 				});
 
 				document.addEventListener(

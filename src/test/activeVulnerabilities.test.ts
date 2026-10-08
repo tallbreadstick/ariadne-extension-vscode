@@ -1,5 +1,8 @@
 import * as assert from 'assert';
-import { buildActiveVulnerabilitiesHtml } from '../modules/presentation/views/activeVulnerabilities.js';
+import {
+	buildActiveVulnerabilitiesHtml,
+	determineNextFocus,
+} from '../modules/presentation/views/activeVulnerabilities.js';
 import type { Vulnerability } from '../modules/presentation/panelTypes.js';
 
 const sample: Vulnerability[] = [
@@ -71,6 +74,88 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(html.includes('Explain Vulnerability'), 'Explain Vulnerability button label missing');
 		assert.ok(html.includes('sparkle-icon'), 'Sparkle icon missing');
 		assert.ok(!html.includes('Ask Ariadne</span>'), 'Ask Ariadne label should be replaced');
+	});
+});
+
+describe('Next Focus Recommendation Engine', () => {
+	it('prioritizes recurring Common Vulnerability habits over higher-severity non-common findings', () => {
+		const vulns: Vulnerability[] = [
+			{
+				id: 'v-1',
+				severity: 'critical',
+				cwe: 'CWE-89',
+				owaspRef: 'A03:2021',
+				title: 'SQL Injection',
+				description: 'Raw SQL query.',
+				filePath: 'src/db/Query.java',
+				line: 12,
+			},
+			{
+				id: 'v-2',
+				severity: 'high',
+				cwe: 'CWE-798',
+				owaspRef: 'A07:2021',
+				title: 'Hardcoded Credentials',
+				description: 'Hardcoded API secret.',
+				filePath: 'src/auth/Keys.java',
+				line: 45,
+			},
+		];
+
+		// If Hardcoded Credentials is the recurring habit
+		const target = determineNextFocus(vulns, ['Hardcoded Credentials']);
+		assert.ok(target !== null);
+		assert.strictEqual(target.vuln.title, 'Hardcoded Credentials');
+		assert.strictEqual(target.isCommonHabit, true);
+		assert.strictEqual(target.reason, 'Recurring Habit');
+	});
+
+	it('falls back to highest severity when no common habit matches', () => {
+		const target = determineNextFocus(sample, []);
+		assert.ok(target !== null);
+		assert.strictEqual(target.vuln.title, 'SQL Injection');
+		assert.strictEqual(target.isCommonHabit, false);
+		assert.strictEqual(target.reason, 'Critical Priority');
+	});
+
+	it('returns null when there are no active vulnerabilities', () => {
+		assert.strictEqual(determineNextFocus([]), null);
+	});
+});
+
+describe('Session Progress Bar & Victory State', () => {
+	it('renders animated session progress bar with resolved count and percentage', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, {
+			signedIn: true,
+			resolvedCount: 2,
+		});
+
+		assert.ok(html.includes('class="session-progress-card"'), 'Progress card missing');
+		assert.ok(html.includes('Session Progress:'), 'Progress title missing');
+		assert.ok(html.includes('2 of 4'), 'Resolved of total count missing');
+		assert.ok(html.includes('50%'), 'Percentage calculation missing');
+		assert.ok(html.includes('next-focus-chip'), 'Next focus chip missing');
+		assert.ok(html.includes('Next Focus:'), 'Next focus label missing');
+	});
+
+	it('renders victory state when all issues tracked in session are resolved', () => {
+		const html = buildActiveVulnerabilitiesHtml([], {
+			signedIn: true,
+			resolvedCount: 3,
+		});
+
+		assert.ok(html.includes('class="session-progress-card victory"'), 'Victory card missing');
+		assert.ok(html.includes('All 3 Vulnerabilities Resolved! Workspace is Clean!'));
+		assert.ok(html.includes('100%'));
+	});
+
+	it('omits session progress card when there are no issues and no resolutions', () => {
+		const html = buildActiveVulnerabilitiesHtml([], {
+			signedIn: true,
+			resolvedCount: 0,
+		});
+
+		assert.ok(!html.includes('class="session-progress-card"'), 'Progress card should be omitted');
 	});
 });
 
