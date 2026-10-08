@@ -196,7 +196,7 @@ const CSS = /* css */ `
     :root {
         color-scheme: dark;
         --bg: var(--vscode-editor-background);
-        --header-bg: color-mix(in srgb, var(--vscode-editor-background) 95%, white 5%);
+        --list-bg: color-mix(in srgb, var(--vscode-editor-background) 96.5%, white 3.5%);
         --panel: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
         --card: var(--vscode-editorWidget-background);
         --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
@@ -216,7 +216,7 @@ const CSS = /* css */ `
         margin: 0;
         padding: 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--bg);
+        background: var(--list-bg);
         color: var(--text);
     }
 
@@ -224,7 +224,7 @@ const CSS = /* css */ `
         position: sticky;
         top: 0;
         z-index: 10;
-        background: var(--header-bg);
+        background: var(--bg);
         margin: -16px -16px 12px -16px;
         padding: 16px 16px 6px 16px;
         border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
