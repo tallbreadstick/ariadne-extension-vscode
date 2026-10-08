@@ -136,6 +136,11 @@ describe('Session Progress Bar & Victory State', () => {
 		assert.ok(html.includes('50%'), 'Percentage calculation missing');
 		assert.ok(html.includes('next-focus-chip'), 'Next focus chip missing');
 		assert.ok(html.includes('Next Focus:'), 'Next focus label missing');
+		assert.ok(html.includes('class="focus-icon"'), 'Focus SVG icon missing');
+		assert.ok(html.includes('class="progress-icon"'), 'Progress SVG icon missing');
+		assert.ok(!html.includes('🎯'), 'Emoji 🎯 should not be present');
+		assert.ok(!html.includes('⚡'), 'Emoji ⚡ should not be present');
+		assert.ok(!html.includes('class="focus-loc"'), 'File path should not be displayed in next focus chip');
 	});
 
 	it('renders victory state when all issues tracked in session are resolved', () => {
@@ -147,6 +152,8 @@ describe('Session Progress Bar & Victory State', () => {
 		assert.ok(html.includes('class="session-progress-card victory"'), 'Victory card missing');
 		assert.ok(html.includes('All 3 Vulnerabilities Resolved! Workspace is Clean!'));
 		assert.ok(html.includes('100%'));
+		assert.ok(html.includes('class="progress-icon victory-icon"'), 'Victory SVG icon missing');
+		assert.ok(!html.includes('🏆'), 'Emoji 🏆 should not be present');
 	});
 
 	it('omits session progress card when there are no issues and no resolutions', () => {

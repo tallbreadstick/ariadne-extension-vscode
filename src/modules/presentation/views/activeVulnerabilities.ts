@@ -176,6 +176,28 @@ const LIVE_SCAN_SVG =
 		<path d="m13.41 10.59 5.66-5.66"/>
 	</svg>`;
 
+const PROGRESS_ICON_SVG =
+	`<svg class="progress-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<circle cx="8" cy="8" r="6.25"/>
+		<path d="M5.5 8l2 2 3.5-3.5"/>
+	</svg>`;
+
+const VICTORY_ICON_SVG =
+	`<svg class="progress-icon victory-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M3.5 2.5h9v4.5a4.5 4.5 0 0 1-9 0V2.5z"/>
+		<path d="M1.5 4h2v2a2 2 0 0 1-2-2z"/>
+		<path d="M14.5 4h-2v2a2 2 0 0 0 2-2z"/>
+		<path d="M8 11.5v3"/>
+		<path d="M5.5 14.5h5"/>
+	</svg>`;
+
+const FOCUS_ICON_SVG =
+	`<svg class="focus-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<circle cx="8" cy="8" r="6"/>
+		<circle cx="8" cy="8" r="2.25"/>
+		<path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>
+	</svg>`;
+
 // ── Card builder ──────────────────────────────────────────────────────
 
 function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
@@ -349,13 +371,13 @@ const CSS = /* css */ `
     /* ── Session Progress & Next Focus ── */
     .session-progress-card {
         margin-bottom: 10px;
-        padding: 8px 10px;
-        background: color-mix(in srgb, var(--card) 60%, transparent);
+        padding: 9px 12px;
+        background: color-mix(in srgb, var(--card) 92%, white 8%);
         border: 1px solid var(--border);
         border-radius: 6px;
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 7px;
     }
 
     .session-progress-card.victory {
@@ -368,14 +390,15 @@ const CSS = /* css */ `
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        font-size: 11px;
+        font-size: 12px;
     }
 
     .progress-title {
         display: flex;
         align-items: center;
-        gap: 5px;
+        gap: 6px;
         color: var(--text);
+        font-size: 12px;
         font-weight: 500;
         min-width: 0;
         overflow: hidden;
@@ -394,12 +417,18 @@ const CSS = /* css */ `
     }
 
     .progress-icon {
-        font-size: 12px;
+        width: 14px;
+        height: 14px;
+        color: var(--accent, #46d5c4);
         flex-shrink: 0;
     }
 
+    .progress-icon.victory-icon {
+        color: #3fb950;
+    }
+
     .progress-pct {
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 700;
         color: var(--accent-strong, #5ce6d7);
         flex-shrink: 0;
@@ -431,16 +460,26 @@ const CSS = /* css */ `
     .next-focus-row {
         display: flex;
         align-items: center;
-        gap: 6px;
-        font-size: 11px;
+        gap: 8px;
+        font-size: 12px;
         padding-top: 2px;
     }
 
     .next-focus-label {
-        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
         font-weight: 600;
         color: var(--muted);
         white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .focus-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--accent, #46d5c4);
         flex-shrink: 0;
     }
 
@@ -450,11 +489,11 @@ const CSS = /* css */ `
         gap: 6px;
         padding: 3px 8px;
         border-radius: 4px;
-        background: color-mix(in srgb, var(--accent, #46d5c4) 12%, var(--card));
-        border: 1px solid color-mix(in srgb, var(--accent, #46d5c4) 35%, var(--border));
+        background: color-mix(in srgb, var(--accent, #46d5c4) 10%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent, #46d5c4) 30%, var(--border));
         color: var(--text);
         font-family: inherit;
-        font-size: 11px;
+        font-size: 12px;
         cursor: pointer;
         text-align: left;
         min-width: 0;
@@ -463,7 +502,7 @@ const CSS = /* css */ `
     }
 
     .next-focus-chip:hover {
-        background: color-mix(in srgb, var(--accent, #46d5c4) 22%, var(--card));
+        background: color-mix(in srgb, var(--accent, #46d5c4) 20%, var(--card));
         border-color: var(--accent, #46d5c4);
         transform: translateY(-0.5px);
     }
@@ -473,6 +512,7 @@ const CSS = /* css */ `
     }
 
     .focus-title {
+        font-size: 12px;
         font-weight: 600;
         color: var(--text);
         white-space: nowrap;
@@ -480,20 +520,12 @@ const CSS = /* css */ `
         text-overflow: ellipsis;
     }
 
-    .focus-loc {
-        font-size: 10px;
-        color: var(--file, #569CD6);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
     .focus-badge {
-        font-size: 9px;
+        font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.3px;
-        padding: 1px 5px;
+        padding: 2px 6px;
         border-radius: 3px;
         flex-shrink: 0;
     }
@@ -530,6 +562,7 @@ const CSS = /* css */ `
 
     .focus-arrow {
         color: var(--accent, #46d5c4);
+        font-size: 12px;
         font-weight: bold;
         flex-shrink: 0;
     }
@@ -1348,7 +1381,7 @@ function buildSessionProgressSection(
 			<section class="session-progress-card victory" aria-label="Session Resolution Progress">
 				<div class="progress-info-row">
 					<div class="progress-title victory-title">
-						<span class="progress-icon">🏆</span>
+						${VICTORY_ICON_SVG}
 						<span>All ${resolvedCount} Vulnerabilit${resolvedCount === 1 ? 'y' : 'ies'} Resolved! Workspace is Clean!</span>
 					</div>
 					<span class="progress-pct">100%</span>
@@ -1372,18 +1405,20 @@ function buildSessionProgressSection(
 	const nextFocusHtml = nextFocus
 		? /* html */ `
 			<div class="next-focus-row">
-				<span class="next-focus-label">⚡ Next Focus:</span>
+				<span class="next-focus-label">
+					${FOCUS_ICON_SVG}
+					<span>Next Focus:</span>
+				</span>
 				<button
 					class="next-focus-chip"
 					type="button"
 					data-vuln-key="${encodeURIComponent(buildVulnKey(nextFocus.vuln))}"
-					title="Focus ${escapeAttr(nextFocus.vuln.title)} at ${escapeAttr(nextFocus.vuln.filePath)} : Line ${nextFocus.vuln.line}"
+					title="Focus ${escapeAttr(nextFocus.vuln.title)} (${capitalize(nextFocus.vuln.severity)}) at ${escapeAttr(nextFocus.vuln.filePath)} : Line ${nextFocus.vuln.line}"
 					aria-label="Focus ${escapeAttr(nextFocus.vuln.title)}"
 				>
 					<span class="focus-title">${escapeHtml(nextFocus.vuln.title)}</span>
-					<span class="focus-loc">${escapeHtml(nextFocus.vuln.filePath)} : Line ${nextFocus.vuln.line}</span>
-					<span class="focus-badge ${nextFocus.isCommonHabit ? 'habit' : nextFocus.vuln.severity}">
-						${nextFocus.isCommonHabit ? 'Common Habit' : capitalize(nextFocus.vuln.severity)}
+					<span class="focus-badge ${nextFocus.vuln.severity}">
+						${capitalize(nextFocus.vuln.severity)}
 					</span>
 					<span class="focus-arrow" aria-hidden="true">→</span>
 				</button>
@@ -1394,7 +1429,7 @@ function buildSessionProgressSection(
 		<section class="session-progress-card" aria-label="Session Resolution Progress">
 			<div class="progress-info-row">
 				<div class="progress-title">
-					<span class="progress-icon">🎯</span>
+					${PROGRESS_ICON_SVG}
 					<span>Session Progress: <strong>${resolvedCount} of ${totalSessionIssues}</strong> Issue${totalSessionIssues === 1 ? '' : 's'} Resolved</span>
 				</div>
 				<span class="progress-pct">${pct}%</span>
