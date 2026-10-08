@@ -104,9 +104,12 @@ const SPARKLE_SVG =
 		<path d="M7.5 0.75a.75.75 0 0 1 .7.49l1.32 3.65 3.65 1.32a.75.75 0 0 1 0 1.4l-3.65 1.32-1.32 3.65a.75.75 0 0 1-1.4 0L5.48 8.93 1.83 7.61a.75.75 0 0 1 0-1.4l3.65-1.32 1.32-3.65a.75.75 0 0 1 .7-.49zm5.25 8.25a.5.5 0 0 1 .47.33l.66 1.83 1.83.66a.5.5 0 0 1 0 .94l-1.83.66-.66 1.83a.5.5 0 0 1-.94 0l-.66-1.83-1.83-.66a.5.5 0 0 1 0-.94l1.83-.66.66-1.83a.5.5 0 0 1 .47-.33z"/>
 	</svg>`;
 
-const SHIELD_HEADER_SVG =
+const LIVE_SCAN_SVG =
 	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+		<path d="M19.07 4.93A10 10 0 0 0 4.93 19.07"/>
+		<path d="M16.24 7.76A6 6 0 0 0 7.76 16.24"/>
+		<circle cx="12" cy="12" r="2" fill="currentColor"/>
+		<path d="m13.41 10.59 5.66-5.66"/>
 	</svg>`;
 
 // ── Card builder ──────────────────────────────────────────────────────
@@ -1143,7 +1146,7 @@ export function buildActiveVulnerabilitiesHtml(
 		<div class="sticky-top-bar">
 			<header class="live-scan-header active-vuln-header">
 				<div class="live-scan-header-left active-vuln-header-left">
-					${SHIELD_HEADER_SVG}
+					${LIVE_SCAN_SVG}
 					<span>Live Scan</span>
 				</div>
 				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>

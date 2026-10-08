@@ -268,7 +268,7 @@ const CSS = /* css */ `
 		--bg: var(--vscode-editor-background);
 		--panel: var(--vscode-sideBar-background);
 		--card: var(--vscode-editorWidget-background);
-		--border: var(--vscode-panel-border);
+		--border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
 		--text: var(--vscode-foreground);
 		--muted: var(--vscode-descriptionForeground);
 		--accent: #46d5c4;
@@ -312,6 +312,9 @@ const CSS = /* css */ `
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
+		padding-bottom: 10px;
+		margin-bottom: 4px;
+		border-bottom: 1px solid var(--border);
 	}
 
 	.full-report-header-left {
