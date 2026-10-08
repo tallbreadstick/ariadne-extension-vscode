@@ -113,7 +113,7 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
     filePath: finding.filePath,
     line: finding.startLine + 1,
   });
-  md.appendMarkdown(`[$(sparkle) Explain Vulnerability](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs} "View structured security explanation")\n\n`);
+  md.appendMarkdown(`[ \`$(lightbulb) Explain Vulnerability\` ](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs} "View structured security explanation")\n\n`);
 
   return md;
 }

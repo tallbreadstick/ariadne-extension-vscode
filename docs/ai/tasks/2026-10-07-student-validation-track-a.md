@@ -30,7 +30,7 @@
 ## Progress checklist
 
 - [x] Task A1: Add `[Ariadne]` prefix to end-of-line decorations in DiagnosticManager.ts
-- [x] Task A2: Reword hover popup CTA to `$(sparkle) Explain Vulnerability` button in HoverProvider.ts
+- [x] Task A2: Reword hover popup CTA to code-pill button with `$(lightbulb)` icon in HoverProvider.ts
 - [x] Task A3: Update status bar text to single authoritative total (`$(shield) Ariadne: N Issues`) and click command in statusBar.ts
 - [x] Task A4: Add auto-open panel on sign-in and first-run welcome onboarding toast in extension.ts
 - [x] Validation: Typecheck and lint (`npm run check-types`, `npm run lint`, `npm run compile`) passed with 0 errors
