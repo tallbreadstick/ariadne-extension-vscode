@@ -210,7 +210,7 @@ const CSS = /* css */ `
 
     body {
         margin: 0;
-        padding: 0 16px 18px;
+        padding: 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: var(--bg);
         color: var(--text);
@@ -221,10 +221,11 @@ const CSS = /* css */ `
         top: 0;
         z-index: 10;
         background: var(--bg);
-        padding-top: 14px;
+        padding-top: 0;
         padding-bottom: 4px;
     }
 
+    .live-scan-header,
     .active-vuln-header {
         display: flex;
         align-items: center;
@@ -240,14 +241,14 @@ const CSS = /* css */ `
         border-bottom: 1px solid var(--border);
     }
 
+    .live-scan-header-left,
     .active-vuln-header-left {
         display: flex;
         align-items: center;
         gap: 6px;
     }
 
-    .active-vuln-header-left h3 {
-        margin: 0;
+    .live-scan-header-left span {
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
@@ -261,7 +262,7 @@ const CSS = /* css */ `
         flex-shrink: 0;
     }
 
-    .live-badge {
+    .total-badge {
         display: inline-flex;
         align-items: center;
         gap: 5px;
@@ -274,24 +275,6 @@ const CSS = /* css */ `
         color: var(--vscode-badge-foreground, var(--text));
         border: 1px solid var(--border);
         text-transform: uppercase;
-    }
-
-    .live-dot {
-        font-size: 8px;
-        color: #4EC9B0;
-        line-height: 1;
-    }
-
-    .total-badge {
-        display: inline-flex;
-        align-items: center;
-        font-size: 11px;
-        font-weight: 500;
-        padding: 2px 8px;
-        border-radius: 10px;
-        background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
-        color: var(--vscode-badge-foreground, var(--text));
-        border: 1px solid var(--border);
         white-space: nowrap;
     }
 
@@ -1008,7 +991,6 @@ function buildToolbar(vulns: Vulnerability[]): string {
 	return /* html */ `
 		<div class="toolbar">
 			<div class="toolbar-row">
-				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
 				<button
 					class="filter-toggle"
 					type="button"
@@ -1159,12 +1141,12 @@ export function buildActiveVulnerabilitiesHtml(
 	</head>
 	<body>
 		<div class="sticky-top-bar">
-			<header class="active-vuln-header">
-				<div class="active-vuln-header-left">
+			<header class="live-scan-header active-vuln-header">
+				<div class="live-scan-header-left active-vuln-header-left">
 					${SHIELD_HEADER_SVG}
-					<h3>Active Vulnerabilities</h3>
+					<span>Live Scan</span>
 				</div>
-				<span class="live-badge" id="live-scan-badge"><span class="live-dot">●</span> Live Scan</span>
+				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
 			</header>
 			${buildToolbar(vulns)}
 		</div>
