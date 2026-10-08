@@ -196,6 +196,7 @@ const CSS = /* css */ `
     :root {
         color-scheme: dark;
         --bg: var(--vscode-editor-background);
+        --header-bg: color-mix(in srgb, var(--vscode-editor-background) 95%, white 5%);
         --panel: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
         --card: var(--vscode-editorWidget-background);
         --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
@@ -223,14 +224,16 @@ const CSS = /* css */ `
         position: sticky;
         top: 0;
         z-index: 10;
-        background: var(--bg);
-        margin: -16px -16px 0 -16px;
-        padding: 16px 16px 4px 16px;
-        transition: box-shadow 0.15s ease;
+        background: var(--header-bg);
+        margin: -16px -16px 12px -16px;
+        padding: 16px 16px 6px 16px;
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+        transition: box-shadow 0.15s ease, border-color 0.15s ease;
     }
 
     .sticky-top-bar.is-scrolled {
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        border-bottom-color: var(--border);
     }
 
     .live-scan-header,
@@ -284,9 +287,9 @@ const CSS = /* css */ `
     .toolbar {
         display: grid;
         gap: 8px;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        background: var(--bg);
+        margin-bottom: 4px;
+        padding-bottom: 2px;
+        background: transparent;
     }
 
     .toolbar-row {
