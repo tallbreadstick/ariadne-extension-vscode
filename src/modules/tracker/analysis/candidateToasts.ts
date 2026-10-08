@@ -52,6 +52,48 @@ export function formatAbsentCandidateMessage(findings: FindingClassification[]):
 }
 
 /**
+ * Formats the notification message for common vulnerabilities that are graduating soon
+ * (in the session before the session where it is supposed to disappear).
+ */
+export function formatGraduatingSoonMessage(vulnTypes: string[]): string {
+	const uniqueTypes = Array.from(new Set(vulnTypes.filter(Boolean)));
+	if (uniqueTypes.length === 0) {
+		return '';
+	}
+
+	if (uniqueTypes.length === 1) {
+		return `Ariadne: ${uniqueTypes[0]} is on track to graduate. It will disappear from Common Vulnerabilities next session if no new issues are introduced.`;
+	}
+
+	const label = uniqueTypes.length === 2
+		? `${uniqueTypes[0]} and ${uniqueTypes[1]}`
+		: `${uniqueTypes.slice(0, -1).join(', ')}, and ${uniqueTypes[uniqueTypes.length - 1]}`;
+
+	return `Ariadne: ${label} are on track to graduate. They will disappear from Common Vulnerabilities next session if no new issues are introduced.`;
+}
+
+/**
+ * Formats the notification message for common vulnerabilities that have just graduated
+ * and disappeared from the Common Vulnerabilities list.
+ */
+export function formatGraduatedMessage(vulnTypes: string[]): string {
+	const uniqueTypes = Array.from(new Set(vulnTypes.filter(Boolean)));
+	if (uniqueTypes.length === 0) {
+		return '';
+	}
+
+	if (uniqueTypes.length === 1) {
+		return `Ariadne: ${uniqueTypes[0]} has graduated and was removed from Common Vulnerabilities.`;
+	}
+
+	const label = uniqueTypes.length === 2
+		? `${uniqueTypes[0]} and ${uniqueTypes[1]}`
+		: `${uniqueTypes.slice(0, -1).join(', ')}, and ${uniqueTypes[uniqueTypes.length - 1]}`;
+
+	return `Ariadne: ${label} have graduated and were removed from Common Vulnerabilities.`;
+}
+
+/**
  * Determines the single prioritized toast to display (pure logic, no vscode dependency).
  *
  * Priority order:

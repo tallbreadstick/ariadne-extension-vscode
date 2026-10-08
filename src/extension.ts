@@ -73,7 +73,7 @@ import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTy
 
 // ── Tracker (lifecycle engine + views) ────────────────────────────────
 import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
-import { showSessionToasts, getNotificationLevel } from './modules/tracker/views/notificationToast.js';
+import { showSessionToasts, showGraduationToasts, getNotificationLevel } from './modules/tracker/views/notificationToast.js';
 import { buildSessionAnalysis, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import {
 	processObservation,
@@ -86,7 +86,7 @@ import {
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
-import { computeCommonVulnerabilities } from './modules/tracker/analysis/commonVulnerabilities.js';
+import { computeCommonVulnerabilities, COMMON_VULN_POLICY, type GraduationToastEvents } from './modules/tracker/analysis/commonVulnerabilities.js';
 import type {
 	Vulnerability,
 	SessionMetrics,
@@ -1542,11 +1542,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// ── 4e. Common Vulnerabilities ────────────────────────────
 				const completedSessions = store.loadCompletedSessions();
 				const graduationHistory = store.loadGraduationHistory();
+				const graduationEvents: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
 				const commonVulns = computeCommonVulnerabilities(
 					completedSessions,
 					activeSession,
 					lifecycles,
 					graduationHistory,
+					COMMON_VULN_POLICY.K,
+					COMMON_VULN_POLICY.G,
+					graduationEvents,
 				);
 				void store.saveGraduationHistory(graduationHistory);
 
@@ -1555,6 +1559,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				// ── 4e. VS Code toast notifications ──────────────────────
 				showSessionToasts(sessionAnalysis);
+				showGraduationToasts(graduationEvents);
 
 				// Debug: log analysis results
 				const sc = sessionAnalysis.severityCounts;
