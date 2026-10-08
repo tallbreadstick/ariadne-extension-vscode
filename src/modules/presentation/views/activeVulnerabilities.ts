@@ -224,8 +224,13 @@ const CSS = /* css */ `
         top: 0;
         z-index: 10;
         background: var(--bg);
-        padding-top: 0;
-        padding-bottom: 4px;
+        margin: -16px -16px 0 -16px;
+        padding: 16px 16px 4px 16px;
+        transition: box-shadow 0.15s ease;
+    }
+
+    .sticky-top-bar.is-scrolled {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     }
 
     .live-scan-header,
@@ -251,17 +256,10 @@ const CSS = /* css */ `
         gap: 6px;
     }
 
-    .live-scan-header-left span {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        color: var(--muted);
-        letter-spacing: 0.04em;
-    }
-
     .section-icon {
-        width: 14px;
-        height: 14px;
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
         flex-shrink: 0;
     }
 
@@ -1172,6 +1170,7 @@ export function buildActiveVulnerabilitiesHtml(
 				const filterBadge = document.getElementById('filter-badge');
 				const resultsMeta = document.getElementById('results-meta');
 				const filterEmpty = document.getElementById('filter-empty');
+				const stickyTopBar = document.querySelector('.sticky-top-bar');
 				const totalCount = cards.length;
 
 				function readUiState() {
@@ -1344,7 +1343,14 @@ export function buildActiveVulnerabilitiesHtml(
 					if (typeof state.scrollTop === 'number' && state.scrollTop > 0) {
 						requestAnimationFrame(() => {
 							window.scrollTo(0, state.scrollTop);
+							updateScrollState();
 						});
+					}
+				}
+
+				function updateScrollState() {
+					if (stickyTopBar) {
+						stickyTopBar.classList.toggle('is-scrolled', window.scrollY > 2);
 					}
 				}
 
@@ -1361,6 +1367,7 @@ export function buildActiveVulnerabilitiesHtml(
 				window.addEventListener(
 					'scroll',
 					() => {
+						updateScrollState();
 						persistUiState({ scrollTop: window.scrollY });
 					},
 					{ passive: true },
