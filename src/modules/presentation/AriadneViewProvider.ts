@@ -5,6 +5,7 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	private currentHtml: string;
 	private webviewView?: vscode.WebviewView;
 	private pendingBadgeCount?: number;
+	private pendingMessages: unknown[] = [];
 	/** Optional hook to rebuild HTML when the panel becomes visible. */
 	private resolveHtml?: () => string;
 	private resolveHtmlApplied = false;
@@ -21,6 +22,18 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	 */
 	setResolveHtml(getHtml: () => string): void {
 		this.resolveHtml = getHtml;
+	}
+
+	/**
+	 * Sends a message to the active webview, or queues it if the webview
+	 * has not yet been resolved.
+	 */
+	postMessage(message: unknown): void {
+		if (this.webviewView) {
+			this.webviewView.webview.postMessage(message);
+		} else {
+			this.pendingMessages.push(message);
+		}
 	}
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -59,6 +72,16 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 
 		if (this.pendingBadgeCount !== undefined) {
 			this.applyBadgeCount(this.pendingBadgeCount);
+		}
+
+		if (this.pendingMessages.length > 0) {
+			const queued = [...this.pendingMessages];
+			this.pendingMessages = [];
+			setTimeout(() => {
+				for (const msg of queued) {
+					this.webviewView?.webview.postMessage(msg);
+				}
+			}, 100);
 		}
 	}
 

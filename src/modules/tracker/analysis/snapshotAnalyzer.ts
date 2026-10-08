@@ -208,11 +208,14 @@ export function buildSessionAnalysis(
 		const vuln = matchedVuln ?? createResolvedPlaceholder(classification);
 
 		const deltaIdx = deltas.length;
+		const reportCount = classification.lifecycle.reportCount
+			?? Math.max(classification.lifecycle.confirmationCount ?? 0, 2);
 		deltas.push({
 			vulnerability: vuln,
 			status,
 			previousInstanceCount: classification.previousOccurrenceCount,
 			currentInstanceCount: classification.currentOccurrenceCount,
+			reportCount: status === 'persisting' ? reportCount : undefined,
 		});
 
 		// Track per-type counts for improving detection
@@ -404,10 +407,22 @@ function groupByType(
 	for (const d of deltas) {
 		const type = d.vulnerability.type;
 		const existing = map.get(type);
+		const repCount = d.reportCount;
 		if (existing) {
 			existing.instances += getCount(d);
+			if (repCount !== undefined && repCount > (existing.reportCount ?? 0)) {
+				existing.reportCount = repCount;
+				const countStr = repCount === 1 ? '1 report' : `${repCount} reports`;
+				existing.subtitle = `Present since ${countStr}`;
+			}
 		} else {
-			map.set(type, { type, instances: getCount(d) });
+			const item: TrendSubItem = { type, instances: getCount(d) };
+			if (repCount !== undefined) {
+				item.reportCount = repCount;
+				const countStr = repCount === 1 ? '1 report' : `${repCount} reports`;
+				item.subtitle = `Present since ${countStr}`;
+			}
+			map.set(type, item);
 		}
 	}
 	return [...map.values()];
@@ -456,6 +471,7 @@ export function toSessionMetrics(
 	analysis: SessionAnalysis,
 	commonVulns?: Map<string, CommonVulnerabilityEntry>,
 	totalSessionsAnalyzed?: number,
+	sessionLabel?: string,
 ): SessionMetrics {
 	// Build per-type sub-items for recurring findings (grouped by type)
 	const recurringItems = groupByType(
@@ -535,6 +551,7 @@ export function toSessionMetrics(
 		notifications: generateNotifications(analysis),
 		commonVulnerabilities: mapCommonVulns(commonVulns),
 		totalSessionsAnalyzed: totalSessions,
+		sessionLabel,
 	};
 }
 

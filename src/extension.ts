@@ -74,7 +74,7 @@ import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTy
 
 // ── Tracker (lifecycle engine + views) ────────────────────────────────
 import { createAriadneStatusBarItem, updateStatusBar } from './modules/tracker/views/statusBar';
-import { showSessionToasts, getNotificationLevel } from './modules/tracker/views/notificationToast.js';
+import { showSessionToasts, showGraduationToasts, getNotificationLevel } from './modules/tracker/views/notificationToast.js';
 import { buildSessionAnalysis, toSessionMetrics } from './modules/tracker/analysis/snapshotAnalyzer.js';
 import {
 	processObservation,
@@ -87,7 +87,7 @@ import {
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
 import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
-import { computeCommonVulnerabilities } from './modules/tracker/analysis/commonVulnerabilities.js';
+import { computeCommonVulnerabilities, COMMON_VULN_POLICY, type GraduationToastEvents } from './modules/tracker/analysis/commonVulnerabilities.js';
 import type {
 	Vulnerability,
 	SessionMetrics,
@@ -434,6 +434,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const graduationHistory = store.loadGraduationHistory();
 		const totalSessionsAnalyzed = completedSessions.length + (activeSession ? 1 : 0);
 
+		let sessionNum = 1;
+		if (activeSession) {
+			const match = /^session-0*(\d+)$/i.exec(activeSession.sessionId.trim());
+			if (match) {
+				sessionNum = parseInt(match[1], 10);
+			} else {
+				sessionNum = completedSessions.length + 1;
+			}
+		} else {
+			sessionNum = Math.max(completedSessions.length + 1, (store.loadSessionMeta().sessionIdSeed ?? 0) + 1);
+		}
+		const sessionLabel = `Session ${sessionNum}`;
+
 		const commonVulns = computeCommonVulnerabilities(
 			completedSessions,
 			activeSession,
@@ -442,7 +455,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		);
 
 		if (latestSessionAnalysis) {
-			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed);
+			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed, sessionLabel);
 			if (latestVulnerabilities.length > 0) {
 				metrics.critical = latestVulnerabilities.filter(v => v.severity === 'critical').length;
 				metrics.high = latestVulnerabilities.filter(v => v.severity === 'high').length;
@@ -492,6 +505,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		let recurringPatterns = 0;
 
 		const persistingMap = new Map<string, number>();
+		const typePersistingReportCount = new Map<string, number>();
 		const recurringMap = new Map<string, number>();
 		const resolvedMap = new Map<string, number>();
 		const improvingMap = new Map<string, ImprovingSubItem>();
@@ -524,6 +538,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				persistingPatterns++;
 				persistingMap.set(flc.type, (persistingMap.get(flc.type) ?? 0) + 1);
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
+				const repCount = flc.reportCount ?? Math.max(flc.confirmationCount ?? 0, 2);
+				typePersistingReportCount.set(
+					flc.type,
+					Math.max(typePersistingReportCount.get(flc.type) ?? 0, repCount),
+				);
 			} else if (flc.lifecycleState === 'improving') {
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
 			}
@@ -555,7 +574,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 
 		const persistingItems = persistingMap.size > 0
-			? Array.from(persistingMap.entries()).map(([type, instances]) => ({ type, instances }))
+			? Array.from(persistingMap.entries()).map(([type, instances]) => {
+				const reportCount = typePersistingReportCount.get(type) ?? 2;
+				const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+				return {
+					type,
+					instances,
+					reportCount,
+					subtitle: `Present since ${countStr}`,
+				};
+			})
 			: undefined;
 		const recurringItems = recurringMap.size > 0
 			? Array.from(recurringMap.entries()).map(([type, instances]) => ({ type, instances }))
@@ -608,6 +636,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			notifications: undefined,
 			commonVulnerabilities: commonItems.length > 0 ? commonItems : undefined,
 			totalSessionsAnalyzed,
+			sessionLabel,
 		};
 	}
 
@@ -647,10 +676,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
-		// Handle dismiss-notification messages from the Session Metrics webview.
+		// Handle messages from the Session Metrics webview.
 		(msg) => {
 			if (msg.type === 'dismiss-notification' && typeof msg.notifId === 'string') {
 				store.dismissNotification(msg.notifId);
+			} else if (msg.type === 'filter-severity' && typeof msg.severity === 'string') {
+				void (async () => {
+					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+					activeVulnsProvider.postMessage({ type: 'set-filter-severity', severity: msg.severity });
+				})();
+			} else if (msg.type === 'filter-type' && typeof msg.vulnType === 'string') {
+				void (async () => {
+					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+					activeVulnsProvider.postMessage({ type: 'set-filter-type', vulnType: msg.vulnType });
+				})();
 			}
 		},
 	);
@@ -1231,6 +1270,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				getWorkspaceFileContent,
 			);
 			lifecycles = result.lifecycles;
+
+			// Increment reportCount for persisting findings observed in this successful full report
+			for (const flc of lifecycles) {
+				const isObservedInRollover = observed.some(o => o.logicalFingerprint === flc.logicalFingerprint);
+				if (isObservedInRollover && (flc.lifecycleState === 'persisting' || flc.isCommentedOut)) {
+					const current = flc.reportCount ?? Math.max((flc.confirmationCount ?? 1) - 1, 2);
+					flc.reportCount = current + 1;
+				}
+			}
+
 			void store.saveFindingLifecycles(lifecycles);
 
 			// Record hourly checkpoint on active session without ending or resetting the session
@@ -1495,11 +1544,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// ── 4e. Common Vulnerabilities ────────────────────────────
 				const completedSessions = store.loadCompletedSessions();
 				const graduationHistory = store.loadGraduationHistory();
+				const graduationEvents: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
 				const commonVulns = computeCommonVulnerabilities(
 					completedSessions,
 					activeSession,
 					lifecycles,
 					graduationHistory,
+					COMMON_VULN_POLICY.K,
+					COMMON_VULN_POLICY.G,
+					graduationEvents,
 				);
 				void store.saveGraduationHistory(graduationHistory);
 
@@ -1508,6 +1561,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				// ── 4e. VS Code toast notifications ──────────────────────
 				showSessionToasts(sessionAnalysis);
+				showGraduationToasts(graduationEvents);
 
 				// Debug: log analysis results
 				const sc = sessionAnalysis.severityCounts;

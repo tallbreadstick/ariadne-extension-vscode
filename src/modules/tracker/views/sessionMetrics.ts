@@ -12,6 +12,15 @@ import type { Severity } from '../../presentation/panelTypes.js';
 import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 import { buildStartupLoadingHtml } from '../../presentation/views/startupLoading.js';
 
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
+
 // ── SVGs ─────────────────────────────────────────────────────────────
 
 const TREND_CHART_SVG =
@@ -59,11 +68,6 @@ const RESOLVED_SVG =
 			stroke-linecap="round" stroke-linejoin="round" />
 	</svg>`;
 
-const NOTIFICATION_BELL_SVG =
-	`<svg class="section-icon notif-bell" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-	</svg>`;
-
 const COMMON_VULN_SVG =
 	`<svg class="section-icon" style="color: #E24B4A;" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
@@ -71,25 +75,25 @@ const COMMON_VULN_SVG =
 		<circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" />
 	</svg>`;
 
-const FULL_SCAN_SVG =
+const FULL_REPORT_SVG =
 	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2m-10 0H5a2 2 0 01-2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 		<line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 	</svg>`;
 
-const NOTIFICATION_ICON_SVG =
-	`<svg class="notif-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
-		<path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2"
-			stroke-linecap="round" />
-	</svg>`;
+const FULL_SCAN_SVG = FULL_REPORT_SVG;
 
 // ── Partial builders ──────────────────────────────────────────────────
 
 function buildMetricCard(title: string, value: number, severity: Severity): string {
 	const accent = SEVERITY_COLORS[severity];
 	return /* html */ `
-		<div class="metric-card" style="border-left: 3px solid ${accent};">
+		<div class="metric-card filterable-metric-card"
+		     data-severity="${severity}"
+		     role="button"
+		     tabindex="0"
+		     title="Filter active vulnerabilities by ${title}"
+		     style="border-left: 3px solid ${accent};">
 			<div class="metric-title">${title}</div>
 			<div class="metric-trend" style="color: ${accent};">
 				${TREND_CHART_SVG}
@@ -103,10 +107,36 @@ function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): s
 		return '';
 	}
 	return items.map((item) => /* html */ `
-		<div class="trend-sub-item">
+		<div class="trend-sub-item filterable-type-item"
+		     data-vuln-type="${escapeHtml(item.type)}"
+		     role="button"
+		     tabindex="0"
+		     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
 			<span class="sub-label">${item.type}</span>
+			${item.subtitle ? `<span class="sub-subtitle">${item.subtitle}</span>` : ''}
 			<span class="sub-count">${item.instances}</span>
 		</div>`).join('');
+}
+
+function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: number): string {
+	if (!items || items.length === 0) {
+		return '';
+	}
+	return items.map((item) => {
+		const reportCount = item.reportCount ?? 2;
+		const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+		const subtitleText = item.subtitle ?? `Present since ${countStr}`;
+		return /* html */ `
+			<div class="trend-sub-item filterable-type-item"
+			     data-vuln-type="${escapeHtml(item.type)}"
+			     role="button"
+			     tabindex="0"
+			     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
+				<span class="sub-label">${item.type}</span>
+				<span class="sub-subtitle persisting-subtitle">${subtitleText}</span>
+				<span class="sub-count">${item.instances}</span>
+			</div>`;
+	}).join('');
 }
 
 function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: number): string {
@@ -121,15 +151,15 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 				: item.progressLabel === 'Major progress'
 					? 'progress-major'
 					: 'progress-nochange';
-		const deltaText = !item.progressDelta
-			? ''
-			: item.progressDelta === 'N/A'
-				? ' (N/A)'
-				: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
+		const vulnType = item.type || 'Unknown';
 		return /* html */ `
-			<div class="trend-sub-item">
-				<span class="sub-label">${item.type || 'Unknown'}</span>
-				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
+			<div class="trend-sub-item filterable-type-item"
+			     data-vuln-type="${escapeHtml(vulnType)}"
+			     role="button"
+			     tabindex="0"
+			     title="Filter active vulnerabilities by ${escapeHtml(vulnType)}">
+				<span class="sub-label">${vulnType}</span>
+				<span class="sub-progress ${progressClass}">${item.progressLabel}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
@@ -143,6 +173,8 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
  * @param label    - Row label text
  * @param count    - Instance count shown in the header
  * @param subItems - Rendered HTML string of sub-item rows
+ * @param instanceLabel - Text label describing instance count
+ * @param tooltip  - Optional explanatory tooltip description
  */
 function buildCollapsibleTrendRow(
 	id: string,
@@ -151,11 +183,13 @@ function buildCollapsibleTrendRow(
 	count: number,
 	subItems: string,
 	instanceLabel: string,
+	tooltip?: string,
 ): string {
+	const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
 	return /* html */ `
 		<div class="trend-group" data-trend-id="${id}">
 			<button class="trend-header" type="button" aria-expanded="false"
-			        aria-controls="trend-body-${id}" data-trend-toggle="${id}">
+			        aria-controls="trend-body-${id}" data-trend-toggle="${id}"${tooltipAttr}>
 				<span class="trend-header-left">
 					${icon}
 					<span class="trend-header-label">${label}</span>
@@ -172,40 +206,6 @@ function buildCollapsibleTrendRow(
 				<div class="trend-body-inner">
 					${subItems}
 				</div>
-			</div>
-		</div>`;
-}
-
-function buildNotificationItem(notif: SessionNotification): string {
-	const { id, message, detail, timestamp } = notif;
-	return /* html */ `
-		<div class="notif-card" data-notif-id="${id}">
-			<div class="notif-body">
-				${NOTIFICATION_ICON_SVG}
-				<div class="notif-text">
-					<div class="notif-message">${message}</div>
-					<div class="notif-detail">${detail}</div>
-					<div class="notif-timestamp">${timestamp} · Ariadne</div>
-				</div>
-			</div>
-			<button class="notif-dismiss" type="button" aria-label="Dismiss"
-			        data-notif-id="${id}">&#x2715;</button>
-		</div>`;
-}
-
-function buildNotificationsPanel(metrics: SessionMetrics): string {
-	const items = metrics.notifications && metrics.notifications.length > 0
-		? metrics.notifications.map(buildNotificationItem).join('\n')
-		: /* html */ `<div class="panel-empty">No notifications</div>`;
-
-	return /* html */ `
-		<div class="split-panel notif-panel">
-			<div class="split-panel-header">
-				${NOTIFICATION_BELL_SVG}
-				<span class="split-panel-title">NOTIFICATIONS</span>
-			</div>
-			<div class="notif-feed" id="notif-feed">
-				${items}
 			</div>
 		</div>`;
 }
@@ -228,7 +228,11 @@ function buildCommonVulnerabilitiesPanel(
 				? /* html */ `<span class="cv-active">${item.activeFindingCount} active</span>`
 				: /* html */ `<span class="cv-resolved">all resolved</span>`;
 			return /* html */ `
-				<div class="cv-card">
+				<div class="cv-card filterable-type-item"
+				     data-vuln-type="${escapeHtml(item.type)}"
+				     role="button"
+				     tabindex="0"
+				     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
 					<div class="cv-card-left">
 						<span class="cv-type">${item.type}</span>
 						${statusLabel}
@@ -242,10 +246,13 @@ function buildCommonVulnerabilitiesPanel(
 	}
 
 	return /* html */ `
-		<div class="split-panel common-vuln-panel">
-			<div class="split-panel-header">
-				${COMMON_VULN_SVG}
-				<span class="split-panel-title">COMMON VULNERABILITIES</span>
+		<div class="common-vuln-panel">
+			<div class="common-vuln-header">
+				<div class="common-vuln-header-left">
+					${COMMON_VULN_SVG}
+					<span class="common-vuln-title">Common Vulnerabilities</span>
+				</div>
+				<span class="common-vuln-subtitle">Tracks recurring vulnerability patterns across your sessions.</span>
 			</div>
 			<div class="common-vuln-feed">
 				${content}
@@ -286,22 +293,53 @@ const CSS = /* css */ `
 
 	.dashboard { display: grid; gap: 16px; }
 
-	/* ── Full scan section ── */
+	/* ── Full report section ── */
+	.full-report-section,
 	.full-scan-section {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 	}
 
+	.full-report-header,
 	.full-scan-header {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		justify-content: space-between;
+		gap: 8px;
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
+	}
+
+	.full-report-header-left {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* ── Session Context Badge ── */
+	.session-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.3px;
+		padding: 2px 8px;
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
+		color: var(--vscode-badge-foreground, var(--text));
+		border: 1px solid var(--border);
+		text-transform: uppercase;
+	}
+
+	.session-dot {
+		font-size: 8px;
+		color: var(--accent);
+		line-height: 1;
 	}
 
 	.metrics-grid {
@@ -319,12 +357,42 @@ const CSS = /* css */ `
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		transition: border-color 0.2s ease, box-shadow 0.2s ease;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
 	}
 
 	.metric-card:hover {
 		border-color: rgba(70, 213, 196, 0.55);
 		box-shadow: var(--shadow);
+	}
+
+	.filterable-metric-card {
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.filterable-metric-card:hover {
+		transform: translateY(-1px);
+	}
+
+	.filterable-metric-card:active {
+		transform: translateY(0);
+	}
+
+	.filterable-metric-card:focus-visible,
+	.filterable-type-item:focus-visible {
+		outline: 1px solid var(--accent);
+		outline-offset: -1px;
+	}
+
+	.filterable-type-item {
+		cursor: pointer;
+		user-select: none;
+		transition: background-color 0.15s ease;
+		border-radius: 4px;
+	}
+
+	.filterable-type-item:hover {
+		background: rgba(255, 255, 255, 0.06);
 	}
 
 	.metric-title {
@@ -353,6 +421,15 @@ const CSS = /* css */ `
 		overflow: hidden;
 	}
 
+	.trends-header-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 12px 14px 8px;
+		flex-wrap: wrap;
+	}
+
 	.trends-title {
 		display: inline-flex;
 		align-items: center;
@@ -361,7 +438,13 @@ const CSS = /* css */ `
 		text-transform: uppercase;
 		font-weight: 700;
 		color: var(--muted);
-		padding: 12px 14px 8px;
+	}
+
+	.trends-subtitle {
+		font-size: 11px;
+		color: var(--muted);
+		font-weight: 400;
+		line-height: 1.3;
 	}
 
 	/* ── Collapsible trend row ── */
@@ -452,15 +535,27 @@ const CSS = /* css */ `
 	.sub-label { flex: 1; color: var(--text); }
 
 	.sub-progress {
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+		padding: 2px 8px;
+		border-radius: 10px;
+	}
+
+	.sub-subtitle {
 		font-size: 12px;
 		font-weight: 500;
 		white-space: nowrap;
 	}
 
-	.progress-some  { color: var(--orange); }
-	.progress-clear { color: var(--accent-strong); }
-	.progress-major { color: var(--blue); }
-	.progress-nochange { color: var(--muted); }
+	.persisting-subtitle {
+		color: var(--muted);
+	}
+
+	.progress-some     { color: var(--orange); background: color-mix(in srgb, var(--orange) 15%, transparent); }
+	.progress-clear    { color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+	.progress-major    { color: var(--blue); background: color-mix(in srgb, var(--blue) 15%, transparent); }
+	.progress-nochange { color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); }
 
 	.sub-count {
 		font-size: 12px;
@@ -468,7 +563,6 @@ const CSS = /* css */ `
 		color: var(--text);
 		min-width: 20px;
 		margin-right: 12px;
-		
 	}
 
 	.trend-sub-placeholder { color: var(--muted); }
@@ -479,39 +573,47 @@ const CSS = /* css */ `
 
 	.divider { height: 1px; background: rgba(58, 58, 58, 0.7); }
 
-	/* ── Split panel section ── */
-	.split-section {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px;
-		min-height: 180px;
-	}
-
-	.split-panel {
+	/* ── Common vulnerabilities panel ── */
+	.common-vuln-panel {
 		background: var(--panel);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		display: flex;
 		flex-direction: column;
-		max-height: 260px;
+		max-height: 280px;
 		overflow: hidden;
 	}
 
-	.split-panel-header {
+	.common-vuln-header {
 		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 10px 12px 8px;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 12px 14px 8px;
 		border-bottom: 1px solid rgba(58, 58, 58, 0.6);
 		flex-shrink: 0;
+		flex-wrap: wrap;
 	}
 
-	.split-panel-title {
+	.common-vuln-header-left {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.common-vuln-title {
 		font-size: 13px;
 		font-weight: 700;
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
+	}
+
+	.common-vuln-subtitle {
+		font-size: 11px;
+		color: var(--muted);
+		font-weight: 400;
+		line-height: 1.3;
 	}
 
 	.section-icon {
@@ -521,11 +623,7 @@ const CSS = /* css */ `
 		flex-shrink: 0;
 	}
 
-	.section-icon.notif-bell { color: var(--accent); }
-
-	/* ── Common vulnerabilities panel ── */
 	.common-vuln-feed {
-	
 		flex: 1;
 		display: flex;
 		flex-direction: column;
@@ -535,8 +633,7 @@ const CSS = /* css */ `
 		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
 	}
 
-	.common-vuln-feed:has(.panel-empty),
-	.notif-feed:has(.panel-empty) {
+	.common-vuln-feed:has(.panel-empty) {
 		background: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
 	}
 
@@ -619,86 +716,6 @@ const CSS = /* css */ `
 		color: var(--accent);
 	}
 
-	/* ── Notification feed (scrollable) ── */
-	.notif-feed {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		
-		overflow-y: auto;
-		scrollbar-width: thin;
-		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
-	}
-
-	.notif-feed::-webkit-scrollbar { width: 4px; }
-	.notif-feed::-webkit-scrollbar-track { background: transparent; }
-	.notif-feed::-webkit-scrollbar-thumb {
-		background-color: rgba(70, 213, 196, 0.3);
-		border-radius: 4px;
-	}
-	.notif-feed::-webkit-scrollbar-thumb:hover {
-		background-color: rgba(70, 213, 196, 0.6);
-	}
-
-	.notif-card {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 10px;
-		background: var(--card);
-		border-bottom: 1px solid var(--border);
-		
-		padding: 10px 12px;
-		flex-shrink: 0;
-	}
-
-	.notif-body {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-		min-width: 0;
-	}
-
-	.notif-icon {
-		width: 16px;
-		height: 16px;
-		flex: 0 0 auto;
-		color: var(--accent);
-		margin-top: 1px;
-	}
-
-	.notif-text { display: grid; gap: 3px; min-width: 0; }
-
-	.notif-message { font-size: 12px; font-weight: 600; color: var(--text); }
-	.notif-detail  { font-size: 11px; color: var(--text); line-height: 1.4; }
-	.notif-timestamp { font-size: 10px; color: var(--muted); }
-
-	.notif-dismiss {
-		background: transparent;
-		border: none;
-		color: var(--muted);
-		cursor: pointer;
-		font-size: 13px;
-		padding: 0;
-		line-height: 1;
-		flex: 0 0 auto;
-	}
-
-	.notif-dismiss:hover { color: var(--text); }
-
-	/* Slide-out animation for dismissed notifications */
-	@keyframes notif-slide-out {
-		0%   { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 0; }
-		60%  { opacity: 0; transform: translateX(40px); max-height: 200px; margin-bottom: 0; }
-		100% { opacity: 0; transform: translateX(40px); max-height: 0; margin-bottom: -6px; padding: 0 12px; border-width: 0; }
-	}
-
-	.notif-card.dismissing {
-		animation: notif-slide-out 0.35s ease forwards;
-		pointer-events: none;
-		overflow: hidden;
-	}
-
 	.signin-state {
 		display: grid;
 		gap: 10px;
@@ -751,7 +768,6 @@ const CSS = /* css */ `
 			white-space: nowrap;
 		}
 		.metric-trend { flex-shrink: 0; }
-		.split-section { grid-template-columns: 1fr; }
 	}
 `;
 
@@ -783,7 +799,7 @@ export function buildSessionMetricsHtml(
 		<section class="signin-state" role="status">
 			<p class="signin-title">Sign in required</p>
 			<p class="signin-copy">
-				GitHub sign-in is needed to run scans and show session metrics for
+				GitHub sign-in is needed to generate reports and show session metrics for
 				this workspace.
 			</p>
 			<a class="signin-cta" href="command:ariadne-extension-vscode.openSignInPanel">Sign in to Ariadne</a>
@@ -793,8 +809,9 @@ export function buildSessionMetricsHtml(
 	}
 
 	const { critical, high, medium, low, trends } = metrics;
+	const sessionLabel = (metrics.sessionLabel || 'Session 1').toUpperCase();
 
-	const persistingSubItems = buildBasicSubItems(trends.persistingItems, trends.persistingPatterns);
+	const persistingSubItems = buildPersistingSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
 	const recurringSubItems = buildBasicSubItems(trends.recurringItems, trends.recurringPatterns);
 	const resolvedSubItems = buildBasicSubItems(trends.resolvedItems, trends.resolvedThisSession);
@@ -809,10 +826,13 @@ export function buildSessionMetricsHtml(
 	</head>
 	<body>
 		<section class="dashboard">
-			<div class="full-scan-section">
-				<div class="full-scan-header">
-					${FULL_SCAN_SVG}
-					<span>Full scan</span>
+			<div class="full-report-section">
+				<div class="full-report-header">
+					<div class="full-report-header-left">
+						${FULL_REPORT_SVG}
+						<span>Full Report</span>
+					</div>
+					<span class="session-badge"><span class="session-dot">●</span> ${escapeHtml(sessionLabel)}</span>
 				</div>
 				<div class="metrics-grid">
 					${buildMetricCard('Critical Issues', critical, 'critical')}
@@ -825,9 +845,12 @@ export function buildSessionMetricsHtml(
 			<div class="divider"></div>
 
 			<div class="trends-card">
-				<div class="trends-title">
-					${TRENDS_HEADER_SVG}
-					Trends
+				<div class="trends-header-row">
+					<div class="trends-title">
+						${TRENDS_HEADER_SVG}
+						<span>Trends</span>
+					</div>
+					<span class="trends-subtitle">Compares reports to track progress and unresolved risks.</span>
 				</div>
 
 				${buildCollapsibleTrendRow(
@@ -837,6 +860,7 @@ export function buildSessionMetricsHtml(
 		trends.persistingPatterns,
 		persistingSubItems,
 		'Instances Open',
+		'Vulnerabilities that remain unaddressed across multiple reports.',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -846,6 +870,7 @@ export function buildSessionMetricsHtml(
 		trends.improvingTrends,
 		improvingSubItems,
 		'Instances Remaining',
+		'Vulnerabilities where occurrences are decreasing.',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -855,6 +880,7 @@ export function buildSessionMetricsHtml(
 		trends.recurringPatterns,
 		recurringSubItems,
 		'Instances Returned',
+		'Previously resolved vulnerabilities that have reappeared.',
 	)}
 
 				${buildCollapsibleTrendRow(
@@ -864,15 +890,13 @@ export function buildSessionMetricsHtml(
 		trends.resolvedThisSession,
 		resolvedSubItems,
 		'Instances Fixed',
+		'Vulnerabilities successfully and durably remediated in this session.',
 	)}
 			</div>
 			
 			<div class="divider"></div>
 			
-			<div class="split-section">
-				${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
-				${buildNotificationsPanel(metrics)}
-			</div>
+			${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
 		</section>
 		<script>
 			(function () {
@@ -892,26 +916,31 @@ export function buildSessionMetricsHtml(
 					});
 				});
 
-				// ── Notification dismiss ────────────────────────────────
+				// ── Cross-filtering to Active Vulnerabilities ────────────
 				document.addEventListener('click', function (e) {
-					const btn = e.target.closest('.notif-dismiss');
-					if (!btn) { return; }
-					const id = btn.dataset.notifId;
-					if (!id) { return; }
-
-					const card = btn.closest('.notif-card');
-					if (card) {
-						card.classList.add('dismissing');
-						card.addEventListener('animationend', function () {
-							card.remove();
-							const feed = document.getElementById('notif-feed');
-							if (feed && feed.querySelectorAll('.notif-card').length === 0) {
-								feed.innerHTML = '<div class="panel-empty">No notifications</div>';
-							}
-						});
+					const metricCard = e.target.closest('.filterable-metric-card');
+					if (metricCard && metricCard.dataset.severity) {
+						vscode.postMessage({ type: 'filter-severity', severity: metricCard.dataset.severity });
+						return;
 					}
+					const typeItem = e.target.closest('.filterable-type-item');
+					if (typeItem && typeItem.dataset.vulnType) {
+						vscode.postMessage({ type: 'filter-type', vulnType: typeItem.dataset.vulnType });
+						return;
+					}
+				});
 
-					vscode.postMessage({ type: 'dismiss-notification', notifId: id });
+				document.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter' || e.key === ' ') {
+						const target = e.target;
+						if (target && target.classList && target.classList.contains('filterable-metric-card') && target.dataset.severity) {
+							e.preventDefault();
+							vscode.postMessage({ type: 'filter-severity', severity: target.dataset.severity });
+						} else if (target && target.classList && target.classList.contains('filterable-type-item') && target.dataset.vulnType) {
+							e.preventDefault();
+							vscode.postMessage({ type: 'filter-type', vulnType: target.dataset.vulnType });
+						}
+					}
 				});
 			})();
 		</script>

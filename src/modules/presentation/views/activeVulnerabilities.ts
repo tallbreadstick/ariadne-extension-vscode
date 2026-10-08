@@ -99,6 +99,11 @@ const CHECK_MARK_SVG =
 		<path fill-rule="evenodd" clip-rule="evenodd" d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
 	</svg>`;
 
+const SPARKLE_SVG =
+	`<svg class="sparkle-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path d="M7.5 0.75a.75.75 0 0 1 .7.49l1.32 3.65 3.65 1.32a.75.75 0 0 1 0 1.4l-3.65 1.32-1.32 3.65a.75.75 0 0 1-1.4 0L5.48 8.93 1.83 7.61a.75.75 0 0 1 0-1.4l3.65-1.32 1.32-3.65a.75.75 0 0 1 .7-.49zm5.25 8.25a.5.5 0 0 1 .47.33l.66 1.83 1.83.66a.5.5 0 0 1 0 .94l-1.83.66-.66 1.83a.5.5 0 0 1-.94 0l-.66-1.83-1.83-.66a.5.5 0 0 1 0-.94l1.83-.66.66-1.83a.5.5 0 0 1 .47-.33z"/>
+	</svg>`;
+
 // ── Card builder ──────────────────────────────────────────────────────
 
 function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
@@ -168,12 +173,10 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 					</div>
 				</div>
 				<div class="cta-row">
-                    <a class="action-button" role="button" href="${feedbackHref}">
-						<span>Ask Ariadne</span>
-						<svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-							<path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8l-4.357-4.357.618-.62L11 7.69v.62L6.333 13l-.618-.619L10.072 8z"/>
-						</svg>
-                    </a>
+					<a class="action-button btn-explain" role="button" href="${feedbackHref}" title="View AI conceptual explanation">
+						${SPARKLE_SVG}
+						<span>Explain Vulnerability</span>
+					</a>
 				</div>
 			</div>
 		</details>`;
@@ -202,10 +205,50 @@ const CSS = /* css */ `
 
     body {
         margin: 0;
-        padding: 14px 16px 18px;
+        padding: 0 16px 18px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: var(--bg);
         color: var(--text);
+    }
+
+    .sticky-top-bar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: var(--bg);
+        padding-top: 14px;
+        padding-bottom: 4px;
+    }
+
+    .active-vuln-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 10px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .active-vuln-header h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: 0.2px;
+    }
+
+    .total-badge {
+        display: inline-flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
+        color: var(--vscode-badge-foreground, var(--text));
+        border: 1px solid var(--border);
+        white-space: nowrap;
     }
 
     .vuln-stack { display: grid; gap: 12px; }
@@ -214,9 +257,6 @@ const CSS = /* css */ `
         display: grid;
         gap: 8px;
         margin-bottom: 12px;
-        position: sticky;
-        top: 0;
-        z-index: 2;
         padding-bottom: 8px;
         background: var(--bg);
     }
@@ -832,29 +872,34 @@ const CSS = /* css */ `
         justify-content: space-between;
     }
 
-    .action-button {
-    /* New Flexbox properties to align the text and icon */
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    text-decoration: none;
-    user-select: none;
-    
-    /* Your existing properties */
-		border: none;
-		border-radius: 3px;
-		padding: 8px 14px;
-		font-size: 12px;
-		font-weight: 600;
-		background: var(--button-bg);
-		color: var(--button-text);
-        opacity: 1;
+    .action-button,
+    .btn-explain {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+        user-select: none;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        background: var(--button-bg);
+        color: var(--button-text);
         cursor: pointer;
-        transition: filter 0.15s ease, opacity 0.15s ease;
-	}
+        transition: background 0.15s ease, filter 0.15s ease;
+    }
 
-    .action-button:hover {
+    .action-button:hover,
+    .btn-explain:hover {
+        background: var(--vscode-button-hoverBackground, var(--button-bg));
         filter: brightness(1.08);
+    }
+
+    .sparkle-icon {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
     }
 
 	/* Size and prevent the icon from shrinking */
@@ -1052,7 +1097,13 @@ export function buildActiveVulnerabilitiesHtml(
 		<style>${CSS}</style>
 	</head>
 	<body>
-		${buildToolbar(vulns)}
+		<div class="sticky-top-bar">
+			<header class="active-vuln-header">
+				<h3>Active Vulnerabilities</h3>
+				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
+			</header>
+			${buildToolbar(vulns)}
+		</div>
 		<section class="vuln-stack" id="vuln-stack">
             ${vulns.length === 0 ? emptyState : cards}
 		</section>
@@ -1175,6 +1226,13 @@ export function buildActiveVulnerabilitiesHtml(
 						resultsMeta.textContent = visibleCount === totalCount
 							? 'Live scan • ' + totalCount + ' vulnerabilit' + (totalCount === 1 ? 'y' : 'ies')
 							: 'Live scan • Showing ' + visibleCount + ' of ' + totalCount;
+					}
+
+					const totalVulnBadge = document.getElementById('total-vuln-badge');
+					if (totalVulnBadge) {
+						totalVulnBadge.textContent = visibleCount === totalCount
+							? totalCount + ' Issue' + (totalCount === 1 ? '' : 's') + ' Total'
+							: 'Showing ' + visibleCount + ' of ' + totalCount + ' Issues';
 					}
 
 					if (filterEmpty) {
@@ -1326,6 +1384,82 @@ export function buildActiveVulnerabilitiesHtml(
 				if (totalCount > 0) {
 					applyFilters();
 				}
+
+				// Cross-filtering message listener from Session Metrics or external commands
+				window.addEventListener('message', (event) => {
+					const msg = event.data;
+					if (!msg || typeof msg !== 'object') return;
+					if (msg.type === 'set-filter-severity') {
+						const targetSeverity = String(msg.severity || '').toLowerCase();
+						const currentSelected = selectedSeverities();
+						const isAlreadyActive =
+							currentSelected.length === 1 &&
+							currentSelected[0] === targetSeverity &&
+							!(searchInput?.value ?? '').trim() &&
+							!categoryFilter?.value &&
+							!typeFilter?.value;
+
+						if (isAlreadyActive) {
+							resetFilters();
+							return;
+						}
+
+						if (searchInput) searchInput.value = '';
+						if (categoryFilter) categoryFilter.value = '';
+						if (typeFilter) typeFilter.value = '';
+						severityChips.forEach((chip) => {
+							const matches = chip.dataset.severity === targetSeverity;
+							chip.setAttribute('aria-pressed', matches ? 'true' : 'false');
+							chip.setAttribute('aria-checked', matches ? 'true' : 'false');
+						});
+						setFilterVisibility(true);
+						persistFilters();
+						applyFilters();
+					} else if (msg.type === 'set-filter-type') {
+						const targetType = String(msg.vulnType || '').trim();
+						const currentSelected = selectedSeverities();
+						const isAlreadyActiveInSelect =
+							Boolean(typeFilter?.value) &&
+							typeFilter.value.toLowerCase() === targetType.toLowerCase() &&
+							currentSelected.length === 0 &&
+							!(searchInput?.value ?? '').trim() &&
+							!categoryFilter?.value;
+						const isAlreadyActiveInSearch =
+							Boolean((searchInput?.value ?? '').trim()) &&
+							searchInput.value.toLowerCase() === targetType.toLowerCase() &&
+							currentSelected.length === 0 &&
+							!typeFilter?.value &&
+							!categoryFilter?.value;
+
+						if (isAlreadyActiveInSelect || isAlreadyActiveInSearch) {
+							resetFilters();
+							return;
+						}
+
+						if (searchInput) searchInput.value = '';
+						severityChips.forEach((chip) => {
+							chip.setAttribute('aria-pressed', 'false');
+							chip.setAttribute('aria-checked', 'false');
+						});
+						if (categoryFilter) categoryFilter.value = '';
+						if (typeFilter) {
+							const option = Array.from(typeFilter.options).find(
+								(opt) => opt.value.toLowerCase() === targetType.toLowerCase(),
+							);
+							if (option) {
+								typeFilter.value = option.value;
+							} else {
+								typeFilter.value = '';
+								if (searchInput) searchInput.value = targetType;
+							}
+						} else if (searchInput) {
+							searchInput.value = targetType;
+						}
+						setFilterVisibility(true);
+						persistFilters();
+						applyFilters();
+					}
+				});
 			})();
 		</script>
 	</body>

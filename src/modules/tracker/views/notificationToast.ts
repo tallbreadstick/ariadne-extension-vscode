@@ -35,21 +35,27 @@ import type { SessionAnalysis } from '../analysis/analysisTypes.js';
 import {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
+	formatGraduatingSoonMessage,
+	formatGraduatedMessage,
 	determinePrioritizedToast,
 	determineStackedToasts,
 	type NotificationLevel,
 	type ToastType,
 	type ToastPlan,
 } from '../analysis/candidateToasts.js';
+import type { GraduationToastEvents } from '../analysis/commonVulnerabilities.js';
 
 export {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
+	formatGraduatingSoonMessage,
+	formatGraduatedMessage,
 	determinePrioritizedToast,
 	determineStackedToasts,
 	type NotificationLevel,
 	type ToastType,
 	type ToastPlan,
+	type GraduationToastEvents,
 };
 
 // CONFIGURATION
@@ -239,6 +245,69 @@ export function showSessionToasts(
 	} catch (error) {
 		console.warn(
 			'[Ariadne] Toast notification error (non-fatal):',
+			error instanceof Error ? error.message : String(error),
+		);
+		return false;
+	}
+}
+
+/**
+ * Shows an informational toast for common vulnerabilities that are graduating soon
+ * (the session before it is supposed to disappear).
+ */
+export function showGraduatingSoonToast(vulnTypes: string[]): boolean {
+	const message = formatGraduatingSoonMessage(vulnTypes);
+	if (!message) { return false; }
+	vscode.window.showInformationMessage(message);
+	return true;
+}
+
+/**
+ * Shows an informational toast for common vulnerabilities that have graduated
+ * and disappeared from Common Vulnerabilities.
+ */
+export function showGraduatedToast(vulnTypes: string[]): boolean {
+	const message = formatGraduatedMessage(vulnTypes);
+	if (!message) { return false; }
+	vscode.window.showInformationMessage(message);
+	return true;
+}
+
+/**
+ * Fires VS Code toast notifications for common vulnerability graduation lifecycle events:
+ * 1. Pre-graduation warning toast in the session before disappearance ("graduating soon").
+ * 2. Graduation toast when the common vulnerability item finally disappears.
+ *
+ * @param events - Detected graduation events from computeCommonVulnerabilities()
+ * @param levelOverride - Optional level override (e.g. for testing)
+ */
+export function showGraduationToasts(
+	events: GraduationToastEvents,
+	levelOverride?: NotificationLevel,
+): boolean {
+	const level = levelOverride ?? getNotificationLevel();
+	if (level === 'quiet') {
+		return false;
+	}
+
+	try {
+		let anyFired = false;
+		if (events.newlyGraduated && events.newlyGraduated.length > 0) {
+			const types = events.newlyGraduated.map(e => e.type);
+			if (showGraduatedToast(types)) {
+				anyFired = true;
+			}
+		}
+		if (events.graduatingSoon && events.graduatingSoon.length > 0) {
+			const types = events.graduatingSoon.map(e => e.type);
+			if (showGraduatingSoonToast(types)) {
+				anyFired = true;
+			}
+		}
+		return anyFired;
+	} catch (error) {
+		console.warn(
+			'[Ariadne] Graduation toast notification error (non-fatal):',
 			error instanceof Error ? error.message : String(error),
 		);
 		return false;
