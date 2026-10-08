@@ -22,6 +22,7 @@ import { DiagnosticManager } from './modules/presentation/diagnostics/Diagnostic
 import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
 import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
+import { checkAndShowWelcomeToast, resetWelcomeToast } from './modules/presentation/onboarding/welcomeToast';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import {
@@ -2122,23 +2123,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		debugResetSaveScanState,
 		triggerHourlyRollover,
 		debugSimulateAbruptRecovery,
+		vscode.commands.registerCommand(
+			'ariadne-extension-vscode.debugResetWelcomeToast',
+			async () => {
+				await resetWelcomeToast(context.globalState);
+				void vscode.window.showInformationMessage(
+					'Ariadne: Welcome onboarding toast state reset. Reload window to trigger it.',
+				);
+			},
+		),
 	);
 
 	// ── First-run Onboarding & Welcome Orientation ───────────────────────
-	const hasSeenWelcome = context.globalState.get<boolean>('ariadne.hasSeenWelcome');
-	if (!hasSeenWelcome) {
-		void (async () => {
-			const choice = await vscode.window.showInformationMessage(
-				'Welcome to Ariadne! We are actively monitoring your Java code for security vulnerabilities. Ariadne provides guided conceptual explanations to help you fix issues independently.',
-				'Open Panel (Ctrl+J)',
-				'Got it',
-			);
-			if (choice === 'Open Panel (Ctrl+J)') {
-				void openBottomPanel();
-			}
-			await context.globalState.update('ariadne.hasSeenWelcome', true);
-		})();
-	}
+	void checkAndShowWelcomeToast(context.globalState, openBottomPanel);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
 	deactivationHandler = async (): Promise<void> => {

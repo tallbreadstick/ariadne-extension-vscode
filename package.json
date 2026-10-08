@@ -117,6 +117,10 @@
       {
         "command": "ariadne-extension-vscode.debugSimulateAbruptRecovery",
         "title": "Ariadne: Debug — Simulate Abrupt Session Recovery"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugResetWelcomeToast",
+        "title": "Ariadne: Debug — Reset Welcome Onboarding Toast"
       }
     ],
     "viewsContainers": {

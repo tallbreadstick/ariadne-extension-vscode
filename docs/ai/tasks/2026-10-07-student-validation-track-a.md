@@ -23,9 +23,9 @@
 
 - status: in progress
 - current owner: Abel
-- next action: Implement Task A1 (Annotation label branding in DiagnosticManager.ts)
+- next action: Implement Active Vulnerabilities header redesign (gamified progress bar and filter drawer) once aligned with Ervin
 - blockers: none
-- last checked: 2026-10-07
+- last checked: 2026-10-08
 
 ## Progress checklist
 
