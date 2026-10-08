@@ -141,6 +141,8 @@ describe('Session Progress Bar & Victory State', () => {
 		assert.ok(!html.includes('🎯'), 'Emoji 🎯 should not be present');
 		assert.ok(!html.includes('⚡'), 'Emoji ⚡ should not be present');
 		assert.ok(!html.includes('class="focus-loc"'), 'File path should not be displayed in next focus chip');
+		assert.ok(!html.includes('focus-arrow'), 'Arrow icon should not be present in next focus chip');
+		assert.ok(!html.includes('→'), 'Arrow character should not be present in next focus chip');
 	});
 
 	it('renders victory state when all issues tracked in session are resolved', () => {

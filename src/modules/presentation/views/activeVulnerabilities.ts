@@ -372,8 +372,8 @@ const CSS = /* css */ `
     .session-progress-card {
         margin-bottom: 10px;
         padding: 9px 12px;
-        background: color-mix(in srgb, var(--card) 92%, white 8%);
-        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--card) 96%, white 4%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 6px;
         display: flex;
         flex-direction: column;
@@ -462,7 +462,8 @@ const CSS = /* css */ `
         align-items: center;
         gap: 8px;
         font-size: 12px;
-        padding-top: 2px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .next-focus-label {
@@ -558,13 +559,6 @@ const CSS = /* css */ `
         background: color-mix(in srgb, var(--low) 25%, transparent);
         color: var(--low);
         border: 1px solid color-mix(in srgb, var(--low) 45%, transparent);
-    }
-
-    .focus-arrow {
-        color: var(--accent, #46d5c4);
-        font-size: 12px;
-        font-weight: bold;
-        flex-shrink: 0;
     }
 
     @keyframes focusPulse {
@@ -1420,7 +1414,6 @@ function buildSessionProgressSection(
 					<span class="focus-badge ${nextFocus.vuln.severity}">
 						${capitalize(nextFocus.vuln.severity)}
 					</span>
-					<span class="focus-arrow" aria-hidden="true">→</span>
 				</button>
 			</div>`
 		: '';
