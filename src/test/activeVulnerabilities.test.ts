@@ -158,6 +158,17 @@ describe('Session Progress Bar & Victory State', () => {
 		assert.ok(!html.includes('🏆'), 'Emoji 🏆 should not be present');
 	});
 
+	it('honors totalSessionIssues to maintain stable denominator during transitions', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, {
+			signedIn: true,
+			resolvedCount: 1,
+			totalSessionIssues: 32,
+		});
+
+		assert.ok(html.includes('1 of 32'), 'Expected 1 of 32 to honor totalSessionIssues');
+		assert.ok(html.includes('3%'), 'Expected 3%');
+	});
+
 	it('omits session progress card when there are no issues and no resolutions', () => {
 		const html = buildActiveVulnerabilitiesHtml([], {
 			signedIn: true,

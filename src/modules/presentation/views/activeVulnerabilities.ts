@@ -29,6 +29,8 @@ export interface ActiveVulnerabilitiesOptions {
 	loading?: boolean;
 	/** Number of vulnerabilities resolved so far in this session. */
 	resolvedCount?: number;
+	/** Authoritative baseline or total issues tracked in this session. */
+	totalSessionIssues?: number;
 	/** Common vulnerability habit types (for Next Focus prioritization). */
 	commonVulnTypes?: string[];
 }
@@ -1363,7 +1365,10 @@ function buildSessionProgressSection(
 ): string {
 	const resolvedCount = Math.max(0, options.resolvedCount ?? 0);
 	const activeCount = vulns.length;
-	const totalSessionIssues = activeCount + resolvedCount;
+	const totalSessionIssues = Math.max(
+		activeCount + resolvedCount,
+		options.totalSessionIssues ?? (activeCount + resolvedCount),
+	);
 
 	if (totalSessionIssues === 0) {
 		return '';

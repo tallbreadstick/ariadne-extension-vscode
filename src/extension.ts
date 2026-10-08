@@ -223,8 +223,14 @@ function buildVulnsHtml(
 		if (flc.durableResolutionAt !== null) {
 			return activeSession === null || flc.durableResolutionAt >= activeSession.startedAt;
 		}
+		if (flc.provisionalResolutionAt !== null) {
+			return activeSession === null || flc.provisionalResolutionAt >= activeSession.startedAt;
+		}
 		return false;
 	}).length;
+
+	const baselineCount = activeSession?.baselineCheckpoint?.findings.length ?? 0;
+	const totalSessionIssues = Math.max(vulns.length + resolvedCount, baselineCount);
 
 	let commonVulnTypes: string[] = [];
 	try {
@@ -247,6 +253,7 @@ function buildVulnsHtml(
 		scannerBroken,
 		loading,
 		resolvedCount,
+		totalSessionIssues,
 		commonVulnTypes,
 	});
 }
@@ -1337,6 +1344,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 			refreshSessionMetricsPanel();
 			updateStatusBar(sessionAnalysis);
+			activeVulnsProvider.updateHtml(
+				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+			);
 
 			vscode.window.setStatusBarMessage(
 				`$(check) Ariadne: Hourly checkpoint completed (Hour ${hourlySessionCount})`,
@@ -1587,6 +1597,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				refreshSessionMetricsPanel();
 				updateStatusBar(sessionAnalysis);
+				activeVulnsProvider.updateHtml(
+					buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+				);
 
 				// ── 4e. VS Code toast notifications ──────────────────────
 				showSessionToasts(sessionAnalysis);
@@ -1861,6 +1874,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			previousScanSnapshot = null;
 			saveScanState = store.loadSaveScanState();
 			refreshSessionMetricsPanel();
+			activeVulnsProvider.updateHtml(
+				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+			);
 			console.log('[Ariadne Debug] All lifecycle data cleared. Session will start on next settled save.');
 			vscode.window.showInformationMessage(
 				'Ariadne Debug: All data cleared. Next settled save will start a fresh session and initial checkpoint.',
@@ -1923,6 +1939,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				void store.clearActiveSession();
 				activeSession = null;
 			}
+			refreshSessionMetricsPanel();
+			activeVulnsProvider.updateHtml(
+				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+			);
 			console.log('[Ariadne Debug] Save scan state reset. Next settled save will re-trigger the initial checkpoint.');
 			vscode.window.showInformationMessage(
 				'Ariadne Debug: Save scan state reset. Next settled save will re-trigger the initial checkpoint.',
