@@ -68,11 +68,6 @@ const RESOLVED_SVG =
 			stroke-linecap="round" stroke-linejoin="round" />
 	</svg>`;
 
-const NOTIFICATION_BELL_SVG =
-	`<svg class="section-icon notif-bell" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-	</svg>`;
-
 const COMMON_VULN_SVG =
 	`<svg class="section-icon" style="color: #E24B4A;" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
@@ -87,13 +82,6 @@ const FULL_REPORT_SVG =
 	</svg>`;
 
 const FULL_SCAN_SVG = FULL_REPORT_SVG;
-
-const NOTIFICATION_ICON_SVG =
-	`<svg class="notif-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
-		<path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2"
-			stroke-linecap="round" />
-	</svg>`;
 
 // ── Partial builders ──────────────────────────────────────────────────
 
@@ -163,11 +151,6 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 				: item.progressLabel === 'Major progress'
 					? 'progress-major'
 					: 'progress-nochange';
-		const deltaText = !item.progressDelta
-			? ''
-			: item.progressDelta === 'N/A'
-				? ' (N/A)'
-				: ` (${item.progressDelta.startsWith('+') || item.progressDelta.startsWith('-') ? item.progressDelta : `+${item.progressDelta}`})`;
 		const vulnType = item.type || 'Unknown';
 		return /* html */ `
 			<div class="trend-sub-item filterable-type-item"
@@ -176,7 +159,7 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 			     tabindex="0"
 			     title="Filter active vulnerabilities by ${escapeHtml(vulnType)}">
 				<span class="sub-label">${vulnType}</span>
-				<span class="sub-progress ${progressClass}">${item.progressLabel}${deltaText}</span>
+				<span class="sub-progress ${progressClass}">${item.progressLabel}</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
@@ -227,40 +210,6 @@ function buildCollapsibleTrendRow(
 		</div>`;
 }
 
-function buildNotificationItem(notif: SessionNotification): string {
-	const { id, message, detail, timestamp } = notif;
-	return /* html */ `
-		<div class="notif-card" data-notif-id="${id}">
-			<div class="notif-body">
-				${NOTIFICATION_ICON_SVG}
-				<div class="notif-text">
-					<div class="notif-message">${message}</div>
-					<div class="notif-detail">${detail}</div>
-					<div class="notif-timestamp">${timestamp} · Ariadne</div>
-				</div>
-			</div>
-			<button class="notif-dismiss" type="button" aria-label="Dismiss"
-			        data-notif-id="${id}">&#x2715;</button>
-		</div>`;
-}
-
-function buildNotificationsPanel(metrics: SessionMetrics): string {
-	const items = metrics.notifications && metrics.notifications.length > 0
-		? metrics.notifications.map(buildNotificationItem).join('\n')
-		: /* html */ `<div class="panel-empty">No notifications</div>`;
-
-	return /* html */ `
-		<div class="split-panel notif-panel">
-			<div class="split-panel-header">
-				${NOTIFICATION_BELL_SVG}
-				<span class="split-panel-title">NOTIFICATIONS</span>
-			</div>
-			<div class="notif-feed" id="notif-feed">
-				${items}
-			</div>
-		</div>`;
-}
-
 function buildCommonVulnerabilitiesPanel(
 	items?: CommonVulnerabilityItem[],
 	totalSessionsAnalyzed?: number,
@@ -297,10 +246,13 @@ function buildCommonVulnerabilitiesPanel(
 	}
 
 	return /* html */ `
-		<div class="split-panel common-vuln-panel">
-			<div class="split-panel-header">
-				${COMMON_VULN_SVG}
-				<span class="split-panel-title">COMMON VULNERABILITIES</span>
+		<div class="common-vuln-panel">
+			<div class="common-vuln-header">
+				<div class="common-vuln-header-left">
+					${COMMON_VULN_SVG}
+					<span class="common-vuln-title">Common Vulnerabilities</span>
+				</div>
+				<span class="common-vuln-subtitle">Tracks recurring vulnerability patterns across your sessions.</span>
 			</div>
 			<div class="common-vuln-feed">
 				${content}
@@ -583,9 +535,11 @@ const CSS = /* css */ `
 	.sub-label { flex: 1; color: var(--text); }
 
 	.sub-progress {
-		font-size: 12px;
-		font-weight: 500;
+		font-size: 11px;
+		font-weight: 600;
 		white-space: nowrap;
+		padding: 2px 8px;
+		border-radius: 10px;
 	}
 
 	.sub-subtitle {
@@ -598,10 +552,10 @@ const CSS = /* css */ `
 		color: var(--muted);
 	}
 
-	.progress-some  { color: var(--orange); }
-	.progress-clear { color: var(--accent-strong); }
-	.progress-major { color: var(--blue); }
-	.progress-nochange { color: var(--muted); }
+	.progress-some     { color: var(--orange); background: color-mix(in srgb, var(--orange) 15%, transparent); }
+	.progress-clear    { color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+	.progress-major    { color: var(--blue); background: color-mix(in srgb, var(--blue) 15%, transparent); }
+	.progress-nochange { color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); }
 
 	.sub-count {
 		font-size: 12px;
@@ -609,7 +563,6 @@ const CSS = /* css */ `
 		color: var(--text);
 		min-width: 20px;
 		margin-right: 12px;
-		
 	}
 
 	.trend-sub-placeholder { color: var(--muted); }
@@ -620,39 +573,47 @@ const CSS = /* css */ `
 
 	.divider { height: 1px; background: rgba(58, 58, 58, 0.7); }
 
-	/* ── Split panel section ── */
-	.split-section {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px;
-		min-height: 180px;
-	}
-
-	.split-panel {
+	/* ── Common vulnerabilities panel ── */
+	.common-vuln-panel {
 		background: var(--panel);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		display: flex;
 		flex-direction: column;
-		max-height: 260px;
+		max-height: 280px;
 		overflow: hidden;
 	}
 
-	.split-panel-header {
+	.common-vuln-header {
 		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 10px 12px 8px;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 12px 14px 8px;
 		border-bottom: 1px solid rgba(58, 58, 58, 0.6);
 		flex-shrink: 0;
+		flex-wrap: wrap;
 	}
 
-	.split-panel-title {
+	.common-vuln-header-left {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.common-vuln-title {
 		font-size: 13px;
 		font-weight: 700;
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
+	}
+
+	.common-vuln-subtitle {
+		font-size: 11px;
+		color: var(--muted);
+		font-weight: 400;
+		line-height: 1.3;
 	}
 
 	.section-icon {
@@ -662,11 +623,7 @@ const CSS = /* css */ `
 		flex-shrink: 0;
 	}
 
-	.section-icon.notif-bell { color: var(--accent); }
-
-	/* ── Common vulnerabilities panel ── */
 	.common-vuln-feed {
-	
 		flex: 1;
 		display: flex;
 		flex-direction: column;
@@ -676,8 +633,7 @@ const CSS = /* css */ `
 		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
 	}
 
-	.common-vuln-feed:has(.panel-empty),
-	.notif-feed:has(.panel-empty) {
+	.common-vuln-feed:has(.panel-empty) {
 		background: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
 	}
 
@@ -760,86 +716,6 @@ const CSS = /* css */ `
 		color: var(--accent);
 	}
 
-	/* ── Notification feed (scrollable) ── */
-	.notif-feed {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		
-		overflow-y: auto;
-		scrollbar-width: thin;
-		scrollbar-color: rgba(70, 213, 196, 0.3) transparent;
-	}
-
-	.notif-feed::-webkit-scrollbar { width: 4px; }
-	.notif-feed::-webkit-scrollbar-track { background: transparent; }
-	.notif-feed::-webkit-scrollbar-thumb {
-		background-color: rgba(70, 213, 196, 0.3);
-		border-radius: 4px;
-	}
-	.notif-feed::-webkit-scrollbar-thumb:hover {
-		background-color: rgba(70, 213, 196, 0.6);
-	}
-
-	.notif-card {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 10px;
-		background: var(--card);
-		border-bottom: 1px solid var(--border);
-		
-		padding: 10px 12px;
-		flex-shrink: 0;
-	}
-
-	.notif-body {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-		min-width: 0;
-	}
-
-	.notif-icon {
-		width: 16px;
-		height: 16px;
-		flex: 0 0 auto;
-		color: var(--accent);
-		margin-top: 1px;
-	}
-
-	.notif-text { display: grid; gap: 3px; min-width: 0; }
-
-	.notif-message { font-size: 12px; font-weight: 600; color: var(--text); }
-	.notif-detail  { font-size: 11px; color: var(--text); line-height: 1.4; }
-	.notif-timestamp { font-size: 10px; color: var(--muted); }
-
-	.notif-dismiss {
-		background: transparent;
-		border: none;
-		color: var(--muted);
-		cursor: pointer;
-		font-size: 13px;
-		padding: 0;
-		line-height: 1;
-		flex: 0 0 auto;
-	}
-
-	.notif-dismiss:hover { color: var(--text); }
-
-	/* Slide-out animation for dismissed notifications */
-	@keyframes notif-slide-out {
-		0%   { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 0; }
-		60%  { opacity: 0; transform: translateX(40px); max-height: 200px; margin-bottom: 0; }
-		100% { opacity: 0; transform: translateX(40px); max-height: 0; margin-bottom: -6px; padding: 0 12px; border-width: 0; }
-	}
-
-	.notif-card.dismissing {
-		animation: notif-slide-out 0.35s ease forwards;
-		pointer-events: none;
-		overflow: hidden;
-	}
-
 	.signin-state {
 		display: grid;
 		gap: 10px;
@@ -892,7 +768,6 @@ const CSS = /* css */ `
 			white-space: nowrap;
 		}
 		.metric-trend { flex-shrink: 0; }
-		.split-section { grid-template-columns: 1fr; }
 	}
 `;
 
@@ -1021,10 +896,7 @@ export function buildSessionMetricsHtml(
 			
 			<div class="divider"></div>
 			
-			<div class="split-section">
-				${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
-				${buildNotificationsPanel(metrics)}
-			</div>
+			${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
 		</section>
 		<script>
 			(function () {
@@ -1042,28 +914,6 @@ export function buildSessionMetricsHtml(
 						body.setAttribute('aria-hidden', String(isOpen));
 						body.classList.toggle('open', !isOpen);
 					});
-				});
-
-				// ── Notification dismiss ────────────────────────────────
-				document.addEventListener('click', function (e) {
-					const btn = e.target.closest('.notif-dismiss');
-					if (!btn) { return; }
-					const id = btn.dataset.notifId;
-					if (!id) { return; }
-
-					const card = btn.closest('.notif-card');
-					if (card) {
-						card.classList.add('dismissing');
-						card.addEventListener('animationend', function () {
-							card.remove();
-							const feed = document.getElementById('notif-feed');
-							if (feed && feed.querySelectorAll('.notif-card').length === 0) {
-								feed.innerHTML = '<div class="panel-empty">No notifications</div>';
-							}
-						});
-					}
-
-					vscode.postMessage({ type: 'dismiss-notification', notifId: id });
 				});
 
 				// ── Cross-filtering to Active Vulnerabilities ────────────

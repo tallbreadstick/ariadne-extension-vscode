@@ -206,4 +206,68 @@ describe('Session Metrics Terminology & Subtitles', () => {
 		assert.ok(html.includes('filterable-type-item'), 'Should include filterable-type-item class');
 		assert.ok(html.includes('data-vuln-type="Cross-Site Scripting"'), 'Should include data-vuln-type attribute');
 	});
+
+	it('renders categorical progress in Improving Trends without numeric scores or deltas', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 1,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 1,
+				resolvedThisSession: 1,
+				recurringPatterns: 0,
+				improvingItems: [
+					{
+						type: 'SQL Injection',
+						instances: 1,
+						progressLabel: 'Clear progress',
+						progressDelta: '+2.5',
+					},
+				],
+			},
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('Clear progress'), 'Should render categorical progress label');
+		assert.ok(!html.includes('+2.5'), 'Should not render numeric delta/score');
+		assert.ok(!html.includes('(+2.5)'), 'Should not render parenthesized delta');
+		assert.ok(html.includes('progress-clear'), 'Should include progress class');
+	});
+
+	it('does not render notification feed or cards in session metrics panel', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+			},
+			notifications: [
+				{
+					id: 'notif-1',
+					message: 'Test alert',
+					detail: 'Details here',
+					timestamp: '10:00 AM',
+				},
+			],
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(!html.includes('notif-feed'), 'Should not render notification feed container');
+		assert.ok(!html.includes('notif-card'), 'Should not render notification cards');
+		assert.ok(!html.includes('NOTIFICATIONS'), 'Should not render notifications panel title');
+		assert.ok(!html.includes('split-section'), 'Should not render split-section layout');
+		assert.ok(html.includes('common-vuln-panel'), 'Should render common-vuln-panel as standalone');
+		assert.ok(html.includes('common-vuln-subtitle'), 'Should render common-vuln-subtitle class');
+		assert.ok(
+			html.includes('Tracks recurring vulnerability patterns across your sessions.'),
+			'Should render short visible subtitle in Common Vulnerabilities',
+		);
+	});
 });
