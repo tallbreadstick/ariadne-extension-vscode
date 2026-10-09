@@ -65,12 +65,11 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(!html.includes('id="empty-clear-btn"'), 'Empty clear button should be removed');
 	});
 
-	it('renders sticky header with total count and "Explain Vulnerability" button in finding cards', () => {
+	it('renders clean sticky header and "Explain Vulnerability" button with lightbulb icon', () => {
 		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
 		assert.ok(html.includes('live-scan-header') || html.includes('active-vuln-header'), 'Sticky header missing');
 		assert.ok(html.includes('Live Scan'), 'Live Scan header title missing');
-		assert.ok(html.includes('id="total-vuln-badge"'), 'Total badge missing');
-		assert.ok(html.includes('2 Issues Total'), 'Total badge count missing');
+		assert.ok(!html.includes('id="total-vuln-badge"'), 'Total badge pill should be removed');
 		assert.ok(html.includes('btn-explain'), 'Explain Vulnerability button class missing');
 		assert.ok(html.includes('Explain Vulnerability'), 'Explain Vulnerability button label missing');
 		assert.ok(html.includes('lightbulb-icon'), 'Lightbulb icon missing');

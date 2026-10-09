@@ -361,22 +361,6 @@ const CSS = /* css */ `
         flex-shrink: 0;
     }
 
-    .total-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.3px;
-        padding: 2px 8px;
-        border-radius: 10px;
-        background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
-        color: var(--vscode-badge-foreground, var(--text));
-        border: 1px solid var(--border);
-        text-transform: uppercase;
-        white-space: nowrap;
-    }
-
     /* ── Session Progress & Next Focus ── */
     .session-progress-card {
         margin-bottom: 8px;
@@ -1499,7 +1483,6 @@ export function buildActiveVulnerabilitiesHtml(
 					${LIVE_SCAN_SVG}
 					<span>Live Scan</span>
 				</div>
-				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
 			</header>
 			${buildSessionProgressSection(vulns, options)}
 			${buildToolbar(vulns, options)}
@@ -1617,13 +1600,6 @@ export function buildActiveVulnerabilitiesHtml(
 						resultsMeta.textContent = visibleCount === totalCount
 							? 'Showing ' + totalCount + ' of ' + totalCount + ' issues'
 							: 'Showing ' + visibleCount + ' of ' + totalCount + ' issues';
-					}
-
-					const totalVulnBadge = document.getElementById('total-vuln-badge');
-					if (totalVulnBadge) {
-						totalVulnBadge.textContent = visibleCount === totalCount
-							? totalCount + ' Issue' + (totalCount === 1 ? '' : 's') + ' Total'
-							: 'Showing ' + visibleCount + ' of ' + totalCount + ' Issues';
 					}
 
 					if (filterEmpty) {
