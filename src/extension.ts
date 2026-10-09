@@ -311,6 +311,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let openPanelOnStartup = context.globalState.get<boolean>('ariadne.openPanelOnStartup') !== false;
 	let applyHighlightVisibility: (visible: boolean) => void = () => undefined;
 	let startupLoading = true;
+	let initialFindingsReceived = false;
 	let acceptFindings = true;
 	let settingsView: AriadneViewProvider | undefined;
 	let startScanner: () => void = () => undefined;
@@ -1149,9 +1150,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerChecked = true;
 		if (session.isRunning()) {
 			scannerBroken = false;
-			activeVulnsProvider.updateHtml(
-				buildVulnsHtml(latestVulnerabilities, store, true, false),
-			);
+			if (initialFindingsReceived) {
+				activeVulnsProvider.updateHtml(
+					buildVulnsHtml(latestVulnerabilities, store, true, false, false),
+				);
+			} else {
+				activeVulnsProvider.updateHtml(
+					buildVulnsHtml([], store, true, false, true),
+				);
+			}
 			return;
 		}
 		markScannerBroken();
@@ -1410,9 +1417,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				markScannerBroken();
 			} finally {
 				scannerBusy = false;
-				startupLoading = false;
+				startupLoading = !initialFindingsReceived && !scannerBroken;
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, true, scannerBroken, !scannerChecked),
+					buildVulnsHtml(latestVulnerabilities, store, true, scannerBroken, startupLoading),
 				);
 				refreshSessionMetricsPanel();
 				await refreshSignInPanel();
@@ -1471,6 +1478,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerBroken = false;
 		scannerChecked = true;
 		startupLoading = false;
+		initialFindingsReceived = true;
 		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 

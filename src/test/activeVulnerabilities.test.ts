@@ -73,7 +73,7 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(html.includes('2 Issues Total'), 'Total badge count missing');
 		assert.ok(html.includes('btn-explain'), 'Explain Vulnerability button class missing');
 		assert.ok(html.includes('Explain Vulnerability'), 'Explain Vulnerability button label missing');
-		assert.ok(html.includes('sparkle-icon'), 'Sparkle icon missing');
+		assert.ok(html.includes('lightbulb-icon'), 'Lightbulb icon missing');
 		assert.ok(!html.includes('Ask Ariadne</span>'), 'Ask Ariadne label should be replaced');
 	});
 });

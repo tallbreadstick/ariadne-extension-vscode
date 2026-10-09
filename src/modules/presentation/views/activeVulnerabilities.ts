@@ -176,9 +176,9 @@ const CHECK_MARK_SVG =
 		<path fill-rule="evenodd" clip-rule="evenodd" d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
 	</svg>`;
 
-const SPARKLE_SVG =
-	`<svg class="sparkle-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-		<path d="M7.5 0.75a.75.75 0 0 1 .7.49l1.32 3.65 3.65 1.32a.75.75 0 0 1 0 1.4l-3.65 1.32-1.32 3.65a.75.75 0 0 1-1.4 0L5.48 8.93 1.83 7.61a.75.75 0 0 1 0-1.4l3.65-1.32 1.32-3.65a.75.75 0 0 1 .7-.49zm5.25 8.25a.5.5 0 0 1 .47.33l.66 1.83 1.83.66a.5.5 0 0 1 0 .94l-1.83.66-.66 1.83a.5.5 0 0 1-.94 0l-.66-1.83-1.83-.66a.5.5 0 0 1 0-.94l1.83-.66.66-1.83a.5.5 0 0 1 .47-.33z"/>
+const LIGHTBULB_SVG =
+	`<svg class="lightbulb-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path d="M8 1.5a5 5 0 0 0-3.4 8.67l.4.33v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2l.4-.33A5 5 0 0 0 8 1.5zm-2 13h4v1H6v-1z"/>
 	</svg>`;
 
 const LIVE_SCAN_SVG =
@@ -277,7 +277,7 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 				</div>
 				<div class="cta-row">
 					<a class="action-button btn-explain" role="button" href="${feedbackHref}" title="View AI conceptual explanation">
-						${SPARKLE_SVG}
+						${LIGHTBULB_SVG}
 						<span>Explain Vulnerability</span>
 					</a>
 				</div>
@@ -482,6 +482,7 @@ const CSS = /* css */ `
         gap: 6px;
         min-width: 0;
         flex: 1 1 auto;
+        padding-left: 12px;
         overflow: hidden;
     }
 
@@ -523,6 +524,8 @@ const CSS = /* css */ `
         cursor: pointer;
         text-align: left;
         min-width: 0;
+        width: auto;
+        flex: 0 1 auto;
         max-width: 100%;
         transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
     }
@@ -1210,7 +1213,7 @@ const CSS = /* css */ `
         filter: brightness(1.08);
     }
 
-    .sparkle-icon {
+    .lightbulb-icon {
         width: 14px;
         height: 14px;
         flex: 0 0 auto;
@@ -1359,7 +1362,7 @@ function buildSessionProgressSection(
 	}
 
 	// Victory State: All issues tracked in this session have been resolved
-	if (activeCount === 0 && resolvedCount > 0) {
+	if (activeCount === 0 && resolvedCount > 0 && resolvedCount >= totalSessionIssues) {
 		return /* html */ `
 			<section class="session-progress-card victory" aria-label="Session Resolution Progress">
 				<div class="progress-info-row">
