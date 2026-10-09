@@ -170,15 +170,6 @@ const FILTER_SVG =
 			stroke-linecap="round" />
 	</svg>`;
 
-const SEARCH_SVG =
-	`<svg class="search-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-		<path fill-rule="evenodd" clip-rule="evenodd" d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.1zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/>
-	</svg>`;
-
-const CLOSE_SVG =
-	`<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" aria-hidden="true">
-		<path fill-rule="evenodd" clip-rule="evenodd" d="M8 7.293l3.646-3.647.708.708L8.707 8l3.647 3.646-.708.708L8 8.707l-3.646 3.647-.708-.708L7.293 8 3.646 4.354l.708-.708L8 7.293z"/>
-	</svg>`;
 
 const CHECK_MARK_SVG =
 	`<svg class="check-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -234,9 +225,6 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 		line: vuln.line,
 	})}`;
 	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
-	const searchText = escapeAttr(
-		[vuln.title, vuln.filePath].join(' ').toLowerCase(),
-	);
 
 	return /* html */ `
 		<details
@@ -246,8 +234,7 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 			data-cwe="${escapeAttr(vuln.cwe)}"
 			data-category="${escapeAttr(vuln.owaspRef ?? '')}"
 			data-type="${escapeAttr(vuln.title)}"
-			data-file="${escapeAttr(vuln.filePath)}"
-			data-search-text="${searchText}"${openAttr}>
+			data-file="${escapeAttr(vuln.filePath)}"${openAttr}>
 			<summary>
 				<div class="summary-row">
 					<div class="summary-left">
@@ -392,14 +379,14 @@ const CSS = /* css */ `
 
     /* ── Session Progress & Next Focus ── */
     .session-progress-card {
-        margin-bottom: 10px;
-        padding: 9px 12px;
+        margin-bottom: 8px;
+        padding: 13px 12px 11px 12px;
         background: color-mix(in srgb, var(--card) 96%, white 4%);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 6px;
         display: flex;
         flex-direction: column;
-        gap: 7px;
+        gap: 5px;
     }
 
     .session-progress-card.victory {
@@ -461,17 +448,19 @@ const CSS = /* css */ `
     }
 
     .progress-track {
-        height: 6px;
-        background: color-mix(in srgb, var(--border) 60%, transparent);
-        border-radius: 3px;
+        height: 8px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
         overflow: hidden;
         position: relative;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
     }
 
     .progress-bar-fill {
         height: 100%;
         background: linear-gradient(90deg, #46d5c4, #5ce6d7);
-        border-radius: 3px;
+        border-radius: 999px;
         transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
@@ -479,20 +468,28 @@ const CSS = /* css */ `
         background: linear-gradient(90deg, #3fb950, #2ea043);
     }
 
-    .next-focus-row {
+    .toolbar-row.actions-row {
         display: flex;
         align-items: center;
+        justify-content: space-between;
         gap: 8px;
-        font-size: 12px;
-        padding-top: 6px;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        min-width: 0;
+    }
+
+    .next-focus-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
     }
 
     .next-focus-label {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: var(--muted);
         white-space: nowrap;
@@ -515,7 +512,8 @@ const CSS = /* css */ `
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 3px 10px;
+        height: 28px;
+        padding: 0 10px;
         border-radius: 4px;
         background: color-mix(in srgb, var(--accent, #46d5c4) 10%, var(--card));
         border: 1px solid color-mix(in srgb, var(--accent, #46d5c4) 30%, var(--border));
@@ -626,71 +624,6 @@ const CSS = /* css */ `
         background: transparent;
     }
 
-    .toolbar-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-    }
-
-	.search-wrap {
-		position: relative;
-		display: flex;
-		align-items: center;
-		width: 100%;
-	}
-
-	.search-icon {
-		position: absolute;
-		left: 9px;
-		width: 14px;
-		height: 14px;
-		color: var(--muted);
-		pointer-events: none;
-	}
-
-    .search-input {
-        width: 100%;
-        padding: 6px 26px 6px 28px;
-        border-radius: 4px;
-        border: 1px solid var(--border);
-        background: var(--vscode-input-background, var(--card));
-        color: var(--vscode-input-foreground, var(--text));
-        font: inherit;
-        font-size: 12px;
-    }
-
-	.search-input::-webkit-search-cancel-button,
-	.search-input::-webkit-search-decoration {
-		-webkit-appearance: none;
-		appearance: none;
-	}
-
-	.search-clear-btn {
-		position: absolute;
-		right: 5px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 18px;
-		height: 18px;
-		padding: 0;
-		border: 0;
-		background: transparent;
-		color: var(--muted);
-		cursor: pointer;
-		border-radius: 50%;
-	}
-
-	.search-clear-btn:hover {
-		color: var(--text);
-		background: color-mix(in srgb, var(--text) 12%, transparent);
-	}
-
-	.search-clear-btn[hidden] {
-		display: none;
-	}
-
     .filter-select {
         width: 100%;
         padding: 6px 24px 6px 8px;
@@ -711,7 +644,6 @@ const CSS = /* css */ `
         overflow: hidden;
     }
 
-    .search-input:focus,
     .filter-select:focus {
         outline: 1px solid var(--vscode-focusBorder, var(--file));
         outline-offset: -1px;
@@ -734,6 +666,8 @@ const CSS = /* css */ `
 		font-weight: 500;
 		transition: background 0.15s ease-out, border-color 0.15s ease-out;
 		white-space: nowrap;
+		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.filter-toggle:hover,
@@ -1319,51 +1253,66 @@ function buildSeverityChips(): string {
 	).join('');
 }
 
-function buildToolbar(vulns: Vulnerability[]): string {
+function buildNextFocusHtml(
+	vulns: Vulnerability[],
+	options: ActiveVulnerabilitiesOptions = {},
+): string {
+	if (options.loading || vulns.length === 0) {
+		return '';
+	}
+	const nextFocus = determineNextFocus(vulns, options.commonVulnTypes);
+	if (!nextFocus) {
+		return '';
+	}
+
+	return /* html */ `
+		<div class="next-focus-group">
+			<span class="next-focus-label">
+				${FOCUS_ICON_SVG(nextFocus.vuln.severity)}
+				<span>Next Focus:</span>
+			</span>
+			<button
+				class="next-focus-chip ${nextFocus.vuln.severity}"
+				type="button"
+				data-vuln-key="${encodeURIComponent(buildVulnKey(nextFocus.vuln))}"
+				title="${escapeAttr(buildNextFocusTooltip(nextFocus))}"
+				aria-label="Focus ${escapeAttr(nextFocus.vuln.title)}"
+			>
+				<span class="focus-title">${escapeHtml(nextFocus.vuln.title)}</span>
+			</button>
+		</div>`;
+}
+
+function buildToolbar(
+	vulns: Vulnerability[],
+	options: ActiveVulnerabilitiesOptions = {},
+): string {
 	if (vulns.length === 0) {
 		return '';
 	}
 
 	const facets = collectVulnFilterFacets(vulns);
+	const nextFocusHtml = buildNextFocusHtml(vulns, options);
 
 	return /* html */ `
 		<div class="toolbar">
-			<div class="toolbar-row">
+			<div class="toolbar-row actions-row">
+				${nextFocusHtml}
 				<button
 					class="filter-toggle"
 					type="button"
 					id="filter-toggle"
 					aria-controls="filter-menu"
 					aria-expanded="false"
-					title="Filter and search vulnerabilities"
-					aria-label="Filter and search vulnerabilities"
+					title="Filter vulnerabilities"
+					aria-label="Filter vulnerabilities"
 				>
 					${FILTER_SVG}
-					<span class="filter-toggle-label">Filter &amp; Search</span>
+					<span class="filter-toggle-label">Filter</span>
 					<span class="filter-badge" id="filter-badge" hidden>0</span>
 				</button>
 			</div>
 			<div class="filter-menu" id="filter-menu" aria-hidden="true">
-				<div class="search-wrap">
-					${SEARCH_SVG}
-					<input
-						class="search-input"
-						id="vuln-search"
-						type="search"
-						placeholder="Search title or file…"
-						aria-label="Search vulnerabilities by title or file"
-					/>
-					<button
-						class="search-clear-btn"
-						id="search-clear-btn"
-						type="button"
-						aria-label="Clear search query"
-						title="Clear search"
-						hidden
-					>
-						${CLOSE_SVG}
-					</button>
-				</div>
 				<fieldset class="filter-fieldset">
 					<legend class="filter-legend">Severity</legend>
 					<div class="chip-row" role="group" aria-label="Filter by severity">
@@ -1434,26 +1383,6 @@ function buildSessionProgressSection(
 	}
 
 	const pct = Math.min(100, Math.round((resolvedCount / totalSessionIssues) * 100));
-	const nextFocus = determineNextFocus(vulns, options.commonVulnTypes);
-
-	const nextFocusHtml = nextFocus
-		? /* html */ `
-			<div class="next-focus-row">
-				<span class="next-focus-label">
-					${FOCUS_ICON_SVG(nextFocus.vuln.severity)}
-					<span>Next Focus:</span>
-				</span>
-				<button
-					class="next-focus-chip ${nextFocus.vuln.severity}"
-					type="button"
-					data-vuln-key="${encodeURIComponent(buildVulnKey(nextFocus.vuln))}"
-					title="${escapeAttr(buildNextFocusTooltip(nextFocus))}"
-					aria-label="Focus ${escapeAttr(nextFocus.vuln.title)}"
-				>
-					<span class="focus-title">${escapeHtml(nextFocus.vuln.title)}</span>
-				</button>
-			</div>`
-		: '';
 
 	return /* html */ `
 		<section class="session-progress-card" aria-label="Session Resolution Progress">
@@ -1474,7 +1403,6 @@ function buildSessionProgressSection(
 					aria-valuemax="100"
 				></div>
 			</div>
-			${nextFocusHtml}
 		</section>`;
 }
 
@@ -1550,7 +1478,7 @@ export function buildActiveVulnerabilitiesHtml(
         </div>`;
 	const filterEmptyState = /* html */ `
 		<div class="filter-empty" id="filter-empty" role="status" aria-live="polite">
-			No vulnerabilities match the current search or filters.
+			No vulnerabilities match the current filters.
 		</div>`;
 
 	return /* html */ `<!DOCTYPE html>
@@ -1571,7 +1499,7 @@ export function buildActiveVulnerabilitiesHtml(
 				<span class="total-badge" id="total-vuln-badge">${vulns.length} Issue${vulns.length === 1 ? '' : 's'} Total</span>
 			</header>
 			${buildSessionProgressSection(vulns, options)}
-			${buildToolbar(vulns)}
+			${buildToolbar(vulns, options)}
 		</div>
 		<section class="vuln-stack" id="vuln-stack">
             ${vulns.length === 0 ? emptyState : cards}
@@ -1581,8 +1509,6 @@ export function buildActiveVulnerabilitiesHtml(
 			(function () {
 				const vscode = acquireVsCodeApi();
 				const cards = Array.from(document.querySelectorAll('.vuln-card'));
-				const searchInput = document.getElementById('vuln-search');
-				const searchClearBtn = document.getElementById('search-clear-btn');
 				const filterToggle = document.getElementById('filter-toggle');
 				const filterMenu = document.getElementById('filter-menu');
 				const categoryFilter = document.getElementById('category-filter');
@@ -1617,7 +1543,6 @@ export function buildActiveVulnerabilitiesHtml(
 
 				function activeFilterCount() {
 					let count = 0;
-					if ((searchInput?.value ?? '').trim()) count += 1;
 					if (selectedSeverities().length) count += 1;
 					if (categoryFilter?.value) count += 1;
 					if (typeFilter?.value) count += 1;
@@ -1635,9 +1560,6 @@ export function buildActiveVulnerabilitiesHtml(
 					}
 					if (resetBtn) {
 						resetBtn.disabled = count === 0;
-					}
-					if (searchClearBtn && searchInput) {
-						searchClearBtn.hidden = searchInput.value.length === 0;
 					}
 				}
 
@@ -1662,7 +1584,6 @@ export function buildActiveVulnerabilitiesHtml(
 				}
 
 				function cardMatchesFilters(el) {
-					const query = (searchInput?.value ?? '').trim().toLowerCase();
 					const severities = selectedSeverities();
 					const category = categoryFilter?.value ?? '';
 					const type = typeFilter?.value ?? '';
@@ -1674,9 +1595,6 @@ export function buildActiveVulnerabilitiesHtml(
 						return false;
 					}
 					if (type && el.dataset.type !== type) {
-						return false;
-					}
-					if (query && !(el.dataset.searchText ?? '').includes(query)) {
 						return false;
 					}
 					return true;
@@ -1713,7 +1631,6 @@ export function buildActiveVulnerabilitiesHtml(
 
 				function persistFilters() {
 					persistUiState({
-						searchQuery: searchInput?.value ?? '',
 						severityFilters: selectedSeverities(),
 						categoryFilter: categoryFilter?.value ?? '',
 						typeFilter: typeFilter?.value ?? '',
@@ -1721,9 +1638,6 @@ export function buildActiveVulnerabilitiesHtml(
 				}
 
 				function resetFilters() {
-					if (searchInput) {
-						searchInput.value = '';
-					}
 					severityChips.forEach((chip) => {
 						chip.setAttribute('aria-pressed', 'false');
 						chip.setAttribute('aria-checked', 'false');
@@ -1737,10 +1651,6 @@ export function buildActiveVulnerabilitiesHtml(
 				function restoreUiState() {
 					const state = readUiState();
 					setFilterVisibility(state.filterPanelOpen === true, false);
-
-					if (searchInput && typeof state.searchQuery === 'string') {
-						searchInput.value = state.searchQuery;
-					}
 
 					const savedSeverities = Array.isArray(state.severityFilters)
 						? state.severityFilters
@@ -1779,7 +1689,6 @@ export function buildActiveVulnerabilitiesHtml(
 				function snapshotUiState() {
 					persistUiState({
 						scrollTop: window.scrollY,
-						searchQuery: searchInput?.value ?? '',
 						severityFilters: selectedSeverities(),
 						categoryFilter: categoryFilter?.value ?? '',
 						typeFilter: typeFilter?.value ?? '',
@@ -1811,10 +1720,6 @@ export function buildActiveVulnerabilitiesHtml(
 					});
 				});
 
-				searchInput?.addEventListener('input', () => {
-					persistFilters();
-					applyFilters();
-				});
 				[categoryFilter, typeFilter].forEach((el) => {
 					el?.addEventListener('change', () => {
 						persistFilters();
@@ -1832,14 +1737,6 @@ export function buildActiveVulnerabilitiesHtml(
 					});
 				});
 				resetBtn?.addEventListener('click', resetFilters);
-				searchClearBtn?.addEventListener('click', () => {
-					if (searchInput) {
-						searchInput.value = '';
-						searchInput.focus();
-						persistFilters();
-						applyFilters();
-					}
-				});
 
 				document.querySelectorAll('.next-focus-chip').forEach((chip) => {
 					chip.addEventListener('click', () => {
@@ -1902,7 +1799,6 @@ export function buildActiveVulnerabilitiesHtml(
 						const isAlreadyActive =
 							currentSelected.length === 1 &&
 							currentSelected[0] === targetSeverity &&
-							!(searchInput?.value ?? '').trim() &&
 							!categoryFilter?.value &&
 							!typeFilter?.value;
 
@@ -1911,7 +1807,6 @@ export function buildActiveVulnerabilitiesHtml(
 							return;
 						}
 
-						if (searchInput) searchInput.value = '';
 						if (categoryFilter) categoryFilter.value = '';
 						if (typeFilter) typeFilter.value = '';
 						severityChips.forEach((chip) => {
@@ -1929,21 +1824,13 @@ export function buildActiveVulnerabilitiesHtml(
 							Boolean(typeFilter?.value) &&
 							typeFilter.value.toLowerCase() === targetType.toLowerCase() &&
 							currentSelected.length === 0 &&
-							!(searchInput?.value ?? '').trim() &&
-							!categoryFilter?.value;
-						const isAlreadyActiveInSearch =
-							Boolean((searchInput?.value ?? '').trim()) &&
-							searchInput.value.toLowerCase() === targetType.toLowerCase() &&
-							currentSelected.length === 0 &&
-							!typeFilter?.value &&
 							!categoryFilter?.value;
 
-						if (isAlreadyActiveInSelect || isAlreadyActiveInSearch) {
+						if (isAlreadyActiveInSelect) {
 							resetFilters();
 							return;
 						}
 
-						if (searchInput) searchInput.value = '';
 						severityChips.forEach((chip) => {
 							chip.setAttribute('aria-pressed', 'false');
 							chip.setAttribute('aria-checked', 'false');
@@ -1957,10 +1844,7 @@ export function buildActiveVulnerabilitiesHtml(
 								typeFilter.value = option.value;
 							} else {
 								typeFilter.value = '';
-								if (searchInput) searchInput.value = targetType;
 							}
-						} else if (searchInput) {
-							searchInput.value = targetType;
 						}
 						setFilterVisibility(true);
 						persistFilters();

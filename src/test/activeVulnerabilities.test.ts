@@ -54,9 +54,10 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(html.includes('data-file="src/db/Query.java"'));
 	});
 
-	it('renders search clear and button-shaped severity checkboxes with no redundant clear buttons', () => {
+	it('omits search bar and renders button-shaped severity checkboxes with no redundant clear buttons', () => {
 		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
-		assert.ok(html.includes('id="search-clear-btn"'), 'Search clear button missing');
+		assert.ok(!html.includes('id="vuln-search"'), 'Search input should be completely removed');
+		assert.ok(!html.includes('id="search-clear-btn"'), 'Search clear button should be removed');
 		assert.ok(html.includes('severity-check'), 'Severity checkbox missing');
 		assert.ok(html.includes('role="checkbox"'), 'Severity checkbox role missing');
 		assert.ok(!html.includes('id="quick-clear-btn"'), 'Quick clear button should be removed');
