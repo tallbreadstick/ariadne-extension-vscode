@@ -124,6 +124,50 @@ describe('Session Metrics Terminology & Subtitles', () => {
 		assert.ok(html.includes('SESSION 1'), 'Should default to SESSION 1');
 	});
 
+	it('renders not-started badge with red dot and NOT STARTED YET label when isSessionActive is false', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+			},
+			sessionLabel: 'Session 3',
+			isSessionActive: false,
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('session-badge not-started'), 'Should include not-started class on session-badge');
+		assert.ok(html.includes('session-dot not-started'), 'Should include not-started class on session-dot');
+		assert.ok(html.includes('SESSION 3 · NOT STARTED YET'), 'Should render SESSION 3 · NOT STARTED YET label');
+	});
+
+	it('renders normal active session badge when isSessionActive is true', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+			},
+			sessionLabel: 'Session 3',
+			isSessionActive: true,
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(!html.includes('session-badge not-started'), 'Should not include not-started class on session-badge');
+		assert.ok(!html.includes('session-dot not-started'), 'Should not include not-started class on session-dot');
+		assert.ok(html.includes('SESSION 3</span>'), 'Should render SESSION 3 without NOT STARTED YET suffix');
+	});
+
 	it('renders visible subtitle beside Trends and explanatory tooltips on all 4 trend categories', () => {
 		const metrics: SessionMetrics = {
 			critical: 2,

@@ -472,6 +472,7 @@ export function toSessionMetrics(
 	commonVulns?: Map<string, CommonVulnerabilityEntry>,
 	totalSessionsAnalyzed?: number,
 	sessionLabel?: string,
+	isSessionActive?: boolean,
 ): SessionMetrics {
 	// Build per-type sub-items for recurring findings (grouped by type)
 	const recurringItems = groupByType(
@@ -552,6 +553,7 @@ export function toSessionMetrics(
 		commonVulnerabilities: mapCommonVulns(commonVulns),
 		totalSessionsAnalyzed: totalSessions,
 		sessionLabel,
+		isSessionActive,
 	};
 }
 

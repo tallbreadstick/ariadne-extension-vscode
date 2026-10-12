@@ -339,10 +339,18 @@ const CSS = /* css */ `
 		text-transform: uppercase;
 	}
 
+	.session-badge.not-started {
+		border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 30%, var(--border));
+	}
+
 	.session-dot {
 		font-size: 8px;
 		color: var(--accent);
 		line-height: 1;
+	}
+
+	.session-dot.not-started {
+		color: var(--vscode-errorForeground, #f14c4c);
 	}
 
 	.metrics-grid {
@@ -812,7 +820,13 @@ export function buildSessionMetricsHtml(
 	}
 
 	const { critical, high, medium, low, trends } = metrics;
+	const isSessionActive = metrics.isSessionActive !== false;
 	const sessionLabel = (metrics.sessionLabel || 'Session 1').toUpperCase();
+	const fullSessionBadgeText = isSessionActive
+		? escapeHtml(sessionLabel)
+		: `${escapeHtml(sessionLabel)} · NOT STARTED YET`;
+	const badgeClass = isSessionActive ? 'session-badge' : 'session-badge not-started';
+	const dotClass = isSessionActive ? 'session-dot' : 'session-dot not-started';
 
 	const persistingSubItems = buildPersistingSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
@@ -835,7 +849,7 @@ export function buildSessionMetricsHtml(
 						${FULL_REPORT_SVG}
 						<span>Full Report</span>
 					</div>
-					<span class="session-badge"><span class="session-dot">●</span> ${escapeHtml(sessionLabel)}</span>
+					<span class="${badgeClass}"><span class="${dotClass}">●</span> ${fullSessionBadgeText}</span>
 				</div>
 				<div class="metrics-grid">
 					${buildMetricCard('Critical Issues', critical, 'critical')}

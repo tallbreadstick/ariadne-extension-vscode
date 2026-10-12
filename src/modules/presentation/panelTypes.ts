@@ -164,4 +164,6 @@ export interface SessionMetrics {
 	totalSessionsAnalyzed?: number;
 	/** Optional human-readable session label or badge (e.g. "Session 1"). */
 	sessionLabel?: string;
+	/** Whether an active session is currently in progress. False if session has not started yet. */
+	isSessionActive?: boolean;
 }

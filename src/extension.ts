@@ -502,7 +502,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		);
 
 		if (latestSessionAnalysis) {
-			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed, sessionLabel);
+			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed, sessionLabel, activeSession !== null);
 			if (latestVulnerabilities.length > 0) {
 				metrics.critical = latestVulnerabilities.filter(v => v.severity === 'critical').length;
 				metrics.high = latestVulnerabilities.filter(v => v.severity === 'high').length;
@@ -684,6 +684,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			commonVulnerabilities: commonItems.length > 0 ? commonItems : undefined,
 			totalSessionsAnalyzed,
 			sessionLabel,
+			isSessionActive: activeSession !== null,
 		};
 	}
 
