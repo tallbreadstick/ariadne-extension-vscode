@@ -88,6 +88,19 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /Start Coding with Ariadne/);
 		});
 
+		it('uses SVG icons and illustrations without emojis', () => {
+			assert.ok(html.includes('class="hero-badge-icon"'), 'Hero badge should use SVG icon');
+			assert.ok(html.includes('class="feature-icon"'), 'Feature headers should use SVG icons');
+			assert.ok(html.includes('class="step-svg"'), 'Process cards should use SVG icons');
+			assert.ok(html.includes('class="closing-badge"'), 'Closing section should use SVG badge');
+			assert.ok(!html.includes('🛡️'), 'Should not contain shield emoji');
+			assert.ok(!html.includes('⚙️'), 'Should not contain settings emoji');
+			assert.ok(!html.includes('📋'), 'Should not contain clipboard emoji');
+			assert.ok(!html.includes('📊'), 'Should not contain chart emoji');
+			assert.ok(!html.includes('🖊️'), 'Should not contain pen emoji');
+			assert.ok(!html.includes('🎉'), 'Should not contain party emoji');
+		});
+
 		it('includes client script dispatching vscode.postMessage for actions', () => {
 			assert.match(html, /acquireVsCodeApi\(\)/);
 			assert.match(html, /vscode\.postMessage\(\{ action \}\)/);

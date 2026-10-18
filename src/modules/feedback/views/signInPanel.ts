@@ -29,7 +29,6 @@ function formatSignedInDate(epochMs: number): string {
 
 const OPEN_TERMS_COMMAND = 'ariadne-extension-vscode.openTermsOfUse';
 const OPEN_PRIVACY_COMMAND = 'ariadne-extension-vscode.openPrivacyPolicy';
-const OPEN_ONBOARDING_COMMAND = 'ariadne-extension-vscode.openOnboarding';
 
 const GITHUB_MARK_SVG = /* html */ `
 	<svg class="github-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -521,27 +520,6 @@ const CSS = /* css */ `
 		width: 14px;
 		height: 14px;
 	}
-
-	.sidebar-help {
-		margin-top: 24px;
-		padding-top: 14px;
-		border-top: 1px solid var(--border);
-		text-align: center;
-	}
-
-	.sidebar-help .help-link {
-		color: var(--accent);
-		text-decoration: none;
-		font-size: 12px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		cursor: pointer;
-	}
-
-	.sidebar-help .help-link:hover {
-		text-decoration: underline;
-	}
 `;
 
 function buildCopilotUsageBlock(model: SignInPanelViewModel): string {
@@ -846,6 +824,19 @@ function buildSessionSection(): string {
 		</p>`;
 }
 
+function buildHelpSection(): string {
+	return /* html */ `
+		<p class="subtitle">Review guided workflows, scanning lifecycles, and core security features.</p>
+		<div class="actions">
+			<button class="btn btn-primary" id="open-onboarding-btn" type="button">
+				Onboarding Guide
+			</button>
+		</div>
+		<p class="footer-note">
+			Opens the interactive guide with explanations of all panels, scans, and settings.
+		</p>`;
+}
+
 /**
  * Builds the Ariadne sidebar HTML (accordion settings).
  */
@@ -887,15 +878,16 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					${buildScriptingSection(model)}
 				</div>
 			</details>
-			<div class="sidebar-help">
-				<a href="command:${OPEN_ONBOARDING_COMMAND}" class="help-link" id="open-onboarding-link">
-					📖 Onboarding Guide
-				</a>
-			</div>
+			<details class="accordion-item" id="accordion-help" name="ariadne-settings">
+				<summary>Help<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildHelpSection()}
+				</div>
+			</details>
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
-			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-scripting'];
+			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-scripting', 'accordion-help'];
 
 			function restoreAccordion() {
 				const saved = vscode.getState()?.openSection;
@@ -988,7 +980,7 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				vscode.postMessage({ type: 'clear-session-data' });
 			});
 
-			document.getElementById('open-onboarding-link')?.addEventListener('click', () => {
+			document.getElementById('open-onboarding-btn')?.addEventListener('click', () => {
 				vscode.postMessage({ type: 'open-onboarding' });
 			});
 

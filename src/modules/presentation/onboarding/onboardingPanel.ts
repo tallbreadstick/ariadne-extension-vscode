@@ -5,6 +5,81 @@ import * as vscode from 'vscode';
  * Implements Option A: Custom Themed Webview Tab with interactive navigation actions.
  */
 
+// ── SVGs ─────────────────────────────────────────────────────────────
+
+const SHIELD_SVG = /* html */ `
+<svg class="hero-badge-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+	<path fill-rule="evenodd" clip-rule="evenodd" d="M8 1.5l5.5 2v4.5c0 3.5-2.5 6-5.5 7-3-1-5.5-3.5-5.5-7V3.5L8 1.5zm0 1.55l4.5 1.7v3.75c0 2.85-1.9 4.85-4.5 5.7-2.6-.85-4.5-2.85-4.5-5.7V4.5L8 3.05z"/>
+</svg>`;
+
+const SETTINGS_SVG = /* html */ `
+<svg class="feature-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+	<path fill-rule="evenodd" clip-rule="evenodd" d="M9.1 1h-2.2l-.3 1.6-.8.3-1.3-1-1.6 1.6 1 1.3-.3.8L2 5.9v2.2l1.6.3.3.8-1 1.3 1.6 1.6 1.3-1 .8.3.3 1.6h2.2l.3-1.6.8-.3 1.3 1 1.6-1.6-1-1.3.3-.8 1.6-.3V5.9l-1.6-.3-.3-.8 1-1.3-1.6-1.6-1.3 1-.8-.3L9.1 1zm-1.1 5a2 2 0 100 4 2 2 0 000-4z"/>
+</svg>`;
+
+const VULN_SVG = /* html */ `
+<svg class="feature-icon vuln" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+	<path fill-rule="evenodd" clip-rule="evenodd" d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.72L8 2.28zM7.5 5.5h1v4h-1v-4zm.5 6a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+</svg>`;
+
+const REPORT_SVG = /* html */ `
+<svg class="feature-icon report" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+	<rect x="1" y="9" width="3" height="6" rx="0.5"/>
+	<rect x="5" y="5" width="3" height="10" rx="0.5"/>
+	<rect x="9" y="2" width="3" height="13" rx="0.5"/>
+	<rect x="13" y="7" width="3" height="8" rx="0.5"/>
+</svg>`;
+
+const HIGHLIGHT_SVG = /* html */ `
+<svg class="feature-icon highlight" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/>
+	<path d="M10 3l3 3"/>
+	<path d="M2 15h12"/>
+</svg>`;
+
+const LIGHTBULB_SVG = /* html */ `
+<svg class="demo-tag-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+	<path d="M8 1.5a5 5 0 0 0-3.4 8.67l.4.33v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2l.4-.33A5 5 0 0 0 8 1.5zm-2 13h4v1H6v-1z"/>
+</svg>`;
+
+const STEP_SAVE_SVG = /* html */ `
+<svg class="step-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<path d="M3 2h7.5l3 3V13a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 011.5 13V3.5A1.5 1.5 0 013 2z"/>
+	<path d="M4.5 2v3.5h6V2"/>
+	<path d="M4.5 14.5v-5h7v5"/>
+</svg>`;
+
+const STEP_SCAN_SVG = /* html */ `
+<svg class="step-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<path d="M14 2.5A8 8 0 002.5 14"/>
+	<circle cx="8" cy="8" r="2.5"/>
+	<path d="M8 8l4-4"/>
+</svg>`;
+
+const STEP_DURABILITY_SVG = /* html */ `
+<svg class="step-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<path d="M8 1.5l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6v-4l5-2z"/>
+	<path d="M5.5 7.5l2 2 3-3"/>
+</svg>`;
+
+const STEP_TIMER_SVG = /* html */ `
+<svg class="step-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<circle cx="8" cy="8" r="6"/>
+	<path d="M8 4.5v3.5l2.5 1.5"/>
+</svg>`;
+
+const STEP_TERMINATION_SVG = /* html */ `
+<svg class="step-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<path d="M8 2v5"/>
+	<path d="M4.8 4.8a5.5 5.5 0 106.4 0"/>
+</svg>`;
+
+const READY_CHECK_SVG = /* html */ `
+<svg class="closing-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<circle cx="12" cy="12" r="10"/>
+	<path d="m8.5 12.5 2.5 2.5 5-5"/>
+</svg>`;
+
 const CSS = /* css */ `
 	:root {
 		color-scheme: dark;
@@ -22,7 +97,7 @@ const CSS = /* css */ `
 		--btn-sec-fg: var(--vscode-button-secondaryForeground, #ffffff);
 		--btn-sec-hover: var(--vscode-button-secondaryHoverBackground, #45494e);
 		--accent: var(--vscode-textLink-foreground, #3794ff);
-		--accent-rgb: 55, 148, 255;
+		--accent-hover: var(--vscode-textLink-activeForeground, #70b4ff);
 		--success: #4ec9b0;
 		--warning: #cca700;
 	}
@@ -33,11 +108,11 @@ const CSS = /* css */ `
 
 	body {
 		margin: 0;
-		padding: 32px 24px 60px;
+		padding: 32px 24px 64px;
 		background: var(--bg);
 		color: var(--fg);
-		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-		font-size: 14px;
+		font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+		font-size: 13px;
 		line-height: 1.6;
 		display: flex;
 		justify-content: center;
@@ -60,9 +135,9 @@ const CSS = /* css */ `
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		background: rgba(var(--accent-rgb), 0.12);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		color: var(--accent);
-		border: 1px solid rgba(var(--accent-rgb), 0.3);
+		border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
 		padding: 4px 12px;
 		border-radius: 999px;
 		font-size: 12px;
@@ -72,18 +147,24 @@ const CSS = /* css */ `
 		margin-bottom: 14px;
 	}
 
+	.hero-badge-icon {
+		width: 14px;
+		height: 14px;
+		flex-shrink: 0;
+	}
+
 	.hero h1 {
 		margin: 0 0 10px;
-		font-size: 28px;
+		font-size: 26px;
 		font-weight: 700;
-		letter-spacing: -0.5px;
+		letter-spacing: -0.4px;
 	}
 
 	.hero p {
 		margin: 0 auto;
 		max-width: 620px;
 		color: var(--muted);
-		font-size: 15px;
+		font-size: 14px;
 		line-height: 1.6;
 	}
 
@@ -105,18 +186,18 @@ const CSS = /* css */ `
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 26px;
-		height: 26px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		background: var(--btn-bg);
 		color: var(--btn-fg);
 		font-weight: 700;
-		font-size: 13px;
+		font-size: 12px;
 	}
 
 	.section-title {
 		margin: 0;
-		font-size: 18px;
+		font-size: 16px;
 		font-weight: 600;
 	}
 
@@ -130,27 +211,50 @@ const CSS = /* css */ `
 	.process-card {
 		background: var(--card-bg);
 		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 14px 18px;
+		border-radius: 4px;
+		padding: 14px 16px;
 		display: flex;
-		gap: 16px;
+		gap: 14px;
 		align-items: flex-start;
 		transition: border-color 0.15s ease;
 	}
 
 	.process-card:hover {
-		border-color: rgba(var(--accent-rgb), 0.5);
+		border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+	}
+
+	.process-indicator {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.process-icon-wrap {
+		width: 32px;
+		height: 32px;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		color: var(--accent);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.step-svg {
+		width: 16px;
+		height: 16px;
 	}
 
 	.process-step {
-		font-weight: 700;
-		font-size: 12px;
+		font-weight: 600;
+		font-size: 11px;
 		background: var(--badge-bg);
 		color: var(--badge-fg);
-		padding: 3px 8px;
-		border-radius: 4px;
+		padding: 2px 6px;
+		border-radius: 3px;
 		white-space: nowrap;
-		margin-top: 2px;
 	}
 
 	.process-body h4 {
@@ -182,38 +286,62 @@ const CSS = /* css */ `
 	.feature-card {
 		background: var(--card-bg);
 		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 18px;
+		border-radius: 4px;
+		padding: 16px;
 		display: flex;
 		flex-direction: column;
 		justify-content: space-between;
-		transition: transform 0.15s ease, border-color 0.15s ease;
+		transition: border-color 0.15s ease;
 	}
 
 	.feature-card:hover {
-		border-color: var(--accent);
-		transform: translateY(-1px);
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 	}
 
 	.feature-header {
 		display: flex;
 		justify-content: space-between;
-		align-items: flex-start;
-		margin-bottom: 8px;
+		align-items: center;
+		margin-bottom: 10px;
+		gap: 8px;
+	}
+
+	.feature-title-group {
+		display: flex;
+		align-items: center;
 		gap: 8px;
 	}
 
 	.feature-title {
 		margin: 0;
-		font-size: 15px;
+		font-size: 14px;
 		font-weight: 600;
+	}
+
+	.feature-icon {
+		width: 16px;
+		height: 16px;
+		color: var(--accent);
+		flex-shrink: 0;
+	}
+
+	.feature-icon.vuln {
+		color: var(--warning);
+	}
+
+	.feature-icon.report {
+		color: var(--accent);
+	}
+
+	.feature-icon.highlight {
+		color: var(--success);
 	}
 
 	.location-badge {
 		font-size: 11px;
 		font-weight: 500;
-		padding: 2px 7px;
-		border-radius: 4px;
+		padding: 2px 6px;
+		border-radius: 3px;
 		background: var(--badge-bg);
 		color: var(--badge-fg);
 		white-space: nowrap;
@@ -222,7 +350,7 @@ const CSS = /* css */ `
 	.feature-desc {
 		margin: 0 0 14px;
 		color: var(--muted);
-		font-size: 13px;
+		font-size: 12px;
 		line-height: 1.5;
 		flex-grow: 1;
 	}
@@ -235,14 +363,14 @@ const CSS = /* css */ `
 		gap: 6px;
 		background: var(--btn-bg);
 		color: var(--btn-fg);
-		border: none;
-		border-radius: 4px;
-		padding: 7px 14px;
+		border: 1px solid var(--vscode-button-border, transparent);
+		border-radius: 2px;
+		padding: 7px 12px;
 		font-size: 13px;
-		font-weight: 500;
+		font-weight: 400;
 		cursor: pointer;
 		text-decoration: none;
-		transition: background 0.15s ease;
+		transition: background 0.15s ease-out, border-color 0.15s ease-out;
 		width: 100%;
 	}
 
@@ -251,24 +379,26 @@ const CSS = /* css */ `
 	}
 
 	.btn-secondary {
-		background: var(--btn-sec-bg);
-		color: var(--btn-sec-fg);
+		background: transparent;
+		color: var(--fg);
+		border-color: var(--input-border, var(--border));
 	}
 
 	.btn-secondary:hover {
-		background: var(--btn-sec-hover);
+		background: color-mix(in srgb, var(--fg) 6%, transparent);
 	}
 
 	/* Highlight Demonstration Box */
 	.demo-box {
-		background: rgba(0, 0, 0, 0.25);
+		background: color-mix(in srgb, var(--card-bg) 60%, black);
 		border-left: 3px solid var(--warning);
-		padding: 8px 12px;
-		border-radius: 0 4px 4px 0;
+		padding: 8px 10px;
+		border-radius: 0 3px 3px 0;
 		font-family: var(--vscode-editor-font-family, Consolas, monospace);
-		font-size: 12px;
+		font-size: 11px;
 		margin-bottom: 12px;
 		color: var(--fg);
+		overflow-x: auto;
 	}
 
 	.demo-tag {
@@ -276,6 +406,15 @@ const CSS = /* css */ `
 		font-style: italic;
 		font-size: 11px;
 		margin-left: 8px;
+		display: inline-flex;
+		align-items: center;
+	}
+
+	.demo-tag-icon {
+		width: 12px;
+		height: 12px;
+		margin-right: 4px;
+		vertical-align: text-bottom;
 	}
 
 	/* Closing Hero */
@@ -283,9 +422,26 @@ const CSS = /* css */ `
 		text-align: center;
 		background: var(--card-bg);
 		border: 1px solid var(--border);
-		border-radius: 12px;
+		border-radius: 4px;
 		padding: 28px 24px;
 		margin-top: 16px;
+	}
+
+	.closing-badge {
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--success) 14%, transparent);
+		color: var(--success);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 12px;
+	}
+
+	.closing-icon {
+		width: 24px;
+		height: 24px;
 	}
 
 	.closing h3 {
@@ -296,17 +452,17 @@ const CSS = /* css */ `
 
 	.closing p {
 		margin: 0 auto 20px;
-		max-width: 500px;
+		max-width: 520px;
 		color: var(--muted);
-		font-size: 14px;
+		font-size: 13px;
 	}
 
 	.closing .btn {
 		width: auto;
 		min-width: 180px;
-		padding: 10px 24px;
-		font-size: 14px;
-		font-weight: 600;
+		padding: 9px 24px;
+		font-size: 13px;
+		font-weight: 500;
 	}
 `;
 
@@ -325,7 +481,10 @@ export function buildOnboardingHtml(): string {
 		<div class="container">
 			<!-- Hero Header -->
 			<header class="hero">
-				<div class="hero-badge">🛡️ Student Security Companion</div>
+				<div class="hero-badge">
+					${SHIELD_SVG}
+					<span>Student Security Companion</span>
+				</div>
 				<h1>Welcome to Ariadne</h1>
 				<p>
 					Ariadne is a pedagogical static analysis assistant for Java in VS Code. It automatically monitors 
@@ -338,11 +497,14 @@ export function buildOnboardingHtml(): string {
 			<section class="section">
 				<div class="section-header">
 					<span class="section-number">1</span>
-					<h2 class="section-title">The Saving & Scanning Lifecycle</h2>
+					<h2 class="section-title">The Saving &amp; Scanning Lifecycle</h2>
 				</div>
 				<div class="process-grid">
 					<div class="process-card">
-						<span class="process-step">Step 2.1</span>
+						<div class="process-indicator">
+							<span class="process-icon-wrap">${STEP_SAVE_SVG}</span>
+							<span class="process-step">Step 2.1</span>
+						</div>
 						<div class="process-body">
 							<h4>Session Begins on First Save</h4>
 							<p>
@@ -354,7 +516,10 @@ export function buildOnboardingHtml(): string {
 					</div>
 
 					<div class="process-card">
-						<span class="process-step">Step 2.2</span>
+						<div class="process-indicator">
+							<span class="process-icon-wrap">${STEP_SCAN_SVG}</span>
+							<span class="process-step">Step 2.2</span>
+						</div>
 						<div class="process-body">
 							<h4>Near Real-Time Vulnerability Scanning</h4>
 							<p>
@@ -365,7 +530,10 @@ export function buildOnboardingHtml(): string {
 					</div>
 
 					<div class="process-card">
-						<span class="process-step">Step 2.3</span>
+						<div class="process-indicator">
+							<span class="process-icon-wrap">${STEP_DURABILITY_SVG}</span>
+							<span class="process-step">Step 2.3</span>
+						</div>
 						<div class="process-body">
 							<h4>Full Report Multi-Save Durability</h4>
 							<p>
@@ -376,7 +544,10 @@ export function buildOnboardingHtml(): string {
 					</div>
 
 					<div class="process-card">
-						<span class="process-step">Step 2.4</span>
+						<div class="process-indicator">
+							<span class="process-icon-wrap">${STEP_TIMER_SVG}</span>
+							<span class="process-step">Step 2.4</span>
+						</div>
 						<div class="process-body">
 							<h4>Periodic Hourly Auto-Scan</h4>
 							<p>
@@ -387,7 +558,10 @@ export function buildOnboardingHtml(): string {
 					</div>
 
 					<div class="process-card">
-						<span class="process-step">Step 2.5</span>
+						<div class="process-indicator">
+							<span class="process-icon-wrap">${STEP_TERMINATION_SVG}</span>
+							<span class="process-step">Step 2.5</span>
+						</div>
 						<div class="process-body">
 							<h4>Safe Session Termination</h4>
 							<p>
@@ -403,19 +577,22 @@ export function buildOnboardingHtml(): string {
 			<section class="section">
 				<div class="section-header">
 					<span class="section-number">2</span>
-					<h2 class="section-title">Core Features & Where to Find Them</h2>
+					<h2 class="section-title">Core Features &amp; Where to Find Them</h2>
 				</div>
 				<div class="features-grid">
 					<!-- Settings Feature -->
 					<div class="feature-card">
 						<div>
 							<div class="feature-header">
-								<h3 class="feature-title">⚙️ Sidebar Settings</h3>
+								<div class="feature-title-group">
+									${SETTINGS_SVG}
+									<h3 class="feature-title">Sidebar Settings</h3>
+								</div>
 								<span class="location-badge">Activity Bar (Left)</span>
 							</div>
 							<p class="feature-desc">
 								Manage your GitHub authentication, configure background auto-scan intervals (2–180 min), 
-								toggle inline code highlight visibility, and manage custom rule scripts across 4 organized accordions.
+								toggle inline code highlight visibility, and manage custom rule scripts across organized accordions.
 							</p>
 						</div>
 						<button class="btn btn-secondary" data-action="openSettings">
@@ -427,7 +604,10 @@ export function buildOnboardingHtml(): string {
 					<div class="feature-card">
 						<div>
 							<div class="feature-header">
-								<h3 class="feature-title">📋 Active Vulnerabilities</h3>
+								<div class="feature-title-group">
+									${VULN_SVG}
+									<h3 class="feature-title">Active Vulnerabilities</h3>
+								</div>
 								<span class="location-badge">Bottom Panel (Left)</span>
 							</div>
 							<p class="feature-desc">
@@ -445,7 +625,10 @@ export function buildOnboardingHtml(): string {
 					<div class="feature-card">
 						<div>
 							<div class="feature-header">
-								<h3 class="feature-title">📊 Full Report</h3>
+								<div class="feature-title-group">
+									${REPORT_SVG}
+									<h3 class="feature-title">Full Report</h3>
+								</div>
 								<span class="location-badge">Bottom Panel (Right)</span>
 							</div>
 							<p class="feature-desc">
@@ -463,7 +646,10 @@ export function buildOnboardingHtml(): string {
 					<div class="feature-card">
 						<div>
 							<div class="feature-header">
-								<h3 class="feature-title">🖊️ Inline Highlighting</h3>
+								<div class="feature-title-group">
+									${HIGHLIGHT_SVG}
+									<h3 class="feature-title">Inline Highlighting</h3>
+								</div>
 								<span class="location-badge">Editor Pane</span>
 							</div>
 							<p class="feature-desc">
@@ -472,7 +658,7 @@ export function buildOnboardingHtml(): string {
 							</p>
 							<div class="demo-box">
 								<code>String q = "SELECT * FROM users WHERE id=" + id;</code>
-								<span class="demo-tag">[Ariadne] SQL Injection</span>
+								<span class="demo-tag">${LIGHTBULB_SVG} [Ariadne] SQL Injection</span>
 							</div>
 						</div>
 						<button class="btn btn-secondary" data-action="openActiveVulnerabilities">
@@ -484,7 +670,10 @@ export function buildOnboardingHtml(): string {
 
 			<!-- Section 3: Friendly Exit / Closing Message -->
 			<section class="closing">
-				<h3>🎉 You're Ready to Code!</h3>
+				<div class="closing-badge">
+					${READY_CHECK_SVG}
+				</div>
+				<h3>You're Ready to Code!</h3>
 				<p>
 					Enjoy your experience with Ariadne. Remember: Ariadne is designed to guide your learning, 
 					helping you identify weaknesses and understand secure coding principles along the way.
