@@ -87,6 +87,10 @@
         "title": "Ariadne: Settings"
       },
       {
+        "command": "ariadne-extension-vscode.openOnboarding",
+        "title": "Ariadne: Open Onboarding Guide"
+      },
+      {
         "command": "ariadne-extension-vscode.openTermsOfUse",
         "title": "Ariadne: Terms of Use"
       },
@@ -121,6 +125,10 @@
       {
         "command": "ariadne-extension-vscode.debugResetWelcomeToast",
         "title": "Ariadne: Debug — Reset Welcome Onboarding Toast"
+      },
+      {
+        "command": "ariadne-extension-vscode.debugResetOnboarding",
+        "title": "Ariadne: Debug — Reset Onboarding Guide State"
       }
     ],
     "viewsContainers": {

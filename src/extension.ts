@@ -23,6 +23,11 @@ import { registerHoverProvider } from './modules/presentation/diagnostics/HoverP
 import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 import { checkAndShowWelcomeToast, resetWelcomeToast } from './modules/presentation/onboarding/welcomeToast';
+import {
+	showOnboardingPanel,
+	checkAndShowOnboarding,
+	resetOnboardingState,
+} from './modules/presentation/onboarding/onboardingPanel.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import {
@@ -929,6 +934,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
+			if (msg.type === 'open-onboarding') {
+				showOnboardingPanel(context);
+				return;
+			}
+
 			if (msg.type === 'init-rule-scripts') {
 				if (!(await githubAuth.isAuthenticated())) {
 					await focusSignInSidebar();
@@ -1701,6 +1711,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 
+	const openOnboarding = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openOnboarding',
+		() => {
+			showOnboardingPanel(context);
+		},
+	);
+
+	const debugResetOnboarding = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.debugResetOnboarding',
+		async () => {
+			await resetOnboardingState(context.globalState);
+			void vscode.window.showInformationMessage(
+				'Ariadne: Onboarding guide state reset. Reload window to trigger it on startup.',
+			);
+		},
+	);
+
 	const openTermsOfUse = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openTermsOfUse',
 		() => {
@@ -2236,6 +2263,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		openSignInPanel,
 		openSettingsCommand,
 		openPanelCommand,
+		openOnboarding,
+		debugResetOnboarding,
 		openTermsOfUse,
 		openPrivacyPolicy,
 		openFeedbackPanel,
@@ -2257,6 +2286,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	// ── First-run Onboarding & Welcome Orientation ───────────────────────
+	void checkAndShowOnboarding(context);
 	void checkAndShowWelcomeToast(context.globalState, openBottomPanel);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
