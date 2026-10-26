@@ -38,7 +38,7 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /pedagogical static analysis assistant for Java in VS Code/);
 		});
 
-		it('contains Section 1: The Saving & Scanning Lifecycle with all 5 steps', () => {
+		it('contains Section 1: The Saving & Scanning Lifecycle with all 6 steps', () => {
 			assert.match(html, /The Saving &amp; Scanning Lifecycle/);
 			// 2.1 First save
 			assert.match(html, /Session Begins on First Save/);
@@ -49,12 +49,31 @@ describe('Onboarding Guide Webview Panel', () => {
 			// 2.3 Full report multi-save durability
 			assert.match(html, /Full Report Multi-Save Durability/);
 			assert.match(html, /Step 2\.3/);
-			// 2.4 Periodic hourly auto-scan
+			// 2.4 Periodic hourly auto-scan (fixed 60 minutes)
 			assert.match(html, /Periodic Hourly Auto-Scan/);
 			assert.match(html, /Step 2\.4/);
-			// 2.5 Session termination
-			assert.match(html, /Safe Session Termination/);
+			assert.match(html, /every 60 minutes/);
+			assert.ok(!html.includes('configurable from 2 to 180'));
+			// 2.5 2-Hour Habit Tracking in Common Vulnerabilities
+			assert.match(html, /2-Hour Habit Tracking in Common Vulnerabilities/);
 			assert.match(html, /Step 2\.5/);
+			assert.match(html, /persists for 2 hours/);
+			// 2.6 Safe session termination
+			assert.match(html, /Safe Session Termination/);
+			assert.match(html, /Step 2\.6/);
+		});
+
+		it('renders demonstration GIFs with captions for Steps 2.1, 2.4, and 2.5', () => {
+			assert.ok(html.includes('Step 2.1 Session Started (Optimized).gif'), 'Should include Step 2.1 GIF');
+			assert.ok(html.includes('Step 2.4 Session Started (Optimized).gif'), 'Should include Step 2.4 GIF');
+			assert.ok(html.includes('Step 2.45 Session Started (optimized).gif'), 'Should include Step 2.5 GIF');
+			assert.ok(html.includes('class="demo-media"'), 'Should render demo-media images');
+			assert.ok(html.includes('class="demo-media-caption"'), 'Should render media captions');
+		});
+
+		it('removes configurable auto-scan from settings description', () => {
+			assert.ok(!html.includes('2–180 min'), 'Should not mention 2-180 min interval');
+			assert.ok(!html.includes('configurable'), 'Should not mention configurable auto-scan');
 		});
 
 		it('contains Section 2: Core Features with location badges and interactive action buttons', () => {

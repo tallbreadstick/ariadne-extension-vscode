@@ -74,11 +74,25 @@ const STEP_TERMINATION_SVG = /* html */ `
 	<path d="M4.8 4.8a5.5 5.5 0 106.4 0"/>
 </svg>`;
 
+const STEP_COMMON_VULN_SVG = /* html */ `
+<svg class="step-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<circle cx="8" cy="8" r="6.25"/>
+	<path d="M8 5v3.5"/>
+	<circle cx="8" cy="11.5" r="0.75" fill="currentColor"/>
+</svg>`;
+
 const READY_CHECK_SVG = /* html */ `
 <svg class="closing-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 	<circle cx="12" cy="12" r="10"/>
 	<path d="m8.5 12.5 2.5 2.5 5-5"/>
 </svg>`;
+
+export interface OnboardingMediaUris {
+	step21GifUri?: string;
+	step24GifUri?: string;
+	step25GifUri?: string;
+	cspSource?: string;
+}
 
 const CSS = /* css */ `
 	:root {
@@ -257,6 +271,11 @@ const CSS = /* css */ `
 		white-space: nowrap;
 	}
 
+	.process-body {
+		flex: 1;
+		min-width: 0;
+	}
+
 	.process-body h4 {
 		margin: 0 0 4px;
 		font-size: 14px;
@@ -268,6 +287,47 @@ const CSS = /* css */ `
 		font-size: 13px;
 		color: var(--muted);
 		line-height: 1.5;
+	}
+
+	.demo-media-wrapper {
+		margin-top: 10px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--card-bg) 60%, black);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.demo-media {
+		width: 100%;
+		height: auto;
+		display: block;
+		border: none;
+		max-height: 280px;
+		object-fit: contain;
+		background: #1e1e1e;
+	}
+
+	.demo-media-caption {
+		font-size: 11px;
+		color: var(--muted);
+		padding: 5px 10px;
+		background: color-mix(in srgb, var(--card-bg) 80%, black);
+		border-top: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		line-height: 1.4;
+	}
+
+	.demo-media-caption .caption-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+		display: inline-block;
+		flex-shrink: 0;
 	}
 
 	/* Feature Cards Grid */
@@ -466,13 +526,18 @@ const CSS = /* css */ `
 	}
 `;
 
-export function buildOnboardingHtml(): string {
+export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
+	const cspSource = mediaUris?.cspSource;
+	const step21GifUri = mediaUris?.step21GifUri ?? 'media/Step 2.1 Session Started (Optimized).gif';
+	const step24GifUri = mediaUris?.step24GifUri ?? 'media/Step 2.4 Session Started (Optimized).gif';
+	const step25GifUri = mediaUris?.step25GifUri ?? 'media/Step 2.45 Session Started (optimized).gif';
+
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
 		<meta http-equiv="Content-Security-Policy"
-			content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+			content="default-src 'none'; img-src ${cspSource ? cspSource + ' data:' : "'self' data:"}; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Welcome to Ariadne</title>
 		<style>${CSS}</style>
@@ -512,6 +577,14 @@ export function buildOnboardingHtml(): string {
 								If you have worked on this project before, your historical security metrics and baselines 
 								will be restored seamlessly.
 							</p>
+							${step21GifUri ? /* html */ `
+							<div class="demo-media-wrapper">
+								<img src="${step21GifUri}" alt="Session start transition" class="demo-media" loading="lazy" />
+								<div class="demo-media-caption">
+									<span class="caption-dot"></span>
+									<span>Visual indicator: Session status transitions from "NOT STARTED" to active on first save.</span>
+								</div>
+							</div>` : ''}
 						</div>
 					</div>
 
@@ -551,16 +624,47 @@ export function buildOnboardingHtml(): string {
 						<div class="process-body">
 							<h4>Periodic Hourly Auto-Scan</h4>
 							<p>
-								An automatic full-workspace scan runs every hour (configurable from 2 to 180 minutes in Settings) 
-								to ensure vulnerability records reflect the current state of your entire project.
+								An automatic full-workspace scan runs every 60 minutes to ensure vulnerability records 
+								reflect the current state of your entire project.
 							</p>
+							${step24GifUri ? /* html */ `
+							<div class="demo-media-wrapper">
+								<img src="${step24GifUri}" alt="Hourly auto-scan notification" class="demo-media" loading="lazy" />
+								<div class="demo-media-caption">
+									<span class="caption-dot"></span>
+									<span>Visual indicator: Background scan checkpoint completes every 60 minutes.</span>
+								</div>
+							</div>` : ''}
+						</div>
+					</div>
+
+					<div class="process-card">
+						<div class="process-indicator">
+							<span class="process-icon-wrap">${STEP_COMMON_VULN_SVG}</span>
+							<span class="process-step">Step 2.5</span>
+						</div>
+						<div class="process-body">
+							<h4>2-Hour Habit Tracking in Common Vulnerabilities</h4>
+							<p>
+								If the same vulnerability remains unfixed and persists for 2 hours across your coding session, 
+								it is recognized as a recurring habit and appears under <strong>Common Vulnerabilities</strong> 
+								in your Full Report so you can focus on mastering that security pattern.
+							</p>
+							${step25GifUri ? /* html */ `
+							<div class="demo-media-wrapper">
+								<img src="${step25GifUri}" alt="Common vulnerabilities promotion" class="demo-media" loading="lazy" />
+								<div class="demo-media-caption">
+									<span class="caption-dot"></span>
+									<span>Visual indicator: Persistent vulnerability promoted to Common Vulnerabilities in the Full Report.</span>
+								</div>
+							</div>` : ''}
 						</div>
 					</div>
 
 					<div class="process-card">
 						<div class="process-indicator">
 							<span class="process-icon-wrap">${STEP_TERMINATION_SVG}</span>
-							<span class="process-step">Step 2.5</span>
+							<span class="process-step">Step 2.6</span>
 						</div>
 						<div class="process-body">
 							<h4>Safe Session Termination</h4>
@@ -591,8 +695,8 @@ export function buildOnboardingHtml(): string {
 								<span class="location-badge">Activity Bar (Left)</span>
 							</div>
 							<p class="feature-desc">
-								Manage your GitHub authentication, configure background auto-scan intervals (2–180 min), 
-								toggle inline code highlight visibility, and manage custom rule scripts across organized accordions.
+								Manage your GitHub authentication, toggle inline code highlight visibility, 
+								access the help guide, and manage custom rule scripts across organized accordions.
 							</p>
 						</div>
 						<button class="btn btn-secondary" data-action="openSettings">
@@ -716,10 +820,30 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 		{
 			enableScripts: true,
 			retainContextWhenHidden: true,
+			localResourceRoots: [
+				vscode.Uri.joinPath(context.extensionUri, 'media'),
+			],
 		},
 	);
 
-	panel.webview.html = buildOnboardingHtml();
+	const step21GifUri = panel.webview.asWebviewUri(
+		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.1 Session Started (Optimized).gif'),
+	).toString();
+
+	const step24GifUri = panel.webview.asWebviewUri(
+		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.4 Session Started (Optimized).gif'),
+	).toString();
+
+	const step25GifUri = panel.webview.asWebviewUri(
+		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.45 Session Started (optimized).gif'),
+	).toString();
+
+	panel.webview.html = buildOnboardingHtml({
+		step21GifUri,
+		step24GifUri,
+		step25GifUri,
+		cspSource: panel.webview.cspSource,
+	});
 
 	panel.webview.onDidReceiveMessage(
 		async (message: { action?: string }) => {
