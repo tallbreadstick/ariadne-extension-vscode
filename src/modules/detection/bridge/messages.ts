@@ -45,4 +45,6 @@ export type AriadneMessage =
 
 	| { type: 'Analyze'; path: string | null }
 
-	| { type: 'ReloadRules'; overlays: Record<string, string> };
+	| { type: 'ReloadRules'; overlays: Record<string, string> }
+
+	| { type: 'GetTreeView' };

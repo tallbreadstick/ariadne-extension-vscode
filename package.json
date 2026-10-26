@@ -83,6 +83,11 @@
         "title": "Ariadne: Open Panel"
       },
       {
+        "command": "ariadne-extension-vscode.toggleTreeView",
+        "title": "Ariadne: Toggle Flowchart",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "ariadne-extension-vscode.openSettings",
         "title": "Ariadne: Settings"
       },

@@ -758,6 +758,7 @@ function buildScannerSection(model: SignInPanelViewModel): string {
 	const disabled = busy ? 'disabled' : '';
 	const highlightsOn = scanner.highlightsVisible !== false;
 	const openOnStartup = scanner.openPanelOnStartup !== false;
+	const debugModeOn = scanner.debugMode === true;
 	const spinnerInTrash = busy && scanner.busyAction === 'delete';
 	const statusIcon = busy && !spinnerInTrash
 		? SPINNER_HTML
@@ -781,6 +782,11 @@ function buildScannerSection(model: SignInPanelViewModel): string {
 			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
 			<span>Open on startup</span>
 		</button>
+		<button class="switch core-toggle" id="debug-mode" type="button" role="switch" aria-checked="${debugModeOn ? 'true' : 'false'}" ${disabled}>
+			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+			<span>Debug mode</span>
+		</button>
+		<p class="footer-note">Debug mode runs the local <code>ariadne</code> binary from your PATH instead of the downloaded scanner.</p>
 		<div id="scanner-controls" class="scanner-controls${busy ? ' is-busy' : ''}" data-host-target="${escapeHtml(scanner.hostTarget ?? '')}" aria-busy="${busy ? 'true' : 'false'}">
 			<button class="switch" id="scanner-auto" type="button" role="switch" aria-checked="${scanner.auto ? 'true' : 'false'}" ${disabled}>
 				<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
@@ -1117,6 +1123,16 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				const enabled = button.getAttribute('aria-checked') !== 'true';
 				button.setAttribute('aria-checked', enabled ? 'true' : 'false');
 				vscode.postMessage({ type: 'open-panel-on-startup', enabled });
+			});
+
+			document.getElementById('debug-mode')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				if (button.hasAttribute('disabled')) {
+					return;
+				}
+				const enabled = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', enabled ? 'true' : 'false');
+				vscode.postMessage({ type: 'debug-mode-set', enabled });
 			});
 
 			window.addEventListener('message', (event) => {

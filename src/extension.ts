@@ -22,6 +22,11 @@ import { DiagnosticManager } from './modules/presentation/diagnostics/Diagnostic
 import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
 import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
+import {
+	buildTreeViewHtml,
+	type TreeViewPayload,
+} from './modules/presentation/views/treeViewPanel.js';
+import { resolveWorkspaceFsPath } from './modules/detection/bridge/convert.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import {
@@ -212,12 +217,14 @@ function buildVulnsHtml(
 	signedIn: boolean,
 	scannerBroken = false,
 	loading = false,
+	treeViewOpen = false,
 ): string {
 	return buildActiveVulnerabilitiesHtml(vulns, {
 		expandedKey: resolveExpandedVulnKey(vulns, store),
 		signedIn,
 		scannerBroken,
 		loading,
+		treeViewOpen,
 	});
 }
 
@@ -247,7 +254,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			arch: process.arch,
 		});
 	};
-	configureAriadneExecutable(context.globalStorageUri.fsPath, readScannerChoice);
+	let debugMode = context.globalState.get<boolean>('ariadne.debugMode') === true;
+	configureAriadneExecutable(
+		context.globalStorageUri.fsPath,
+		readScannerChoice,
+		() => debugMode,
+	);
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
@@ -262,6 +274,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let scannerBusyAction: 'download' | 'delete' | 'status' = 'status';
 	let highlightsVisible = context.globalState.get<boolean>('ariadne.highlightsVisible') !== false;
 	let openPanelOnStartup = context.globalState.get<boolean>('ariadne.openPanelOnStartup') !== false;
+	let latestTreeView: TreeViewPayload | null = null;
+	let treeViewPanel: vscode.WebviewPanel | undefined;
+	let treeViewOpen = false;
 	let applyHighlightVisibility: (visible: boolean) => void = () => undefined;
 	let startupLoading = true;
 	let acceptFindings = true;
@@ -298,11 +313,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			binaries: targetsForOs(prefs.os).map(toOption),
 			downloaded: [...downloadedIds].map(toOption),
 			working: scannerChecked ? !scannerBroken : undefined,
-			overrideActive: localExecutableOverride() !== undefined,
+			overrideActive: debugMode || localExecutableOverride() !== undefined,
 			busy: scannerBusy,
 			busyAction: scannerBusyAction,
 			highlightsVisible,
 			openPanelOnStartup,
+			debugMode,
 		};
 	};
 
@@ -630,6 +646,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	// ── Panel providers ────────────────────────────────────────────────
+	const toggleTreeViewPanel = (): void => {
+		if (treeViewPanel) {
+			treeViewPanel.dispose();
+			return;
+		}
+		treeViewPanel = vscode.window.createWebviewPanel(
+			'ariadneTreeView',
+			'Flowchart',
+			vscode.ViewColumn.One,
+			{ enableScripts: true, retainContextWhenHidden: true },
+		);
+		treeViewOpen = true;
+		treeViewPanel.webview.html = buildTreeViewHtml(latestTreeView, {
+			signedIn: featuresUnlocked,
+			loading: startupLoading,
+			scannerBroken,
+		});
+		treeViewPanel.webview.onDidReceiveMessage(async (msg: Record<string, unknown>) => {
+			if (msg.type === 'goto-line' && msg.filePath && msg.line) {
+				const uri = vscode.Uri.file(resolveWorkspaceFsPath(String(msg.filePath)));
+				const line = Math.max(0, Number(msg.line) - 1);
+				const col = Math.max(0, Number(msg.column ?? 0));
+				const range = new vscode.Range(line, col, line, col);
+				const editor = await vscode.window.showTextDocument(uri, {
+					preserveFocus: false,
+					selection: range,
+				});
+				editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+			}
+		});
+		treeViewPanel.onDidDispose(() => {
+			treeViewPanel = undefined;
+			treeViewOpen = false;
+			activeVulnsProvider.updateHtml(
+				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
+			);
+		});
+		requestTreeView();
+		activeVulnsProvider.updateHtml(
+			buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
+		);
+	};
+
+	const refreshTreeViewPanel = (): void => {
+		if (!treeViewPanel) {
+			return;
+		}
+		treeViewPanel.webview.html = buildTreeViewHtml(latestTreeView, {
+			signedIn: featuresUnlocked,
+			loading: startupLoading,
+			scannerBroken,
+		});
+	};
+
 	const activeVulnsProvider = new AriadneViewProvider(
 		initialVulnsHtml,
 		(msg) => {
@@ -639,10 +709,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					: String(msg.key);
 				void store.saveExpandedVulnKey(key);
 			}
+			if (msg.type === 'toggle-tree-view') {
+				toggleTreeViewPanel();
+			}
 		},
 	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading),
+		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -668,6 +741,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		'ariadne.panel.sessionMetrics',
 		sessionMetricsProvider,
 	);
+
+	const requestTreeView = (): void => {
+		if (session.isRunning()) {
+			session.send({ type: 'GetTreeView' });
+		}
+	};
 
 	const writeScannerPreferences = async (next: ScannerPreferences): Promise<void> => {
 		await context.globalState.update('ariadne.scannerPreferences', {
@@ -784,6 +863,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				openPanelOnStartup = msg.enabled === true;
 				await context.globalState.update('ariadne.openPanelOnStartup', openPanelOnStartup);
 				await refreshSignInPanel(undefined, { skipQuota: true });
+				return;
+			}
+
+			if (msg.type === 'debug-mode-set') {
+				debugMode = msg.enabled === true;
+				await context.globalState.update('ariadne.debugMode', debugMode);
+				await runScannerChange(() => applyScannerSelection());
 				return;
 			}
 
@@ -1049,9 +1135,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerBroken = true;
 		scannerChecked = true;
 		latestVulnerabilities = [];
+		latestTreeView = null;
 		diagnosticManager.clearAll();
-		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, featuresUnlocked, true));
+		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, featuresUnlocked, true, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(0);
+		refreshTreeViewPanel();
 	};
 
 	const confirmScannerProcess = async (): Promise<void> => {
@@ -1360,6 +1448,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	});
 
+	context.subscriptions.push(
+		session.onTreeView((payload) => {
+			latestTreeView = payload;
+			refreshTreeViewPanel();
+		}),
+	);
+
 	// ── Wire findings from the engine to every UI surface ───────────────
 	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
 		if (!acceptFindings) {
@@ -1371,8 +1466,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerBroken = false;
 		scannerChecked = true;
 		startupLoading = false;
-		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false));
+		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(vulns.length);
+
+		requestTreeView();
 
 		// ── 2. Session Metrics panel (always updated on live scan) ──────
 		refreshSessionMetricsPanel();
@@ -1581,6 +1678,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		'ariadne-extension-vscode.openPanel',
 		async () => {
 			await openBottomPanel();
+		},
+	);
+
+	const toggleTreeViewCommand = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.toggleTreeView',
+		() => {
+			toggleTreeViewPanel();
 		},
 	);
 
@@ -2112,6 +2216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		openSignInPanel,
 		openSettingsCommand,
 		openPanelCommand,
+		toggleTreeViewCommand,
 		openTermsOfUse,
 		openPrivacyPolicy,
 		openFeedbackPanel,

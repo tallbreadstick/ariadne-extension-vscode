@@ -1,9 +1,11 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AriadneMessage } from './messages';
 import type { VulnerabilityMetadata } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
+import type { FlowchartPayload } from '../../presentation/views/treeViewPanel.js';
 import { ensureAriadneExecutable } from '../../core/ariadneExecutable';
 
 export type FindingsCallback = (findings: VulnerabilityMetadata[]) => void;
+export type TreeViewCallback = (payload: FlowchartPayload) => void;
 
 export interface AriadneSession {
 	send(msg: AriadneMessage): void;
@@ -14,6 +16,8 @@ export interface AriadneSession {
 	restart(): Promise<void>;
 	/** Subscribe to findings emitted after each analysis. Returns disposable to unsubscribe. */
 	onFindings(cb: FindingsCallback): { dispose: () => void };
+	/** Subscribe to flowchart payloads from `GetTreeView`. */
+	onTreeView(cb: TreeViewCallback): { dispose: () => void };
 	/** Fired after `start()` / `restart()` once the process is spawned. */
 	onRestarted(cb: () => void): void;
 	/** True while the session process is still running. */
@@ -26,6 +30,7 @@ export function runSession(): AriadneSession {
 	let proc: ChildProcessWithoutNullStreams | null = null;
 	let stdoutBuffer = '';
 	const findingsCallbacks: FindingsCallback[] = [];
+	const treeViewCallbacks: TreeViewCallback[] = [];
 	const restartedCallbacks: Array<() => void> = [];
 	const endedCallbacks: Array<() => void> = [];
 	let generation = 0;
@@ -49,6 +54,17 @@ export function runSession(): AriadneSession {
 						const findings = parsed as VulnerabilityMetadata[];
 						for (const cb of findingsCallbacks) {
 							cb(findings);
+						}
+						continue;
+					}
+					if (
+						typeof parsed === 'object' &&
+						parsed !== null &&
+						(parsed as { type?: string }).type === 'Flowchart'
+					) {
+						const payload = parsed as FlowchartPayload;
+						for (const cb of treeViewCallbacks) {
+							cb(payload);
 						}
 					}
 				} catch {
@@ -138,6 +154,17 @@ export function runSession(): AriadneSession {
 					const idx = findingsCallbacks.indexOf(cb);
 					if (idx !== -1) {
 						findingsCallbacks.splice(idx, 1);
+					}
+				},
+			};
+		},
+		onTreeView(cb: TreeViewCallback): { dispose: () => void } {
+			treeViewCallbacks.push(cb);
+			return {
+				dispose: () => {
+					const idx = treeViewCallbacks.indexOf(cb);
+					if (idx !== -1) {
+						treeViewCallbacks.splice(idx, 1);
 					}
 				},
 			};

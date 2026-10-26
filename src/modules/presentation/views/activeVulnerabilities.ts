@@ -27,6 +27,8 @@ export interface ActiveVulnerabilitiesOptions {
 	scannerBroken?: boolean;
 	/** When true, auth has not finished and the panel must not ask for sign-in yet. */
 	loading?: boolean;
+	/** When true, the Tree View editor panel is open (highlights the toggle). */
+	treeViewOpen?: boolean;
 }
 
 /** Stable key for accordion persistence across scans and workspace reopens. */
@@ -82,6 +84,11 @@ const FILTER_SVG =
 	`<svg class="filter-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2"
 			stroke-linecap="round" />
+	</svg>`;
+
+const TREE_SVG =
+	`<svg class="tree-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path d="M8 1.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM3 6.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm10 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM8 11.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM4.15 7.35l2.9 1.65M8.95 8.9l2.9 1.65M8.95 7.1L6.05 5.45M4.15 8.65l2.9-1.65"/>
 	</svg>`;
 
 const SEARCH_SVG =
@@ -226,6 +233,40 @@ const CSS = /* css */ `
         gap: 8px;
 		grid-template-columns: minmax(0, 1fr) auto;
     }
+
+	.toolbar-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.tree-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border-radius: 4px;
+		border: 1px solid var(--border);
+		background: var(--card);
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.tree-toggle:hover {
+		background: color-mix(in srgb, var(--card) 80%, var(--text));
+	}
+
+	.tree-toggle[aria-pressed="true"] {
+		border-color: var(--vscode-textLink-foreground);
+		box-shadow: inset 0 0 0 1px var(--vscode-textLink-foreground);
+	}
+
+	.tree-icon {
+		width: 16px;
+		height: 16px;
+	}
 
 	.search-wrap {
 		position: relative;
@@ -894,49 +935,23 @@ function buildSeverityChips(): string {
 	).join('');
 }
 
-function buildToolbar(vulns: Vulnerability[]): string {
-	if (vulns.length === 0) {
-		return '';
-	}
-
-	const facets = collectVulnFilterFacets(vulns);
-
+function buildTreeToggle(open: boolean): string {
 	return /* html */ `
-		<div class="toolbar">
-			<div class="toolbar-row">
-				<div class="search-wrap">
-					${SEARCH_SVG}
-					<input
-						class="search-input"
-						id="vuln-search"
-						type="search"
-						placeholder="Search title or file…"
-						aria-label="Search vulnerabilities by title or file"
-					/>
-					<button
-						class="search-clear-btn"
-						id="search-clear-btn"
-						type="button"
-						aria-label="Clear search query"
-						title="Clear search"
-						hidden
-					>
-						${CLOSE_SVG}
-					</button>
-				</div>
-				<button
-					class="filter-toggle"
-					type="button"
-					id="filter-toggle"
-					aria-controls="filter-menu"
-					aria-expanded="false"
-					title="Show filters"
-					aria-label="Show filters"
-				>
-					${FILTER_SVG}
-					<span class="filter-badge" id="filter-badge" hidden>0</span>
-				</button>
-			</div>
+		<button
+			class="tree-toggle"
+			type="button"
+			id="tree-view-toggle"
+			aria-pressed="${open ? 'true' : 'false'}"
+			title="Toggle Flowchart"
+			aria-label="Toggle Flowchart"
+		>
+			${TREE_SVG}
+		</button>`;
+}
+
+function buildToolbar(vulns: Vulnerability[], treeViewOpen = false): string {
+	const facets = vulns.length > 0 ? collectVulnFilterFacets(vulns) : null;
+	const filterBlock = facets ? /* html */ `
 			<div class="filter-menu" id="filter-menu" aria-hidden="true">
 				<fieldset class="filter-fieldset">
 					<legend class="filter-legend">Severity</legend>
@@ -964,7 +979,49 @@ function buildToolbar(vulns: Vulnerability[]): string {
 					</button>
 				</div>
 			</div>
-			<div class="results-meta" id="results-meta" aria-live="polite">Live scan • ${vulns.length} vulnerabilit${vulns.length === 1 ? 'y' : 'ies'}</div>
+			<div class="results-meta" id="results-meta" aria-live="polite">Live scan • ${vulns.length} vulnerabilit${vulns.length === 1 ? 'y' : 'ies'}</div>` : '';
+
+	return /* html */ `
+		<div class="toolbar">
+			<div class="toolbar-row">
+				<div class="search-wrap">
+					${SEARCH_SVG}
+					<input
+						class="search-input"
+						id="vuln-search"
+						type="search"
+						placeholder="Search title or file…"
+						aria-label="Search vulnerabilities by title or file"
+						${vulns.length === 0 ? 'disabled' : ''}
+					/>
+					<button
+						class="search-clear-btn"
+						id="search-clear-btn"
+						type="button"
+						aria-label="Clear search query"
+						title="Clear search"
+						hidden
+					>
+						${CLOSE_SVG}
+					</button>
+				</div>
+				<div class="toolbar-actions">
+					${vulns.length > 0 ? `<button
+						class="filter-toggle"
+						type="button"
+						id="filter-toggle"
+						aria-controls="filter-menu"
+						aria-expanded="false"
+						title="Show filters"
+						aria-label="Show filters"
+					>
+						${FILTER_SVG}
+						<span class="filter-badge" id="filter-badge" hidden>0</span>
+					</button>` : ''}
+					${buildTreeToggle(treeViewOpen)}
+				</div>
+			</div>
+			${filterBlock}
 		</div>`;
 }
 
@@ -1052,7 +1109,7 @@ export function buildActiveVulnerabilitiesHtml(
 		<style>${CSS}</style>
 	</head>
 	<body>
-		${buildToolbar(vulns)}
+		${buildToolbar(vulns, options.treeViewOpen === true)}
 		<section class="vuln-stack" id="vuln-stack">
             ${vulns.length === 0 ? emptyState : cards}
 		</section>
@@ -1073,6 +1130,10 @@ export function buildActiveVulnerabilitiesHtml(
 				const resultsMeta = document.getElementById('results-meta');
 				const filterEmpty = document.getElementById('filter-empty');
 				const totalCount = cards.length;
+				const treeToggle = document.getElementById('tree-view-toggle');
+				treeToggle?.addEventListener('click', () => {
+					vscode.postMessage({ type: 'toggle-tree-view' });
+				});
 
 				function readUiState() {
 					const saved = vscode.getState();
