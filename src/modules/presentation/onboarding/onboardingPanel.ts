@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { SEVERITY_BG_TITLE, SEVERITY_COLORS_TITLE } from '../severityColors.js';
 
 /**
  * HTML Builder and Webview Panel for the Ariadne Onboarding Guide.
@@ -7,9 +8,51 @@ import * as vscode from 'vscode';
 
 // ── SVGs ─────────────────────────────────────────────────────────────
 
-const SHIELD_SVG = /* html */ `
-<svg class="hero-badge-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-	<path fill-rule="evenodd" clip-rule="evenodd" d="M8 1.5l5.5 2v4.5c0 3.5-2.5 6-5.5 7-3-1-5.5-3.5-5.5-7V3.5L8 1.5zm0 1.55l4.5 1.7v3.75c0 2.85-1.9 4.85-4.5 5.7-2.6-.85-4.5-2.85-4.5-5.7V4.5L8 3.05z"/>
+const ARIADNE_LOGO_SVG = /* html */ `
+<svg class="hero-logo" viewBox="0 0 798 798" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Ariadne Logo">
+  <g fill="currentColor" transform="translate(88,798) scale(0.1,-0.1)">
+    <path d="M3068 7965 c-15 -8 -136 -88 -270 -178 -408 -274 -816 -505 -1238
+-703 -479 -223 -810 -344 -1273 -465 -126 -32 -237 -64 -247 -69 -16 -8 -19
+-30 -26 -177 -12 -274 -10 -1286 4 -1503 48 -751 160 -1516 282 -1935 56 -190
+160 -504 169 -510 4 -2 84 174 176 393 211 497 270 627 517 1142 110 228 202
+422 205 431 3 12 -25 38 -101 93 -58 42 -110 76 -115 76 -5 0 -120 -234 -257
+-520 -143 -299 -252 -514 -256 -507 -10 18 -73 459 -102 712 -36 313 -54 564
+-66 925 -10 282 -6 949 6 992 3 11 47 29 137 58 505 160 1104 416 1608 685 76
+41 141 75 144 75 14 0 -3 -38 -87 -194 -51 -93 -176 -330 -278 -524 l-185
+-355 -100 -56 c-180 -102 -326 -211 -430 -322 -236 -251 -241 -513 -14 -741
+94 -94 163 -140 344 -228 322 -156 699 -268 1400 -415 487 -102 729 -167 970
+-260 267 -103 483 -245 553 -364 23 -40 27 -57 27 -126 0 -69 -4 -87 -29 -132
+-81 -146 -306 -324 -561 -444 -55 -25 -192 -81 -305 -124 -262 -99 -334 -133
+-436 -200 -131 -88 -199 -179 -241 -326 -15 -55 -18 -103 -18 -341 l0 -277
+-31 -23 c-40 -30 -86 -84 -110 -128 -30 -56 -27 -190 6 -254 32 -62 107 -130
+167 -150 64 -22 167 -20 220 3 107 49 175 150 181 269 4 66 1 79 -27 137 -30
+59 -65 99 -120 136 l-24 15 -5 255 c-6 313 0 344 82 424 64 62 154 108 386
+195 254 96 357 141 502 219 445 238 686 571 614 848 -69 271 -319 473 -801
+648 -272 99 -457 147 -1050 275 -565 121 -785 181 -1055 287 -223 88 -366 170
+-461 265 -128 128 -118 235 38 399 92 96 103 88 44 -30 -23 -44 -41 -87 -41
+-95 0 -35 200 -181 220 -160 4 5 129 248 277 539 249 488 446 864 871 1660 88
+165 179 334 202 374 l43 75 24 -30 c25 -29 72 -114 413 -749 255 -477 376
+-709 813 -1570 610 -1201 919 -1850 1232 -2590 129 -305 147 -345 155 -345 20
+0 133 311 190 525 128 480 224 1129 272 1860 14 209 15 1405 1 1600 l-8 109
+-75 23 c-41 12 -162 45 -268 73 -419 110 -814 260 -1287 489 -403 196 -735
+386 -1098 630 -256 172 -336 221 -357 221 -8 -1 -27 -7 -42 -15z M2856 5367
+c-137 -292 -258 -549 -268 -570 l-19 -37 28 -11 c16 -6 208 -49 428 -95 220
+-46 479 -104 575 -128 96 -25 176 -44 177 -42 3 3 -187 414 -367 791 -34 72
+-102 220 -152 330 -94 208 -137 295 -147 295 -3 0 -118 -240 -255 -533z M2242
+4050 c-7 -12 -50 -107 -96 -213 -46 -106 -164 -370 -261 -587 -97 -217 -235
+-530 -305 -695 -164 -383 -268 -617 -277 -626 -5 -4 -75 -12 -158 -18 -135
+-11 -215 -20 -312 -36 l-32 -6 29 -47 c82 -131 395 -495 602 -698 258 -254
+466 -419 818 -652 300 -198 444 -284 640 -380 139 -68 184 -86 220 -86 119 -2
+795 395 1200 704 363 278 695 609 996 997 96 123 121 163 102 164 -7 0 -121
+12 -253 27 l-239 27 -154 347 -154 346 -112 -73 c-160 -104 -304 -178 -477
+-245 -83 -32 -156 -63 -162 -69 -7 -7 -5 -18 7 -33 198 -276 289 -468 350
+-740 31 -136 32 -180 9 -204 -62 -62 -496 -363 -723 -501 -149 -90 -374 -213
+-391 -213 -17 0 -212 109 -419 233 -411 248 -720 482 -1009 763 -152 148 -148
+136 -84 242 138 228 467 492 853 688 251 127 652 291 1014 414 274 93 407 149
+538 227 176 104 220 158 220 272 0 64 -14 106 -45 140 -49 52 -308 161 -557
+235 -186 54 -225 64 -730 172 -217 46 -446 98 -509 114 -63 17 -117 30 -120
+30 -3 0 -12 -9 -19 -20z"/>
+  </g>
 </svg>`;
 
 const SETTINGS_SVG = /* html */ `
@@ -89,6 +132,7 @@ const READY_CHECK_SVG = /* html */ `
 
 export interface OnboardingMediaUris {
 	step21GifUri?: string;
+	step23GifUri?: string;
 	step24GifUri?: string;
 	step25GifUri?: string;
 	cspSource?: string;
@@ -145,26 +189,18 @@ const CSS = /* css */ `
 		margin-bottom: 32px;
 	}
 
-	.hero-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		background: color-mix(in srgb, var(--accent) 12%, transparent);
-		color: var(--accent);
-		border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-		padding: 4px 12px;
-		border-radius: 999px;
-		font-size: 12px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		margin-bottom: 14px;
+	.hero-logo-wrapper {
+		display: flex;
+		justify-content: center;
+		margin-bottom: 16px;
 	}
 
-	.hero-badge-icon {
-		width: 14px;
-		height: 14px;
-		flex-shrink: 0;
+	.hero-logo {
+		width: 72px;
+		height: 72px;
+		color: var(--accent);
+		display: block;
+		filter: drop-shadow(0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent));
 	}
 
 	.hero h1 {
@@ -451,18 +487,27 @@ const CSS = /* css */ `
 	/* Highlight Demonstration Box */
 	.demo-box {
 		background: color-mix(in srgb, var(--card-bg) 60%, black);
-		border-left: 3px solid var(--warning);
+		border: 1px solid var(--border);
 		padding: 8px 10px;
-		border-radius: 0 3px 3px 0;
+		border-radius: 4px;
 		font-family: var(--vscode-editor-font-family, Consolas, monospace);
 		font-size: 11px;
 		margin-bottom: 12px;
 		color: var(--fg);
 		overflow-x: auto;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.demo-box code {
+		background: ${SEVERITY_BG_TITLE.Critical};
+		padding: 2px 6px;
+		border-radius: 2px;
 	}
 
 	.demo-tag {
-		color: var(--warning);
+		color: ${SEVERITY_COLORS_TITLE.Critical};
 		font-style: italic;
 		font-size: 11px;
 		margin-left: 8px;
@@ -529,6 +574,7 @@ const CSS = /* css */ `
 export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 	const cspSource = mediaUris?.cspSource;
 	const step21GifUri = mediaUris?.step21GifUri ?? 'media/Step 2.1 Session Started (Optimized).gif';
+	const step23GifUri = mediaUris?.step23GifUri ?? 'media/Session 2.3 (Optimized).gif';
 	const step24GifUri = mediaUris?.step24GifUri ?? 'media/Step 2.4 Session Started (Optimized).gif';
 	const step25GifUri = mediaUris?.step25GifUri ?? 'media/Step 2.45 Session Started (optimized).gif';
 
@@ -546,9 +592,8 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 		<div class="container">
 			<!-- Hero Header -->
 			<header class="hero">
-				<div class="hero-badge">
-					${SHIELD_SVG}
-					<span>Student Security Companion</span>
+				<div class="hero-logo-wrapper">
+					${ARIADNE_LOGO_SVG}
 				</div>
 				<h1>Welcome to Ariadne</h1>
 				<p>
@@ -613,6 +658,14 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 								The Full Report updates over multiple saves to verify the <strong>durability</strong> of your fixes, 
 								preventing accidental regressions or commented-out code from distorting your progress.
 							</p>
+							${step23GifUri ? /* html */ `
+							<div class="demo-media-wrapper">
+								<img src="${step23GifUri}" alt="Vulnerability resolution verification process" class="demo-media" loading="lazy" />
+								<div class="demo-media-caption">
+									<span class="caption-dot"></span>
+									<span>Visual indicator: Fixing a vulnerability initiates the resolution verification process across saves until it is confirmed as resolved.</span>
+								</div>
+							</div>` : ''}
 						</div>
 					</div>
 
@@ -757,7 +810,7 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 								<span class="location-badge">Editor Pane</span>
 							</div>
 							<p class="feature-desc">
-								Affected code lines are highlighted with a soft whole-line background tint, an overview scrollbar tick, and an italic label. 
+								Affected code lines are highlighted with a soft background tint, an overview scrollbar tick, and an italic label. 
 								Hover over any highlight to inspect flaw details or click <strong>[💡 Explain Vulnerability]</strong>.
 							</p>
 							<div class="demo-box">
@@ -830,6 +883,10 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.1 Session Started (Optimized).gif'),
 	).toString();
 
+	const step23GifUri = panel.webview.asWebviewUri(
+		vscode.Uri.joinPath(context.extensionUri, 'media', 'Session 2.3 (Optimized).gif'),
+	).toString();
+
 	const step24GifUri = panel.webview.asWebviewUri(
 		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.4 Session Started (Optimized).gif'),
 	).toString();
@@ -840,6 +897,7 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 
 	panel.webview.html = buildOnboardingHtml({
 		step21GifUri,
+		step23GifUri,
 		step24GifUri,
 		step25GifUri,
 		cspSource: panel.webview.cspSource,

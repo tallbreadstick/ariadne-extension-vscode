@@ -25,7 +25,7 @@
 - current owner: agent
 - next action: none
 - blockers: none
-- last checked: 2026-10-18
+- last checked: 2026-10-26
 
 ## Progress checklist
 
@@ -34,6 +34,7 @@
 - [x] Register command `ariadne-extension-vscode.openOnboarding` in `package.json` and `extension.ts`
 - [x] Connect first-run detection in `extension.ts` using `globalState` (`ariadne.hasSeenOnboarding`)
 - [x] Add link/button to Onboarding Guide in Sidebar Settings (`signInPanel.ts`)
+- [x] Embed demonstration GIFs (Steps 2.1, 2.3, 2.4, 2.5), hero logo SVG, and accurate editor highlight styling
 - [x] Add unit tests in `src/test/onboardingPanel.test.ts`
 - [x] Validate compilation (`npm run compile`) and tests (`npm run compile-tests`)
 

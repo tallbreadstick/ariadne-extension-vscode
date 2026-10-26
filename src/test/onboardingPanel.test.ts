@@ -34,7 +34,7 @@ describe('Onboarding Guide Webview Panel', () => {
 
 		it('contains the Hero Welcome header and introduction', () => {
 			assert.match(html, /Welcome to Ariadne/);
-			assert.match(html, /Student Security Companion/);
+			assert.match(html, /hero-logo/);
 			assert.match(html, /pedagogical static analysis assistant for Java in VS Code/);
 		});
 
@@ -63,8 +63,9 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /Step 2\.6/);
 		});
 
-		it('renders demonstration GIFs with captions for Steps 2.1, 2.4, and 2.5', () => {
+		it('renders demonstration GIFs with captions for Steps 2.1, 2.3, 2.4, and 2.5', () => {
 			assert.ok(html.includes('Step 2.1 Session Started (Optimized).gif'), 'Should include Step 2.1 GIF');
+			assert.ok(html.includes('Session 2.3 (Optimized).gif'), 'Should include Step 2.3 GIF');
 			assert.ok(html.includes('Step 2.4 Session Started (Optimized).gif'), 'Should include Step 2.4 GIF');
 			assert.ok(html.includes('Step 2.45 Session Started (optimized).gif'), 'Should include Step 2.5 GIF');
 			assert.ok(html.includes('class="demo-media"'), 'Should render demo-media images');
@@ -98,6 +99,7 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /Inline Highlighting/);
 			assert.match(html, /Editor Pane/);
 			assert.match(html, /\[Ariadne\] SQL Injection/);
+			assert.ok(html.includes('#E24B4A80'), 'Should use 50% opacity critical highlight background for demo-box');
 		});
 
 		it('contains Section 3: Friendly Exit closing message and Start Coding button', () => {
@@ -108,7 +110,7 @@ describe('Onboarding Guide Webview Panel', () => {
 		});
 
 		it('uses SVG icons and illustrations without emojis', () => {
-			assert.ok(html.includes('class="hero-badge-icon"'), 'Hero badge should use SVG icon');
+			assert.ok(html.includes('class="hero-logo"'), 'Hero header should render Ariadne logo SVG');
 			assert.ok(html.includes('class="feature-icon"'), 'Feature headers should use SVG icons');
 			assert.ok(html.includes('class="step-svg"'), 'Process cards should use SVG icons');
 			assert.ok(html.includes('class="closing-badge"'), 'Closing section should use SVG badge');
