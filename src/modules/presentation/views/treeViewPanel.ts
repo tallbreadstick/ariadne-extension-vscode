@@ -22,7 +22,7 @@ export interface ScopeView {
 	class_name: string;
 	file: string;
 	line: number;
-	/** `main`, `GET /notes`, `listener`, `scheduled`, `bean`, or `framework`. */
+	/** `GET /notes`, `POST https://...`, `main`, `listener`, `scheduled`, `bean`, or `framework`. */
 	entry?: string;
 }
 
@@ -198,12 +198,69 @@ export function buildDataAuditHtml(
 			min-height: 0;
 		}
 		.rail-head {
-			padding: 14px 14px 8px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 8px;
+			min-height: 40px;
+			padding: 10px 12px 8px;
 			font-size: 11px;
 			font-weight: 800;
 			letter-spacing: 0.08em;
 			text-transform: uppercase;
 			color: var(--vscode-descriptionForeground);
+		}
+		.icon-x {
+			flex: none;
+			width: 22px;
+			height: 22px;
+			padding: 0;
+			border-radius: 50%;
+			border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+			background: var(--vscode-input-background);
+			color: var(--vscode-foreground);
+			font: inherit;
+			font-size: 15px;
+			line-height: 1;
+			cursor: pointer;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.icon-x:hover { background: var(--vscode-list-hoverBackground); }
+		.icon-x[hidden] { display: none; }
+		.icon-x:disabled { opacity: 0.35; cursor: default; }
+		.entry.endpoint .ep { display: flex; align-items: flex-start; gap: 8px; }
+		.entry.endpoint .verb {
+			flex: none;
+			min-width: 58px;
+			padding: 2px 6px;
+			border-radius: 4px;
+			border: 1px solid currentColor;
+			font-size: 10px;
+			font-weight: 800;
+			letter-spacing: 0.04em;
+			text-align: center;
+		}
+		.entry.endpoint .path {
+			font-family: var(--vscode-editor-font-family, monospace);
+			font-weight: 700;
+			font-size: 12px;
+			overflow-wrap: anywhere;
+		}
+		.entry.endpoint .vuln-count {
+			margin-left: auto;
+			min-width: 16px;
+			height: 16px;
+			padding: 0 4px;
+			border-radius: 999px;
+			background: #c41212;
+			color: #ffffff;
+			font-size: 10px;
+			font-weight: 700;
+			line-height: 16px;
+			text-align: center;
+			flex: none;
 		}
 		.rail-search {
 			margin: 0 12px 8px;
@@ -285,19 +342,7 @@ export function buildDataAuditHtml(
 			font: inherit;
 			font-size: 12px;
 		}
-		.filter-clear {
-			flex: none;
-			width: 28px;
-			border-radius: 6px;
-			border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
-			background: var(--vscode-input-background);
-			color: var(--vscode-foreground);
-			font: inherit;
-			font-size: 14px;
-			line-height: 1;
-			cursor: pointer;
-		}
-		.filter-clear:disabled { opacity: 0.35; cursor: default; }
+		.filter-clear { flex: none; }
 		.filter-search:focus {
 			outline: 1px solid var(--vscode-focusBorder);
 			outline-offset: -1px;
@@ -305,9 +350,33 @@ export function buildDataAuditHtml(
 		.filter-list { overflow: auto; min-height: 0; }
 		.filter label.is-hidden { display: none; }
 		#filter-toggle { position: relative; }
-		#filter-toggle.has-filters {
+		.tools .vuln-switch {
+			display: inline-flex;
+			align-items: stretch;
+			border: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
+			border-radius: 6px;
+			background: var(--vscode-input-background);
+			color: var(--vscode-foreground);
+		}
+		.tools .vuln-switch.has-filters {
 			border-color: var(--vscode-focusBorder);
 		}
+		.tools .vuln-switch button {
+			border: none;
+			border-radius: 0;
+			background: transparent;
+			padding: 4px 8px;
+		}
+		.tools .vuln-switch button:hover {
+			background: var(--vscode-list-hoverBackground);
+		}
+		.tools .vuln-switch .vuln-x {
+			padding: 0 8px;
+			border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+			font-size: 15px;
+			line-height: 1;
+		}
+		.tools .vuln-switch .vuln-x[hidden] { display: none; }
 		.filter-badge {
 			position: absolute;
 			top: -6px;
@@ -497,15 +566,7 @@ export function buildDataAuditHtml(
 			background: var(--vscode-textCodeBlock-background, var(--vscode-textPreformat-background));
 			color: var(--ident-color, var(--vscode-editor-foreground));
 		}
-		.hover .verb {
-			text-decoration: underline;
-			text-underline-offset: 2px;
-			text-decoration-thickness: 1px;
-		}
-		.hover .verb.k-reference { color: var(--vscode-charts-blue, #3794ff); }
-		.hover .verb.k-bitwise { color: var(--vscode-charts-purple, #b180d7); }
-		.hover .verb.k-derive { color: var(--vscode-charts-green, #89d185); }
-		.hover .verb.k-member { color: var(--vscode-charts-yellow, #cca700); }
+		.hover .verb { font-style: italic; }
 		.hover .vuln {
 			margin: 0 0 10px;
 			padding: 2px 0 2px 8px;
@@ -610,8 +671,11 @@ export function buildDataAuditHtml(
 </head>
 <body>
 	<aside class="rail">
-		<div class="rail-head">Data audit</div>
-		<input class="rail-search" id="search" type="search" placeholder="Filter scopes, bindings, files" />
+		<div class="rail-head">
+			<span>Endpoints</span>
+			<button type="button" id="endpoint-close" class="icon-x" hidden title="Close endpoint" aria-label="Close endpoint">×</button>
+		</div>
+		<input class="rail-search" id="search" type="search" placeholder="Filter endpoints" />
 		<div class="rail-list" id="rail"></div>
 	</aside>
 	<section class="stage">
@@ -622,10 +686,13 @@ export function buildDataAuditHtml(
 				<div class="status" id="status"></div>
 			</div>
 			<div class="tools">
-				<button type="button" id="filter-toggle" title="Show or hide vulnerabilities" aria-expanded="false">
-					Vulnerabilities
-					<span class="filter-badge" id="filter-badge" hidden>0</span>
-				</button>
+				<div class="vuln-switch" id="vuln-switch">
+					<button type="button" id="filter-clear-inline" class="vuln-x" hidden title="Clear filters" aria-label="Clear filters">×</button>
+					<button type="button" id="filter-toggle" title="Show or hide vulnerabilities" aria-expanded="false">
+						Vulnerabilities
+						<span class="filter-badge" id="filter-badge" hidden>0</span>
+					</button>
+				</div>
 				<button type="button" id="zoom-out" title="Zoom out">−</button>
 				<button type="button" id="zoom-fit" title="Fit">Fit</button>
 				<button type="button" id="zoom-in" title="Zoom in">+</button>
@@ -634,7 +701,7 @@ export function buildDataAuditHtml(
 		<div class="filter" id="filter" hidden>
 			<div class="filter-bar">
 				<input class="filter-search" id="filter-search" type="search" placeholder="Search vulnerabilities" aria-label="Search vulnerabilities" />
-				<button type="button" class="filter-clear" id="filter-clear" title="Clear filters" aria-label="Clear filters" disabled>x</button>
+				<button type="button" class="icon-x filter-clear" id="filter-clear" title="Clear filters" aria-label="Clear filters" disabled>×</button>
 			</div>
 			<div class="filter-list" id="filter-list"></div>
 		</div>
@@ -669,6 +736,41 @@ export function buildDataAuditHtml(
 			object: 'var(--vscode-descriptionForeground, #9d9d9d)',
 		};
 		const ALERT = '#c41212';
+		const SEV_COLOR = { critical: '#E24B4A', high: '#F0883E', medium: '#E3B341', low: '#3FB950' };
+		const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+		const severityByNode = new Map();
+		for (const issue of G.issues || []) {
+			const key = String(issue.severity || '').toLowerCase();
+			if (!(key in SEV_RANK)) continue;
+			const ids = [issue.focus].concat(issue.nodes || []);
+			for (const id of ids) {
+				if (!id) continue;
+				const prev = severityByNode.get(id);
+				if (!prev || SEV_RANK[key] < SEV_RANK[prev]) severityByNode.set(id, key);
+			}
+		}
+		const HTTP_VERBS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'ANY', 'HTTP'];
+		const VERB_COLOR = {
+			GET: 'var(--vscode-charts-blue, #3794ff)',
+			POST: 'var(--vscode-charts-green, #89d185)',
+			PUT: 'var(--vscode-charts-yellow, #cca700)',
+			PATCH: 'var(--vscode-charts-purple, #b180d7)',
+			DELETE: '#E24B4A',
+			HEAD: 'var(--vscode-descriptionForeground, #9d9d9d)',
+			OPTIONS: 'var(--vscode-descriptionForeground, #9d9d9d)',
+			ANY: 'var(--vscode-charts-orange, #d18616)',
+			HTTP: 'var(--vscode-charts-blue, #3794ff)',
+		};
+		function parseEndpoint(entry) {
+			if (!entry) return null;
+			const cut = entry.indexOf(' ');
+			if (cut < 1) return null;
+			const verb = entry.slice(0, cut);
+			if (HTTP_VERBS.indexOf(verb) < 0) return null;
+			const path = entry.slice(cut + 1).trim();
+			if (!path) return null;
+			return { verb: verb, path: path };
+		}
 		const KIND_NAMES = {
 			variable: 'Variable',
 			field: 'Field / element',
@@ -704,6 +806,17 @@ export function buildDataAuditHtml(
 			push(inEdges, e.to, e);
 			for (const g of e.guards || []) push(guarded, g.condition, e);
 		}
+		const vulnCountByScope = new Map();
+		for (const issue of G.issues || []) {
+			const seen = new Set();
+			const ids = [issue.focus].concat(issue.nodes || [], issue.ends || []);
+			for (const id of ids) {
+				const node = nodeById.get(id);
+				if (!node || !node.scope || seen.has(node.scope)) continue;
+				seen.add(node.scope);
+				vulnCountByScope.set(node.scope, (vulnCountByScope.get(node.scope) || 0) + 1);
+			}
+		}
 		const runtime = (G.scopes.find((s) => s.kind === 'framework') || {}).id;
 		scopeIndex.set(OUT, G.scopes.length);
 
@@ -713,10 +826,19 @@ export function buildDataAuditHtml(
 			if (n.scope === runtime && !(outEdges.get(n.id) || []).length && (inEdges.get(n.id) || []).length) return OUT;
 			return n.scope;
 		}
+		function isRuntimeFrame(fid) {
+			return fid === OUT || (!!runtime && fid === runtime);
+		}
 		function frameLabel(id) {
 			if (id === OUT) return 'Runtime outputs';
 			const s = scopeById.get(id);
 			return s ? s.label : id;
+		}
+		function scopeTitle(id) {
+			const s = scopeById.get(id);
+			const ep = s && parseEndpoint(s.entry);
+			if (ep) return ep.verb + ' ' + ep.path;
+			return frameLabel(id);
 		}
 		function structural(e) {
 			return e.kind === 'member' && !e.step && !(e.reads && e.reads.length);
@@ -852,19 +974,61 @@ export function buildDataAuditHtml(
 			if (!focusScope) return all;
 			const keep = new Set([focusScope]);
 			for (const e of G.edges) {
-				const a = frameOf(nodeById.get(e.from));
-				const b = frameOf(nodeById.get(e.to));
-				if (a === focusScope) keep.add(b);
-				if (b === focusScope) keep.add(a);
+				const from = nodeById.get(e.from);
+				const to = nodeById.get(e.to);
+				if (!from || !to) continue;
+				const a = frameOf(from);
+				const b = frameOf(to);
+				if (a === focusScope && !isRuntimeFrame(b)) keep.add(b);
+				if (b === focusScope && !isRuntimeFrame(a)) keep.add(a);
 				const g = innerGuard(e);
-				if (g && (a === focusScope || b === focusScope)) keep.add(frameOf(nodeById.get(g.condition)));
+				if (g && (a === focusScope || b === focusScope)) {
+					const cond = nodeById.get(g.condition);
+					if (cond && !isRuntimeFrame(frameOf(cond))) keep.add(frameOf(cond));
+				}
 			}
 			return keep;
+		}
+
+		// Framework inputs and runtime outputs are one shared frame for the
+		// whole program. An endpoint view keeps a node from those frames only
+		// when it feeds, or is fed by, a frame already in the view.
+		function relatedRuntimeNodes(methodFrames) {
+			const related = new Set();
+			const queue = [];
+			function consider(id) {
+				if (!id || related.has(id)) return;
+				const n = nodeById.get(id);
+				if (!n || !isRuntimeFrame(frameOf(n))) return;
+				related.add(id);
+				queue.push(id);
+			}
+			for (const e of G.edges) {
+				const from = nodeById.get(e.from);
+				const to = nodeById.get(e.to);
+				if (!from || !to) continue;
+				const a = frameOf(from);
+				const b = frameOf(to);
+				if (isRuntimeFrame(a) && methodFrames.has(b)) consider(e.from);
+				if (isRuntimeFrame(b) && methodFrames.has(a)) consider(e.to);
+				const g = innerGuard(e);
+				if (g && (methodFrames.has(a) || methodFrames.has(b))) consider(g.condition);
+			}
+			while (queue.length) {
+				const id = queue.pop();
+				for (const e of outEdges.get(id) || []) consider(e.to);
+				for (const e of inEdges.get(id) || []) consider(e.from);
+			}
+			return related;
 		}
 
 		function layoutAll() {
 			const frames = visibleFrames();
 			const nodes = G.nodes.filter((n) => frames.has(frameOf(n)));
+			if (focusScope) {
+				const related = relatedRuntimeNodes(frames);
+				for (const n of G.nodes) if (related.has(n.id)) nodes.push(n);
+			}
 			const sizes = {};
 			const firstStep = {};
 			for (const n of nodes) {
@@ -1011,12 +1175,15 @@ export function buildDataAuditHtml(
 		function paintNode(n, b, s) {
 			const cx = b.x + b.w / 2;
 			const cy = b.y + b.h / 2;
+			const sev = severityByNode.get(n.id);
+			const nameFill = sev ? SEV_COLOR[sev] : INK;
+			const nameWeight = sev ? '700' : '600';
 			let text;
 			if (s.sub) {
-				text = '<text x="' + cx + '" y="' + (cy - 7) + '" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="600" fill="' + INK + '" font-family="var(--vscode-editor-font-family, monospace)">' + esc(s.label) + '</text>'
+				text = '<text x="' + cx + '" y="' + (cy - 7) + '" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="' + nameWeight + '" fill="' + nameFill + '" font-family="var(--vscode-editor-font-family, monospace)">' + esc(s.label) + '</text>'
 					+ '<text x="' + cx + '" y="' + (cy + 9) + '" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="' + MUTED + '">' + esc(s.sub) + '</text>';
 			} else {
-				text = '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="600" fill="' + INK + '" font-family="var(--vscode-editor-font-family, monospace)">' + esc(s.label) + '</text>';
+				text = '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="' + nameWeight + '" fill="' + nameFill + '" font-family="var(--vscode-editor-font-family, monospace)">' + esc(s.label) + '</text>';
 			}
 			return '<g class="node" data-node-id="' + esc(n.id) + '">' + ring(n, b) + shapeOf(n, b) + text + '</g>';
 		}
@@ -1353,7 +1520,7 @@ export function buildDataAuditHtml(
 				verb = 'derives';
 				tail = ' ' + right + (e.label ? ' by ' + ident(e.label) : '');
 			}
-			let html = left + ' <span class="verb k-' + esc(e.kind) + '">' + esc(verb) + '</span>' + tail;
+			let html = left + ' <span class="verb">' + esc(verb) + '</span>' + tail;
 			const when = (e.guards || []).map((g) => {
 				const c = nodeById.get(g.condition);
 				return ident(c ? c.label : g.condition) + ' is ' + esc(g.branch);
@@ -1623,7 +1790,7 @@ export function buildDataAuditHtml(
 			const files = new Set(G.nodes.map((n) => n.file).filter(Boolean));
 			const counts = {};
 			for (const n of G.nodes) counts[n.kind] = (counts[n.kind] || 0) + 1;
-			document.getElementById('title').textContent = focusScope ? frameLabel(focusScope) : 'Whole program';
+			document.getElementById('title').textContent = focusScope ? scopeTitle(focusScope) : 'Whole program';
 			document.getElementById('meta').textContent = [
 				G.scopes.length + ' scopes',
 				G.nodes.length + ' bindings',
@@ -1658,6 +1825,10 @@ export function buildDataAuditHtml(
 			items.push('<span>' + legendEdge('reference', '7 4') + 'Expanded movement</span>');
 			items.push('<span><svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="var(--vscode-editorWarning-foreground, #d18616)" stroke-width="1.5" stroke-dasharray="3 2"/></svg>Sensitive</span>');
 			items.push('<span><svg width="40" height="12" viewBox="0 0 40 12" aria-hidden="true"><path d="M 2 6 L 34 6" stroke="var(--vscode-editorWarning-foreground, #d18616)" stroke-width="1.7"/></svg>Tainted flow</span>');
+			items.push('<span style="color:' + SEV_COLOR.critical + ';font-weight:700">Critical</span>');
+			items.push('<span style="color:' + SEV_COLOR.high + ';font-weight:700">High</span>');
+			items.push('<span style="color:' + SEV_COLOR.medium + ';font-weight:700">Medium</span>');
+			items.push('<span style="color:' + SEV_COLOR.low + ';font-weight:700">Low</span>');
 			items.push('<span><svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="' + ALERT + '" stroke-width="1.6"/></svg>Source or sink</span>');
 			items.push('<span><svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="' + ALERT + '" stroke-width="1.6" stroke-dasharray="3 2"/></svg>On the unsecure path</span>');
 			items.push('<span>Click a binding to inspect it · double-click opens source</span>');
@@ -1669,109 +1840,46 @@ export function buildDataAuditHtml(
 
 		function renderRail() {
 			const q = document.getElementById('search').value.trim().toLowerCase();
+			document.getElementById('endpoint-close').hidden = !focusScope;
 			const rail = document.getElementById('rail');
+			const kept = rail.scrollTop;
 			rail.innerHTML = '';
 			const match = (...parts) => !q || parts.join(' ').toLowerCase().includes(q);
-			function heading(text) {
-				const el = document.createElement('div');
-				el.className = 'rail-label';
-				el.textContent = text;
-				rail.appendChild(el);
-			}
-			function note(text) {
-				const el = document.createElement('div');
-				el.className = 'rail-note';
-				el.textContent = text;
-				rail.appendChild(el);
-			}
-			function add(html, onClick, active) {
+			const endpoints = G.scopes.filter((s) => parseEndpoint(s.entry));
+			endpoints.sort((a, b) => {
+				const ea = parseEndpoint(a.entry);
+				const eb = parseEndpoint(b.entry);
+				return (ea.path + ea.verb).localeCompare(eb.path + eb.verb);
+			});
+			let count = 0;
+			for (const s of endpoints) {
+				const ep = parseEndpoint(s.entry);
+				if (!match(ep.verb, ep.path, s.label, s.class_name, s.file)) continue;
+				count += 1;
+				const color = VERB_COLOR[ep.verb] || INK;
+				const where = [s.class_name, s.file ? s.file + ':' + s.line : ''].filter(Boolean).join('  ·  ');
+				const vulns = vulnCountByScope.get(s.id) || 0;
+				const badge = vulns
+					? '<span class="vuln-count" title="' + vulns + (vulns === 1 ? ' vulnerability' : ' vulnerabilities') + '">' + vulns + '</span>'
+					: '';
+				const html = '<div class="ep"><span class="verb" style="color:' + color + '">' + esc(ep.verb) + '</span><span class="path">' + esc(ep.path) + '</span>' + badge + '</div>'
+					+ (where ? '<div class="k">' + esc(where) + '</div>' : '');
 				const btn = document.createElement('button');
 				btn.type = 'button';
-				btn.className = 'entry' + (active ? ' active' : '');
+				btn.className = 'entry endpoint' + (focusScope === s.id ? ' active' : '');
 				btn.innerHTML = html;
-				btn.addEventListener('click', onClick);
+				btn.addEventListener('click', () => {
+					if (focusScope !== s.id) setFocus(s.id);
+				});
 				rail.appendChild(btn);
 			}
-			const item = (t, k) => '<div class="t">' + esc(t) + '</div>' + (k ? '<div class="k">' + esc(k) + '</div>' : '');
-
-			if (focusScope) {
-				heading('Timeline · ' + clip(frameLabel(focusScope), 28));
-				const events = G.edges.filter((e) => e.scope === focusScope).sort((a, b) => a.step - b.step || Number(a.id.slice(1)) - Number(b.id.slice(1)));
-				let shown = 0;
-				for (const e of events) {
-					const from = nodeById.get(e.from);
-					const to = nodeById.get(e.to);
-					const verb = e.kind === 'member' ? ' ∈ ' : e.kind === 'derive' ? ' ⇒ ' : ' → ';
-					const text = from.label + verb + to.label;
-					const branch = (e.guards || []).map((g) => clip(nodeById.get(g.condition).label, 18) + ': ' + g.branch).join(', ');
-					const detail = [e.kind + (e.label ? ' ' + e.label : ''), branch, e.call ? 'call ' + e.call : '', e.line ? 'line ' + e.line : ''].filter(Boolean).join('  ·  ');
-					if (!match(text, detail)) continue;
-					shown += 1;
-					add('<div class="t"><span class="step">' + e.step + '</span>' + esc(text) + '</div><div class="k">' + esc(detail) + '</div>', () => traceEdge(e.id), trace && trace.edge === e.id);
-				}
-				if (!shown) note(q ? 'No matching events' : 'No movements in this scope');
-			}
-
-			heading('Entry points');
-			let count = 0;
-			for (const s of G.scopes) {
-				if (!s.entry || s.entry === 'bean' || s.kind === 'framework') continue;
-				if (!match(s.label, s.entry, s.file)) continue;
-				count += 1;
-				add(item(s.label, s.entry + (s.file ? '  ·  ' + s.file + ':' + s.line : '')), () => setFocus(s.id), focusScope === s.id);
-			}
-			if (!count) note(q ? 'No matching entries' : 'No entry points found');
-
-			const env = G.nodes.filter((n) => n.kind === 'environment' && match(n.label, n.subtitle, n.value || ''));
-			if (env.length) {
-				heading('Environment');
-				for (const n of env) {
-					add(item(n.label, n.value ? n.subtitle + ' = ' + n.value : n.subtitle), () => {
-						if (focusScope) setFocus(null);
-						toggleTrace(n.id);
-						revealNode(n.id);
-					}, trace && trace.origin === n.id);
-				}
-			}
-
-			heading('Scopes');
-			if (focusScope) {
-				add(item('Whole program', 'Every scope'), () => setFocus(null), false);
-			}
-			const byClass = new Map();
-			for (const s of G.scopes) {
-				if (s.kind === 'framework') continue;
-				if (!match(s.label, s.class_name, s.file)) continue;
-				push(byClass, s.class_name || '(top level)', s);
-			}
-			const runtimeScope = scopeById.get(runtime);
-			if (runtimeScope && match(runtimeScope.label)) {
-				add(item(runtimeScope.label, 'beans, configuration, request values'), () => setFocus(runtime), focusScope === runtime);
-			}
-			for (const cls of Array.from(byClass.keys()).sort()) {
+			if (!count) {
 				const el = document.createElement('div');
 				el.className = 'rail-note';
-				el.style.paddingTop = '6px';
-				el.textContent = cls;
+				el.textContent = q ? 'No matching endpoints' : 'No HTTP endpoints found';
 				rail.appendChild(el);
-				for (const s of byClass.get(cls)) {
-					add(item(s.label, s.kind + (s.file ? '  ·  ' + s.file + ':' + s.line : '')), () => setFocus(s.id), focusScope === s.id);
-				}
 			}
-
-			if (q) {
-				const hits = G.nodes.filter((n) => match(n.label, n.subtitle)).slice(0, 40);
-				if (hits.length) {
-					heading('Bindings');
-					for (const n of hits) {
-						add(item(n.label, (KIND_NAMES[n.kind] || n.kind) + '  ·  ' + frameLabel(frameOf(n))), () => {
-							if (!laid.pos[n.id]) setFocus(frameOf(n));
-							toggleTrace(n.id);
-							revealNode(n.id);
-						}, trace && trace.origin === n.id);
-					}
-				}
-			}
+			rail.scrollTop = kept;
 		}
 
 		function bindPan() {
@@ -1866,9 +1974,12 @@ export function buildDataAuditHtml(
 			const count = filterRules.size;
 			badge.hidden = count === 0;
 			badge.textContent = String(count);
-			toggle.classList.toggle('has-filters', count > 0);
+			const sw = document.getElementById('vuln-switch');
+			if (sw) sw.classList.toggle('has-filters', count > 0);
 			const clear = document.getElementById('filter-clear');
 			if (clear) clear.disabled = count === 0;
+			const inline = document.getElementById('filter-clear-inline');
+			if (inline) inline.hidden = count === 0;
 		}
 
 		function applyFilterQuery() {
@@ -2027,14 +2138,20 @@ export function buildDataAuditHtml(
 			if (dest) travelTo(dest);
 		}
 
-		document.getElementById('filter-clear').addEventListener('click', () => {
+		function clearFilters() {
 			filterRules = new Set();
 			filterQuery = '';
 			const search = document.getElementById('filter-search');
 			search.value = '';
 			renderFilter();
 			applyFilter();
+		}
+		document.getElementById('filter-clear').addEventListener('click', clearFilters);
+		document.getElementById('filter-clear-inline').addEventListener('click', (event) => {
+			event.stopPropagation();
+			clearFilters();
 		});
+		document.getElementById('endpoint-close').addEventListener('click', () => setFocus(null));
 		document.getElementById('filter-search').addEventListener('input', (event) => {
 			filterQuery = event.target.value;
 			applyFilterQuery();
