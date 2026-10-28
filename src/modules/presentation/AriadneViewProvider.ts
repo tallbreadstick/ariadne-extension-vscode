@@ -67,6 +67,10 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	 * Safe to call before the webview is resolved — the next call to
 	 * `resolveWebviewView` will pick up `currentHtml` automatically.
 	 */
+	postMessage(message: unknown): void {
+		void this.webviewView?.webview.postMessage(message);
+	}
+
 	updateHtml(html: string): void {
 		if (html === this.currentHtml) {
 			return;

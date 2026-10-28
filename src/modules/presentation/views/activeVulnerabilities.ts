@@ -27,7 +27,7 @@ export interface ActiveVulnerabilitiesOptions {
 	scannerBroken?: boolean;
 	/** When true, auth has not finished and the panel must not ask for sign-in yet. */
 	loading?: boolean;
-	/** When true, the Tree View editor panel is open (highlights the toggle). */
+	/** When true, the data audit tab is the editor currently showing. */
 	treeViewOpen?: boolean;
 }
 
@@ -258,7 +258,7 @@ const CSS = /* css */ `
 		background: color-mix(in srgb, var(--card) 80%, var(--text));
 	}
 
-	.tree-toggle[aria-pressed="true"] {
+	.tree-toggle.open {
 		border-color: var(--vscode-textLink-foreground);
 		box-shadow: inset 0 0 0 1px var(--vscode-textLink-foreground);
 	}
@@ -936,14 +936,14 @@ function buildSeverityChips(): string {
 }
 
 function buildTreeToggle(open: boolean): string {
+	const label = open ? 'Close data audit' : 'Show data audit';
 	return /* html */ `
 		<button
-			class="tree-toggle"
+			class="tree-toggle${open ? ' open' : ''}"
 			type="button"
 			id="tree-view-toggle"
-			aria-pressed="${open ? 'true' : 'false'}"
-			title="Toggle Flowchart"
-			aria-label="Toggle Flowchart"
+			title="${label}"
+			aria-label="${label}"
 		>
 			${TREE_SVG}
 		</button>`;
@@ -1133,6 +1133,15 @@ export function buildActiveVulnerabilitiesHtml(
 				const treeToggle = document.getElementById('tree-view-toggle');
 				treeToggle?.addEventListener('click', () => {
 					vscode.postMessage({ type: 'toggle-tree-view' });
+				});
+				window.addEventListener('message', (event) => {
+					const msg = event.data;
+					if (!msg || msg.type !== 'tree-view-open' || !treeToggle) return;
+					const open = !!msg.open;
+					treeToggle.classList.toggle('open', open);
+					const label = open ? 'Close data audit' : 'Show data audit';
+					treeToggle.title = label;
+					treeToggle.setAttribute('aria-label', label);
 				});
 
 				function readUiState() {

@@ -84,8 +84,12 @@
       },
       {
         "command": "ariadne-extension-vscode.toggleTreeView",
-        "title": "Ariadne: Toggle Flowchart",
+        "title": "Ariadne: Show Data Audit",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "ariadne-extension-vscode.showFindingInAudit",
+        "title": "Ariadne: Open in Audit Graph"
       },
       {
         "command": "ariadne-extension-vscode.openSettings",

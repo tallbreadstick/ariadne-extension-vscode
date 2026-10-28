@@ -1,11 +1,11 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AriadneMessage } from './messages';
 import type { VulnerabilityMetadata } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
-import type { FlowchartPayload } from '../../presentation/views/treeViewPanel.js';
+import type { DataAuditPayload } from '../../presentation/views/treeViewPanel.js';
 import { ensureAriadneExecutable } from '../../core/ariadneExecutable';
 
 export type FindingsCallback = (findings: VulnerabilityMetadata[]) => void;
-export type TreeViewCallback = (payload: FlowchartPayload) => void;
+export type TreeViewCallback = (payload: DataAuditPayload) => void;
 
 export interface AriadneSession {
 	send(msg: AriadneMessage): void;
@@ -16,7 +16,7 @@ export interface AriadneSession {
 	restart(): Promise<void>;
 	/** Subscribe to findings emitted after each analysis. Returns disposable to unsubscribe. */
 	onFindings(cb: FindingsCallback): { dispose: () => void };
-	/** Subscribe to flowchart payloads from `GetTreeView`. */
+	/** Subscribe to data audit payloads from `GetTreeView`. */
 	onTreeView(cb: TreeViewCallback): { dispose: () => void };
 	/** Fired after `start()` / `restart()` once the process is spawned. */
 	onRestarted(cb: () => void): void;
@@ -60,9 +60,9 @@ export function runSession(): AriadneSession {
 					if (
 						typeof parsed === 'object' &&
 						parsed !== null &&
-						(parsed as { type?: string }).type === 'Flowchart'
+						(parsed as { type?: string }).type === 'DataAudit'
 					) {
-						const payload = parsed as FlowchartPayload;
+						const payload = parsed as DataAuditPayload;
 						for (const cb of treeViewCallbacks) {
 							cb(payload);
 						}

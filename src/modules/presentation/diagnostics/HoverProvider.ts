@@ -17,6 +17,8 @@
  *
  *   ---
  *
+ *   [Open in audit graph →](command:ariadne-extension-vscode.showFindingInAudit)
+ *
  *   [Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel)
  */
 
@@ -104,6 +106,10 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
   // ── Divider ───────────────────────────────────────────────────────────
   md.appendMarkdown("---\n\n");
 
+  md.appendMarkdown(
+    `*[Open in audit graph →](command:ariadne-extension-vscode.showFindingInAudit?${auditCommandQuery(finding)})*\n\n`,
+  );
+
   // ── Ask Ariadne CTA — italic link ────────────────────────────────────
   // The query is this finding's artifact. startLine is 0-based; the
   // vulnerability list uses the 1-based engine line.
@@ -116,6 +122,15 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
   md.appendMarkdown(`*[Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs})*`);
 
   return md;
+}
+
+function auditCommandQuery(finding: AriadneFinding): string {
+  return encodeURIComponent(JSON.stringify([{
+    file: finding.filePath,
+    line: finding.startLine + 1,
+    title: finding.vulnerabilityName,
+    cwe: finding.cweId,
+  }]));
 }
 
 /**

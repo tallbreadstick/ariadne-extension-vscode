@@ -24,8 +24,10 @@ import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presenta
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 import {
 	buildTreeViewHtml,
+	type AuditFocus,
 	type TreeViewPayload,
 } from './modules/presentation/views/treeViewPanel.js';
+import { paintAuditSnippets } from './modules/presentation/views/snippetSnapshot.js';
 import { resolveWorkspaceFsPath } from './modules/detection/bridge/convert.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
@@ -277,6 +279,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let latestTreeView: TreeViewPayload | null = null;
 	let treeViewPanel: vscode.WebviewPanel | undefined;
 	let treeViewOpen = false;
+	/** Finding to land on once the audit document is the live graph. */
+	let pendingAuditFocus: AuditFocus | null = null;
 	let applyHighlightVisibility: (visible: boolean) => void = () => undefined;
 	let startupLoading = true;
 	let acceptFindings = true;
@@ -646,23 +650,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	// ── Panel providers ────────────────────────────────────────────────
-	const toggleTreeViewPanel = (): void => {
-		if (treeViewPanel) {
-			treeViewPanel.dispose();
-			return;
+	const setTreeViewOpen = (open: boolean): void => {
+		treeViewOpen = open;
+		activeVulnsProvider.postMessage({ type: 'tree-view-open', open });
+	};
+
+	const auditHtmlOptions = (consumeFocus: boolean) => {
+		const ready = (latestTreeView?.graph?.nodes?.length ?? 0) > 0;
+		const focus = ready ? pendingAuditFocus : null;
+		if (ready && consumeFocus) {
+			pendingAuditFocus = null;
 		}
-		treeViewPanel = vscode.window.createWebviewPanel(
-			'ariadneTreeView',
-			'Flowchart',
-			vscode.ViewColumn.One,
-			{ enableScripts: true, retainContextWhenHidden: true },
-		);
-		treeViewOpen = true;
-		treeViewPanel.webview.html = buildTreeViewHtml(latestTreeView, {
+		return {
 			signedIn: featuresUnlocked,
 			loading: startupLoading,
 			scannerBroken,
-		});
+			focus,
+		};
+	};
+
+	let auditRenderGen = 0;
+	let publishAuditHtml: (consumeFocus: boolean) => void = (consumeFocus) => {
+		if (!treeViewPanel) {
+			return;
+		}
+		treeViewPanel.webview.html = buildTreeViewHtml(latestTreeView, auditHtmlOptions(consumeFocus));
+	};
+
+	const createTreeViewPanel = (): void => {
+		treeViewPanel = vscode.window.createWebviewPanel(
+			'ariadneTreeView',
+			'Data audit',
+			vscode.ViewColumn.One,
+			{ enableScripts: true, retainContextWhenHidden: true },
+		);
+		publishAuditHtml(false);
 		treeViewPanel.webview.onDidReceiveMessage(async (msg: Record<string, unknown>) => {
 			if (msg.type === 'goto-line' && msg.filePath && msg.line) {
 				const uri = vscode.Uri.file(resolveWorkspaceFsPath(String(msg.filePath)));
@@ -676,28 +698,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 			}
 		});
+		treeViewPanel.onDidChangeViewState(() => {
+			setTreeViewOpen(treeViewPanel?.visible === true);
+		});
 		treeViewPanel.onDidDispose(() => {
 			treeViewPanel = undefined;
-			treeViewOpen = false;
-			activeVulnsProvider.updateHtml(
-				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
-			);
+			pendingAuditFocus = null;
+			setTreeViewOpen(false);
 		});
 		requestTreeView();
-		activeVulnsProvider.updateHtml(
-			buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
-		);
+		setTreeViewOpen(true);
+	};
+
+	// The button closes the audit only while that tab is showing. A jump
+	// from a snippet hides the tab and keeps its filters, card, and scroll.
+	const showTreeViewPanel = (): void => {
+		if (treeViewPanel?.visible) {
+			treeViewPanel.dispose();
+			return;
+		}
+		if (treeViewPanel) {
+			treeViewPanel.reveal(treeViewPanel.viewColumn);
+			setTreeViewOpen(true);
+			return;
+		}
+		createTreeViewPanel();
+	};
+
+	const showFindingInAudit = (target: AuditFocus): void => {
+		pendingAuditFocus = target;
+		if (treeViewPanel && (latestTreeView?.graph?.nodes?.length ?? 0) > 0) {
+			treeViewPanel.reveal(treeViewPanel.viewColumn);
+			setTreeViewOpen(true);
+			void treeViewPanel.webview.postMessage({ type: 'focus-issue', ...target });
+			pendingAuditFocus = null;
+			return;
+		}
+		if (!treeViewPanel) {
+			createTreeViewPanel();
+			return;
+		}
+		treeViewPanel.reveal(treeViewPanel.viewColumn);
+		setTreeViewOpen(true);
+		requestTreeView();
 	};
 
 	const refreshTreeViewPanel = (): void => {
-		if (!treeViewPanel) {
-			return;
-		}
-		treeViewPanel.webview.html = buildTreeViewHtml(latestTreeView, {
-			signedIn: featuresUnlocked,
-			loading: startupLoading,
-			scannerBroken,
-		});
+		publishAuditHtml(true);
 	};
 
 	const activeVulnsProvider = new AriadneViewProvider(
@@ -710,7 +757,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				void store.saveExpandedVulnKey(key);
 			}
 			if (msg.type === 'toggle-tree-view') {
-				toggleTreeViewPanel();
+				showTreeViewPanel();
 			}
 		},
 	);
@@ -1126,6 +1173,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// ── Diagnostic / inline highlight manager ───────────────────────────
 	const diagnosticManager = new DiagnosticManager(context);
+	publishAuditHtml = (consumeFocus) => {
+		if (!treeViewPanel) {
+			return;
+		}
+		const panel = treeViewPanel;
+		const generation = ++auditRenderGen;
+		const options = auditHtmlOptions(consumeFocus);
+		const graph = latestTreeView?.graph;
+		const painted = graph && graph.nodes.length > 0
+			? paintAuditSnippets(graph, diagnosticManager.snapshotFindings(), diagnosticManager.areHighlightsVisible())
+			: Promise.resolve(undefined);
+		void painted.then((snippets) => {
+			if (generation !== auditRenderGen || treeViewPanel !== panel) {
+				return;
+			}
+			panel.webview.html = buildTreeViewHtml(latestTreeView, { ...options, snippets });
+		});
+	};
 	applyHighlightVisibility = (visible) => diagnosticManager.setHighlightsVisible(visible);
 	diagnosticManager.setHighlightsVisible(highlightsVisible);
 	registerHoverProvider(context, diagnosticManager);
@@ -1684,7 +1749,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const toggleTreeViewCommand = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.toggleTreeView',
 		() => {
-			toggleTreeViewPanel();
+			showTreeViewPanel();
+		},
+	);
+
+	const showFindingInAuditCommand = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.showFindingInAudit',
+		(raw?: Partial<AuditFocus>) => {
+			showFindingInAudit({
+				file: String(raw?.file ?? ''),
+				line: Number(raw?.line ?? 0),
+				title: String(raw?.title ?? ''),
+				cwe: String(raw?.cwe ?? ''),
+			});
 		},
 	);
 
@@ -2217,6 +2294,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		openSettingsCommand,
 		openPanelCommand,
 		toggleTreeViewCommand,
+		showFindingInAuditCommand,
 		openTermsOfUse,
 		openPrivacyPolicy,
 		openFeedbackPanel,

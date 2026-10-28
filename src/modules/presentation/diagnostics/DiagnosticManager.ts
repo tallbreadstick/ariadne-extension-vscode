@@ -119,6 +119,15 @@ export class DiagnosticManager {
     }
   }
 
+  /** Findings currently shown in the editor, for audit-graph snippets. */
+  snapshotFindings(): AriadneFinding[] {
+    return [...this.findingsByFile.values()].flat();
+  }
+
+  areHighlightsVisible(): boolean {
+    return this.highlightsVisible;
+  }
+
   /** Clears stored findings and editor decorations. */
   clearAll(): void {
     this.findingsByFile.clear();
@@ -137,7 +146,7 @@ export class DiagnosticManager {
     const findings =
       this.findingsByFile.get(editor.document.uri.toString()) ?? [];
 
-    // Bucket DecorationOptions per severity (underline stays on the finding span)
+    // Bucket DecorationOptions per severity (the bar stays on the finding span)
     const buckets: Record<AriadneFinding["severity"], vscode.DecorationOptions[]> = {
       Critical: [], High: [], Medium: [], Low: [],
     };
@@ -193,8 +202,8 @@ export class DiagnosticManager {
   }
 
   /**
-   * Build a highlight range that skips leading indentation so squiggles
-   * and background tints align with code, not whitespace.
+   * Build a highlight range that skips leading indentation so the mark
+   * sits under the code, not the whitespace in front of it.
    */
   private _codeHighlightRange(
     document: vscode.TextDocument,
@@ -229,18 +238,18 @@ export class DiagnosticManager {
   }
 
   /**
-   * One decoration type per severity: a background highlight on the code
-   * range, plus an overview-ruler dot. No underline, so a vulnerability
-   * does not look like a compiler error. Hover text stays on HoverProvider.
+   * One decoration type per severity. `backgroundColor` is drawn on the
+   * editor's decoration overlay, which sits behind the text layer, so the
+   * glyph fill keeps its syntax color. `color` and `opacity` are omitted
+   * because those paint on the text itself. The overview ruler keeps a dot.
    */
   private _makeDecorationType(
     severity: AriadneFinding["severity"]
   ): vscode.TextEditorDecorationType {
     const color = SEVERITY_COLOR[severity];
-    const bg    = SEVERITY_BG[severity];
     return vscode.window.createTextEditorDecorationType({
       isWholeLine: false,
-      backgroundColor: bg,
+      backgroundColor: SEVERITY_BG[severity],
       overviewRulerColor: color,
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });

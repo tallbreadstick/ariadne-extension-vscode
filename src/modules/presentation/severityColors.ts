@@ -24,15 +24,18 @@ export const SEVERITY_COLORS_TITLE: Record<
 	Low: SEVERITY_COLORS.low,
 };
 
-/** Highlight background at 50% opacity so editor marks stay easy to see. */
+/**
+ * Wash painted on the decoration overlay behind the glyphs.
+ * 0x38 keeps the rectangle visible without flooding letter counters.
+ */
 export const SEVERITY_BG_TITLE: Record<
 	'Critical' | 'High' | 'Medium' | 'Low',
 	string
 > = {
-	Critical: '#E24B4A80',
-	High: '#D85A1A73',
-	Medium: '#F3D78A55',
-	Low: '#6AAF7866',
+	Critical: `${SEVERITY_COLORS.critical}38`,
+	High: `${SEVERITY_COLORS.high}38`,
+	Medium: `${SEVERITY_COLORS.medium}38`,
+	Low: `${SEVERITY_COLORS.low}38`,
 };
 
 export function severityCssVars(): string {
