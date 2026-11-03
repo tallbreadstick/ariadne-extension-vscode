@@ -245,6 +245,12 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 								<span class="issue-meta">${meta}</span>
 							</div>
 							<div class="issue-title">${vuln.title}</div>
+							<div class="cta-row">
+								<a class="action-button btn-explain" role="button" href="${feedbackHref}" title="View AI conceptual explanation">
+									${LIGHTBULB_SVG}
+									<span>Explain Vulnerability</span>
+								</a>
+							</div>
 							<div class="summary-file">
 								${FILE_SVG}
 								<span>${location}</span>
@@ -274,12 +280,6 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 						<div class="detail-label">CWE · OWASP Reference</div>
 						<div class="detail-value reference">${meta}</div>
 					</div>
-				</div>
-				<div class="cta-row">
-					<a class="action-button btn-explain" role="button" href="${feedbackHref}" title="View AI conceptual explanation">
-						${LIGHTBULB_SVG}
-						<span>Explain Vulnerability</span>
-					</a>
 				</div>
 			</div>
 		</details>`;
@@ -1038,7 +1038,7 @@ const CSS = /* css */ `
     .summary-row {
         display: flex;
         gap: 10px;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
         min-width: 0; /* Allows the row to shrink */
     }
@@ -1131,6 +1131,7 @@ const CSS = /* css */ `
     .chevron {
         width: 16px;
         height: 16px;
+        margin-top: 3px;
         flex: 0 0 auto; /* Prevents chevron from shrinking or squishing */
         color: var(--muted);
         transition: transform 0.2s ease;

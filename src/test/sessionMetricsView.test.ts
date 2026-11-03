@@ -314,4 +314,88 @@ describe('Session Metrics Terminology & Subtitles', () => {
 			'Should render short visible subtitle in Common Vulnerabilities',
 		);
 	});
+
+	it('renders status indicator spinner when reportUpdateStatus is updating', () => {
+		const metrics: SessionMetrics = {
+			critical: 1,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+			},
+			reportUpdateStatus: 'updating',
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('report-status-updating'), 'Should include report-status-updating class');
+		assert.ok(html.includes('report-status-spinner'), 'Should include spinner element');
+		assert.ok(html.includes('Updating Full Report records...'), 'Should render Updating Full Report records... label');
+		assert.ok(!html.includes('✓ Full Report updated'), 'Should not render updated label while updating');
+	});
+
+	it('renders updated status indicator when reportUpdateStatus is updated', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 1,
+				recurringPatterns: 0,
+			},
+			reportUpdateStatus: 'updated',
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('report-status-updated'), 'Should include report-status-updated class');
+		assert.ok(html.includes('✓ Full Report updated'), 'Should render ✓ Full Report updated label');
+		assert.ok(!html.includes('Updating Full Report records...'), 'Should not render updating label when updated');
+	});
+
+	it('renders per-save resolution progress counter in Trends when pendingResolutions are present', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 0,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 0,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+				pendingResolutions: [
+					{
+						type: 'SQL Injection',
+						cweId: 'CWE-89',
+						instanceName: 'executeQuery',
+						savesCompleted: 1,
+						savesRequired: 3,
+					},
+					{
+						type: 'Cross-Site Scripting',
+						cweId: 'CWE-79',
+						savesCompleted: 2,
+						savesRequired: 3,
+					},
+				],
+			},
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('pending-resolutions-section'), 'Should render pending-resolutions-section');
+		assert.ok(html.includes('Confirming Resolution'), 'Should render Confirming Resolution header');
+		assert.ok(html.includes('SQL Injection'), 'Should render SQL Injection pending item');
+		assert.ok(html.includes('executeQuery'), 'Should render instanceName when provided');
+		assert.ok(html.includes('Save 1/3'), 'Should render Save 1/3 step counter');
+		assert.ok(html.includes('2 saves left'), 'Should render 2 saves left guidance');
+		assert.ok(html.includes('Cross-Site Scripting'), 'Should render Cross-Site Scripting pending item');
+		assert.ok(html.includes('Save 2/3'), 'Should render Save 2/3 step counter');
+		assert.ok(html.includes('1 save left'), 'Should render 1 save left guidance');
+	});
 });

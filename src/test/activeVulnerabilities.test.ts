@@ -74,6 +74,12 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(html.includes('Explain Vulnerability'), 'Explain Vulnerability button label missing');
 		assert.ok(html.includes('lightbulb-icon'), 'Lightbulb icon missing');
 		assert.ok(!html.includes('Ask Ariadne</span>'), 'Ask Ariadne label should be replaced');
+		const titleIdx = html.indexOf('class="issue-title"');
+		const explainIdx = html.indexOf('class="action-button btn-explain"');
+		const fileIdx = html.indexOf('class="summary-file"');
+		const detailsPanelIdx = html.indexOf('class="details-panel"');
+		assert.ok(titleIdx < explainIdx && explainIdx < fileIdx, 'Explain Vulnerability button should sit between issue-title and summary-file');
+		assert.ok(explainIdx < detailsPanelIdx, 'Explain Vulnerability button should be visible inside summary outside details-panel');
 	});
 });
 

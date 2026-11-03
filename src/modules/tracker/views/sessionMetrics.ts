@@ -6,7 +6,7 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem } from '../../presentation/panelTypes.js';
+import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem, PendingResolutionItem } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
 import type { Severity } from '../../presentation/panelTypes.js';
 import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
@@ -163,6 +163,54 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
+}
+
+function buildPendingResolutionsSection(items: PendingResolutionItem[] | undefined): string {
+	if (!items || items.length === 0) {
+		return '';
+	}
+
+	const rows = items.map((item) => {
+		const savesLeft = item.savesRequired - item.savesCompleted;
+		const savesLeftLabel = savesLeft === 1 ? '1 save left' : `${savesLeft} saves left`;
+		const guidance = item.savesCompleted === 0
+			? `Fix detected by Live Scan · Save file to start (${savesLeftLabel})`
+			: item.savesCompleted === 1
+				? `Wait 5s, then save again (${savesLeftLabel})`
+				: `Almost done · Save 1 more time to confirm (${savesLeftLabel})`;
+
+		const dots = [0, 1, 2].map((idx) => {
+			const filled = idx < item.savesCompleted ? ' filled' : '';
+			return `<span class="save-step-dot${filled}"></span>`;
+		}).join('');
+
+		const instanceSuffix = item.instanceName
+			? ` <span class="pending-resolution-instance">· ${escapeHtml(item.instanceName)}</span>`
+			: '';
+
+		return /* html */ `
+			<div class="pending-resolution-row">
+				<div class="pending-resolution-info">
+					<span class="pending-resolution-type">${escapeHtml(item.type)}${instanceSuffix}</span>
+					<span class="pending-resolution-sub">${guidance}</span>
+				</div>
+				<div class="pending-resolution-steps" title="${item.savesCompleted} of ${item.savesRequired} confirmation saves completed (${savesLeftLabel})">
+					<span class="save-step-dots" aria-hidden="true">${dots}</span>
+					<span class="save-step-counter">Save ${item.savesCompleted}/${item.savesRequired}</span>
+				</div>
+			</div>`;
+	}).join('');
+
+	return /* html */ `
+		<div class="pending-resolutions-section" role="status" aria-live="polite">
+			<div class="pending-resolutions-header">
+				<span class="pending-resolutions-title">Confirming Resolution</span>
+				<span class="pending-resolutions-hint">Requires 3 settled saves (≥5s apart) to record in Full Report</span>
+			</div>
+			<div class="pending-resolutions-list">
+				${rows}
+			</div>
+		</div>`;
 }
 
 /**
@@ -323,6 +371,55 @@ const CSS = /* css */ `
 		gap: 6px;
 	}
 
+	.full-report-header-right {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+	}
+
+	/* ── Full Report Settlement Status Indicator ── */
+	.report-status-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		font-weight: 500;
+		letter-spacing: 0.01em;
+		text-transform: none;
+		padding: 2px 8px;
+		border-radius: 10px;
+		border: 1px solid var(--border);
+		white-space: nowrap;
+	}
+
+	.report-status-updating {
+		color: var(--vscode-descriptionForeground);
+		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 25%, transparent);
+	}
+
+	.report-status-updated {
+		color: var(--accent-strong);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+	}
+
+	.report-status-spinner {
+		width: 11px;
+		height: 11px;
+		border: 1.75px solid color-mix(in srgb, var(--vscode-descriptionForeground) 35%, transparent);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: report-spin 0.75s linear infinite;
+		display: inline-block;
+		flex-shrink: 0;
+	}
+
+	@keyframes report-spin {
+		to { transform: rotate(360deg); }
+	}
+
 	/* ── Session Context Badge ── */
 	.session-badge {
 		display: inline-flex;
@@ -456,6 +553,116 @@ const CSS = /* css */ `
 		color: var(--muted);
 		font-weight: 400;
 		line-height: 1.3;
+	}
+
+	/* ── Pending Resolution Per-Save Counter Section ── */
+	.pending-resolutions-section {
+		border-top: 1px solid var(--vscode-panel-border);
+		background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+		padding: 10px 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.pending-resolutions-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.pending-resolutions-title {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--accent-strong);
+	}
+
+	.pending-resolutions-hint {
+		font-size: 11px;
+		color: var(--muted);
+	}
+
+	.pending-resolutions-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.pending-resolution-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--vscode-editor-background) 75%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+		flex-wrap: wrap;
+	}
+
+	.pending-resolution-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.pending-resolution-type {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.pending-resolution-instance {
+		font-weight: 400;
+		color: var(--muted);
+	}
+
+	.pending-resolution-sub {
+		font-size: 11px;
+		color: var(--muted);
+	}
+
+	.pending-resolution-steps {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 3px 9px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+		flex-shrink: 0;
+	}
+
+	.save-step-dots {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.save-step-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--muted) 35%, transparent);
+		border: 1px solid color-mix(in srgb, var(--muted) 60%, transparent);
+	}
+
+	.save-step-dot.filled {
+		background: var(--accent-strong);
+		border-color: var(--accent-strong);
+	}
+
+	.save-step-counter {
+		font-size: 11px;
+		font-weight: 700;
+		color: var(--accent-strong);
+		white-space: nowrap;
 	}
 
 	/* ── Collapsible trend row ── */
@@ -827,11 +1034,17 @@ export function buildSessionMetricsHtml(
 		: `${escapeHtml(sessionLabel)} · NOT STARTED YET`;
 	const badgeClass = isSessionActive ? 'session-badge' : 'session-badge not-started';
 	const dotClass = isSessionActive ? 'session-dot' : 'session-dot not-started';
+	const reportStatusHtml = metrics.reportUpdateStatus === 'updating'
+		? '<span class="report-status-indicator report-status-updating" role="status" aria-live="polite" title="Settling recent save to update Full Report metrics and trends..."><span class="report-status-spinner" aria-hidden="true"></span>Updating Full Report records...</span>'
+		: metrics.reportUpdateStatus === 'updated'
+			? '<span class="report-status-indicator report-status-updated" role="status" aria-live="polite" title="Full Report records and trends are up to date with the latest settled save.">✓ Full Report updated</span>'
+			: '';
 
 	const persistingSubItems = buildPersistingSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
 	const recurringSubItems = buildBasicSubItems(trends.recurringItems, trends.recurringPatterns);
 	const resolvedSubItems = buildBasicSubItems(trends.resolvedItems, trends.resolvedThisSession);
+	const pendingResolutionsHtml = buildPendingResolutionsSection(trends.pendingResolutions);
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -849,7 +1062,10 @@ export function buildSessionMetricsHtml(
 						${FULL_REPORT_SVG}
 						<span>Full Report</span>
 					</div>
-					<span class="${badgeClass}"><span class="${dotClass}">●</span> ${fullSessionBadgeText}</span>
+					<div class="full-report-header-right">
+						${reportStatusHtml}
+						<span class="${badgeClass}"><span class="${dotClass}">●</span> ${fullSessionBadgeText}</span>
+					</div>
 				</div>
 				<div class="metrics-grid">
 					${buildMetricCard('Critical Issues', critical, 'critical')}
@@ -869,6 +1085,8 @@ export function buildSessionMetricsHtml(
 					</div>
 					<span class="trends-subtitle">Compares reports to track progress and unresolved risks.</span>
 				</div>
+
+				${pendingResolutionsHtml}
 
 				${buildCollapsibleTrendRow(
 		'persisting',

@@ -91,13 +91,15 @@ import {
 } from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
-import type { FindingLifecycleRecord } from './modules/tracker/analysis/lifecycleTypes.js';
+import type { FindingLifecycleRecord, ObservedFinding } from './modules/tracker/analysis/lifecycleTypes.js';
 import { computeCommonVulnerabilities, COMMON_VULN_POLICY, type GraduationToastEvents } from './modules/tracker/analysis/commonVulnerabilities.js';
 import type {
 	Vulnerability,
 	SessionMetrics,
 	CommonVulnerabilityItem,
 	ImprovingSubItem,
+	FullReportUpdateStatus,
+	PendingResolutionItem,
 } from './modules/presentation/panelTypes.js';
 import type { SessionAnalysis } from './modules/tracker/analysis/analysisTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
@@ -323,6 +325,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let stopScanner: () => void = () => undefined;
 	let markScannerBroken: () => void = () => undefined;
 	let applyScannerSelection: () => Promise<void> = async () => undefined;
+	let reportUpdateStatus: FullReportUpdateStatus = 'idle';
+	let cachedCopilotUsage: SignInPanelViewModel['copilotUsage'] | undefined;
 
 	// ── Migrate from legacy snapshot storage ───────────────────────────
 	void store.migrateFromLegacy();
@@ -370,7 +374,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			scanner: await loadScannerSettings(),
 		};
 
-		if (model.status === 'signed-in' && !override && !options?.skipQuota) {
+		if (model.status !== 'signed-in') {
+			cachedCopilotUsage = undefined;
+		} else if (!override && !options?.skipQuota) {
 			const token = await githubAuth.getAccessToken();
 			if (token) {
 				const usage = await fetchCopilotQuotaUsage(
@@ -378,18 +384,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					copilotRuntimeOptions(context, token),
 				);
 				if (usage) {
+					cachedCopilotUsage = {
+						label: usage.label,
+						remainingPercent: usage.remainingPercent,
+						usedPercent: usage.usedPercent,
+						isUnlimited: usage.isUnlimited,
+						resetDate: usage.resetDate,
+					};
 					model = {
 						...model,
-						copilotUsage: {
-							label: usage.label,
-							remainingPercent: usage.remainingPercent,
-							usedPercent: usage.usedPercent,
-							isUnlimited: usage.isUnlimited,
-							resetDate: usage.resetDate,
-						},
+						copilotUsage: cachedCopilotUsage,
 					};
 				}
 			}
+		} else if (cachedCopilotUsage) {
+			model = {
+				...model,
+				copilotUsage: cachedCopilotUsage,
+			};
 		}
 
 		latestSignInHtml = buildSignInPanelHtml(model);
@@ -477,14 +489,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let lastSettledRevision: number | null = null;
 
 	let latestVulnerabilities: Vulnerability[] = [];
+	let latestObservedFindings: ObservedFinding[] = [];
 	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
 	let latestSessionAnalysis: SessionAnalysis | null = null;
+
+	function buildPendingResolutions(): PendingResolutionItem[] | undefined {
+		if (lifecycles.length === 0) {
+			return undefined;
+		}
+		const liveFingerprints = initialFindingsReceived
+			? new Set(latestObservedFindings.map(o => o.logicalFingerprint))
+			: null;
+
+		const items: PendingResolutionItem[] = [];
+		for (const flc of lifecycles) {
+			if (flc.durableResolutionAt !== null || flc.isCommentedOut) {
+				continue;
+			}
+			if (liveFingerprints !== null && liveFingerprints.has(flc.logicalFingerprint)) {
+				continue;
+			}
+
+			let savesCompleted: 0 | 1 | 2 | null = null;
+			if (flc.provisionalResolutionAt !== null) {
+				savesCompleted = 2;
+			} else if (flc.missingSince !== null) {
+				savesCompleted = 1;
+			} else if (liveFingerprints !== null) {
+				savesCompleted = 0;
+			}
+
+			if (savesCompleted !== null) {
+				items.push({
+					type: flc.type,
+					cweId: flc.cweId,
+					instanceName: flc.instanceName || undefined,
+					savesCompleted,
+					savesRequired: 3,
+				});
+			}
+		}
+
+		return items.length > 0 ? items : undefined;
+	}
 
 	function buildCurrentSessionMetrics(): SessionMetrics {
 		const completedSessions = store.loadCompletedSessions();
 		const priorCompletedSession = store.loadPriorCompletedSession();
 		const graduationHistory = store.loadGraduationHistory();
 		const totalSessionsAnalyzed = completedSessions.length + (activeSession ? 1 : 0);
+		const pendingResolutions = buildPendingResolutions();
 
 		let sessionNum = 1;
 		if (activeSession) {
@@ -518,6 +572,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (metrics.notifications) {
 				metrics.notifications = metrics.notifications.filter(n => !dismissed.has(n.id));
 			}
+			metrics.trends.pendingResolutions = pendingResolutions;
+			metrics.reportUpdateStatus = reportUpdateStatus;
 			return metrics;
 		}
 
@@ -680,6 +736,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				improvingItems,
 				recurringItems,
 				resolvedItems,
+				pendingResolutions,
 				fixScore,
 				persistenceScore,
 				trendScore,
@@ -690,6 +747,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			totalSessionsAnalyzed,
 			sessionLabel,
 			isSessionActive: activeSession !== null,
+			reportUpdateStatus,
 		};
 	}
 
@@ -699,6 +757,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			signedIn: featuresUnlocked,
 			loading: startupLoading,
 		}));
+	}
+
+	function setReportUpdateStatus(next: FullReportUpdateStatus): void {
+		if (reportUpdateStatus === next) {
+			return;
+		}
+		reportUpdateStatus = next;
+		refreshSessionMetricsPanel();
 	}
 
 	let initialVulnsHtml = buildVulnsHtml([], store, false, false, true);
@@ -1065,6 +1131,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					lastSettledRevision = null;
 					previousScanSnapshot = null;
 					saveScanState = store.loadSaveScanState();
+					reportUpdateStatus = 'idle';
 					refreshSessionMetricsPanel();
 					vscode.window.showInformationMessage(
 						'Ariadne: Session data cleared. The next settled save starts a fresh session.',
@@ -1239,6 +1306,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * save scan result before the 2-second window expires.
 	 */
 	function cancelSettlement(reason: string): void {
+		const hadActiveSaveOrSettlement = settlementTimer !== null || pendingSaveRevision !== null;
 		if (settlementTimer !== null) {
 			clearTimeout(settlementTimer);
 			settlementTimer = null;
@@ -1247,6 +1315,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			saveScanState.totalSettledCancellations += 1;
 			void store.saveSaveScanState(saveScanState);
 			console.log(`[Ariadne] Settlement cancelled (${reason}). Trends not updated.`);
+		} else if (pendingSaveRevision !== null) {
+			pendingSaveRevision = null;
+		}
+		if (
+			hadActiveSaveOrSettlement
+			&& reason !== 'superseded by a new save'
+			&& reason !== 'hourly session rollover'
+			&& reason !== 'extension deactivation'
+		) {
+			setReportUpdateStatus(activeSession !== null ? 'updated' : 'idle');
 		}
 	}
 
@@ -1303,6 +1381,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		// Cancel any pending save settlement timer
 		cancelSettlement('hourly session rollover');
+		setReportUpdateStatus('updating');
 
 		// Flush pending editor buffers so engine's forest has latest content
 		flushAllPendingUpdates(session);
@@ -1369,6 +1448,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			);
 			latestSessionAnalysis = sessionAnalysis;
 			previousScanSnapshot = currentSnapshot;
+			reportUpdateStatus = 'updated';
 
 			refreshSessionMetricsPanel();
 			updateStatusBar(sessionAnalysis);
@@ -1381,6 +1461,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				5000,
 			);
 		} catch (err) {
+			setReportUpdateStatus(activeSession !== null ? 'updated' : 'idle');
 			console.warn('[Ariadne] Hourly auto full scan rollover failed:', err);
 		}
 	}
@@ -1395,10 +1476,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// the new save supersedes the old pending result.
 			cancelSettlement('superseded by a new save');
 			pendingSaveRevision = revision;
+			if (featuresUnlocked) {
+				setReportUpdateStatus('updating');
+			}
 		},
 		// onRevisionChange: any tracked-file mutation cancels settlement
 		(revision: number) => {
-			if (settlementTimer !== null) {
+			if (settlementTimer !== null || pendingSaveRevision !== null) {
 				cancelSettlement(`workspace revision changed to ${revision}`);
 			}
 		},
@@ -1447,9 +1531,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		session.kill();
 		diagnosticManager.clearAll();
 		latestVulnerabilities = [];
+		latestObservedFindings = [];
 		scannerBroken = false;
 		scannerChecked = false;
 		acceptFindings = false;
+		reportUpdateStatus = 'idle';
 		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshSessionMetricsPanel();
@@ -1486,6 +1572,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		// ── 1. Active Vulnerabilities panel (always updated) ────────────
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
+		latestObservedFindings = metadataToObservedFindings(findings);
 		scannerBroken = false;
 		scannerChecked = true;
 		startupLoading = false;
@@ -1521,6 +1608,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			);
 
 			pendingSaveRevision = null;
+			setReportUpdateStatus(activeSession !== null ? 'updated' : 'idle');
 			return;
 		}
 
@@ -1624,6 +1712,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 				void store.saveGraduationHistory(graduationHistory);
 
+				reportUpdateStatus = 'updated';
 				refreshSessionMetricsPanel();
 				updateStatusBar(sessionAnalysis);
 				activeVulnsProvider.updateHtml(
@@ -1919,6 +2008,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			lastSettledRevision = null;
 			previousScanSnapshot = null;
 			saveScanState = store.loadSaveScanState();
+			reportUpdateStatus = 'idle';
 			refreshSessionMetricsPanel();
 			activeVulnsProvider.updateHtml(
 				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
@@ -1985,6 +2075,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				void store.clearActiveSession();
 				activeSession = null;
 			}
+			reportUpdateStatus = 'idle';
 			refreshSessionMetricsPanel();
 			activeVulnsProvider.updateHtml(
 				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),

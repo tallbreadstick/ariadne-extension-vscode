@@ -11,6 +11,14 @@
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
 /**
+ * Live settlement status for Full Report records:
+ * - 'idle' — no save-triggered settlement has occurred yet in this run
+ * - 'updating' — a save scan or settlement timer is actively in flight
+ * - 'updated' — the latest save settlement completed and Full Report records are up to date
+ */
+export type FullReportUpdateStatus = 'idle' | 'updating' | 'updated';
+
+/**
  * A single vulnerability finding produced by an Ariadne scan session.
  *
  * This is the card-level shape used by the Active Vulnerabilities panel.
@@ -62,6 +70,23 @@ export interface ImprovingSubItem extends TrendSubItem {
 }
 
 /**
+ * A finding that has been fixed in the editor and is undergoing the
+ * 3-save durable resolution confirmation protocol.
+ */
+export interface PendingResolutionItem {
+	/** Vulnerability type label (e.g. "SQL Injection"). */
+	type: string;
+	/** CWE identifier (e.g. "CWE-89"). */
+	cweId: string;
+	/** Optional instance identifier (e.g. variable or method name). */
+	instanceName?: string;
+	/** Number of settled confirmation saves completed so far (0, 1, or 2). */
+	savesCompleted: 0 | 1 | 2;
+	/** Total settled saves required to confirm durable resolution (3). */
+	savesRequired: 3;
+}
+
+/**
  * Trend counters summarising how vulnerability patterns shifted
  * across the current session.
  */
@@ -97,6 +122,11 @@ export interface TrendData {
 	 * Optional — placeholder rows are shown when absent.
 	 */
 	resolvedItems?: TrendSubItem[];
+	/**
+	 * Findings fixed in Live Scan that are currently awaiting multi-save
+	 * confirmation before transitioning to Resolved This Session.
+	 */
+	pendingResolutions?: PendingResolutionItem[];
 	/** Workspace-level Fix Score (0–10). */
 	fixScore?: number;
 	/** Workspace-level Persistence Score (0–10). */
@@ -166,4 +196,6 @@ export interface SessionMetrics {
 	sessionLabel?: string;
 	/** Whether an active session is currently in progress. False if session has not started yet. */
 	isSessionActive?: boolean;
+	/** Live update status for Full Report settlement feedback. */
+	reportUpdateStatus?: FullReportUpdateStatus;
 }
