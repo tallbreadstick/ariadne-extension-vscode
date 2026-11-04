@@ -170,7 +170,22 @@ function buildPendingResolutionsSection(items: PendingResolutionItem[] | undefin
 		return '';
 	}
 
-	const rows = items.map((item) => {
+	// Group instances of the same type at the same save step into one row,
+	// then sort the closest-to-confirmed rows (highest step) first.
+	const grouped = new Map<string, { item: PendingResolutionItem; count: number }>();
+	for (const item of items) {
+		const key = `${item.type}::${item.savesCompleted}`;
+		const existing = grouped.get(key);
+		if (existing) {
+			existing.count += 1;
+		} else {
+			grouped.set(key, { item, count: 1 });
+		}
+	}
+	const groups = [...grouped.values()].sort((a, b) =>
+		b.item.savesCompleted - a.item.savesCompleted || a.item.type.localeCompare(b.item.type));
+
+	const rows = groups.map(({ item, count }) => {
 		const savesLeft = item.savesRequired - item.savesCompleted;
 		const savesLeftLabel = savesLeft === 1 ? '1 save left' : `${savesLeft} saves left`;
 		const guidance = item.savesCompleted === 0
@@ -184,9 +199,11 @@ function buildPendingResolutionsSection(items: PendingResolutionItem[] | undefin
 			return `<span class="save-step-dot${filled}"></span>`;
 		}).join('');
 
-		const instanceSuffix = item.instanceName
-			? ` <span class="pending-resolution-instance">· ${escapeHtml(item.instanceName)}</span>`
-			: '';
+		const instanceSuffix = count > 1
+			? ` <span class="pending-resolution-instance">(${count} instances)</span>`
+			: item.instanceName
+				? ` <span class="pending-resolution-instance">· ${escapeHtml(item.instanceName)}</span>`
+				: '';
 
 		return /* html */ `
 			<div class="pending-resolution-row">
@@ -204,7 +221,7 @@ function buildPendingResolutionsSection(items: PendingResolutionItem[] | undefin
 	return /* html */ `
 		<div class="pending-resolutions-section" role="status" aria-live="polite">
 			<div class="pending-resolutions-header">
-				<span class="pending-resolutions-title">Confirming Resolution</span>
+				<span class="pending-resolutions-title">Confirming Resolution (${items.length})</span>
 				<span class="pending-resolutions-hint">Requires 3 settled saves (≥5s apart) to record in Full Report</span>
 			</div>
 			<div class="pending-resolutions-list">
@@ -590,7 +607,12 @@ const CSS = /* css */ `
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+		max-height: 170px;
+		overflow-y: auto;
+		padding-right: 2px;
 	}
+
+	.pending-resolution-row { flex-shrink: 0; }
 
 	.pending-resolution-row {
 		display: flex;

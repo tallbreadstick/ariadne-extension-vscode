@@ -398,4 +398,30 @@ describe('Session Metrics Terminology & Subtitles', () => {
 		assert.ok(html.includes('Save 2/3'), 'Should render Save 2/3 step counter');
 		assert.ok(html.includes('1 save left'), 'Should render 1 save left guidance');
 	});
+
+	it('groups same-type same-step pending resolutions and sorts closest-to-confirmed first', () => {
+		const mk = (type: string, savesCompleted: 0 | 1 | 2, instanceName: string) => ({
+			type, cweId: 'CWE-X', instanceName, savesCompleted, savesRequired: 3 as const,
+		});
+		const metrics: SessionMetrics = {
+			critical: 0, high: 0, medium: 0, low: 0,
+			trends: {
+				persistingPatterns: 0, improvingTrends: 0, resolvedThisSession: 0, recurringPatterns: 0,
+				pendingResolutions: [
+					mk('SQL Injection', 1, 'a'),
+					mk('SQL Injection', 1, 'b'),
+					mk('SQL Injection', 1, 'c'),
+					mk('Insecure Randomness', 2, 'r'),
+				],
+			},
+		};
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('Confirming Resolution (4)'), 'Header should show total pending count');
+		assert.ok(html.includes('(3 instances)'), 'Same type/step should collapse into one row');
+		assert.strictEqual(html.match(/class="pending-resolution-row"/g)?.length, 2, 'Should render 2 grouped rows');
+		assert.ok(
+			html.indexOf('Insecure Randomness') < html.indexOf('SQL Injection'),
+			'Save 2/3 row should be sorted above Save 1/3 row',
+		);
+	});
 });
