@@ -10,8 +10,8 @@ import { CopilotClientManager } from './copilotClientManager.js';
 import type { CopilotRuntimeOptions } from './copilotRuntime.js';
 import type { AriadneLLMRequestBody } from './requestTypes.js';
 
-/** Timeout duration in milliseconds — per SRS Section 3.1.3 */
-const LLM_TIMEOUT_MS = 15_000;
+/** Temporary testing limit. Put this back to 15_000 when asked. */
+const LLM_TIMEOUT_MS = 180_000;
 
 function extractMessageContent(
 	requestBody: AriadneLLMRequestBody,

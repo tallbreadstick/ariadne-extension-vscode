@@ -1,6 +1,6 @@
 import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
-import type { FeedbackFinding } from '../llm_feedback/feedbackTypes.js';
 import { severityCssVars } from '../../presentation/severityColors.js';
+import * as vscode from 'vscode';
 
 /**
  * Union type representing the three possible states of the feedback panel.
@@ -8,7 +8,7 @@ import { severityCssVars } from '../../presentation/severityColors.js';
  */
 export type FeedbackPanelState =
 	| { type: 'loading' }
-	| { type: 'llm-result'; finding: FeedbackFinding }
+	| { type: 'llm-result'; html: string }
 	| { type: 'llm-error'; message: string };
 
 
@@ -45,7 +45,16 @@ export function formatDisplayPath(filePath: string): string {
     }
 
     // For paths with 3 or more segments, show ".../<parent>/<filename>"
-    return `.../${cleanSegments.slice(-2).join('/')}`;
+	return `.../${cleanSegments.slice(-2).join('/')}`;
+}
+
+function snippetFontVars(): string {
+	const editor = vscode.workspace.getConfiguration('editor');
+	const fontSize = editor.get<number>('fontSize') ?? 13;
+	const configuredLine = editor.get<number>('lineHeight') ?? 0;
+	const lineHeight = configuredLine > 0 ? configuredLine : Math.round(fontSize * 1.35);
+	const fontFamily = (editor.get<string>('fontFamily') || 'monospace').replace(/[;{}<>]/g, '');
+	return `--snippet-font-family:${fontFamily};--snippet-font-size:${fontSize}px;--snippet-line-height:${lineHeight}px;`;
 }
 
 /**
@@ -53,10 +62,10 @@ export function formatDisplayPath(filePath: string): string {
  *
  * The panel opens immediately with the vulnerability header and animated
  * skeleton placeholders for the 3 sections. The extension host then sends
- * a postMessage with { type: 'llm-result', sections } or { type: 'llm-error', message }
+ * a postMessage with { type: 'llm-result', html } or { type: 'llm-error', message }
  * to populate or show the fallback.
  */
-/** Identity of one Ask Ariadne request. The opened tab keeps this artifact. */
+/** Identity of one explanation request. The opened tab keeps this artifact. */
 export interface AskAriadneArtifact {
 	cwe: string;
 	title: string;
@@ -81,6 +90,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
     const fullFilePath = escapeHtml(meta.file_path);
     const displayFilePath = escapeHtml(formatDisplayPath(meta.file_path));
     const line = meta.line_number;
+    const snippetFont = snippetFontVars();
 
     // The warning SVG for the header box
     const WARNING_SVG = `
@@ -93,7 +103,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Ariadne: Explanation</title>
+        <title>Explain Vulnerability</title>
         <style>
             :root {
                 color-scheme: dark;
@@ -110,6 +120,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
                 --section-blue: var(--vscode-textLink-foreground);
                 --section-orange: #d19a66;
                 --file-green: #4EC9B0;
+                ${snippetFont}
             }
 
             * { box-sizing: border-box; }
@@ -251,97 +262,108 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
             .content {
                 display: flex;
                 flex-direction: column;
-                gap: 28px;
+                gap: 20px;
                 width: 100%;
                 min-width: 0;
                 max-width: 100%;
             }
 
-            .info-section {
-                width: 100%;
-                min-width: 0;
-                max-width: 100%;
+            .lead {
+                margin: 0;
+                font-size: 16px;
+                font-weight: 600;
+                line-height: 1.45;
+                overflow-wrap: anywhere;
             }
 
-            .section-heading {
+            .explain-block {
                 display: flex;
-                align-items: center;
-                gap: 12px;
-                margin-bottom: 12px;
+                flex-direction: column;
+                gap: 8px;
                 min-width: 0;
                 max-width: 100%;
             }
 
-            .section-number {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 20px;
-                height: 20px;
-                
-                flex-shrink: 0; 
-                
-                border-radius: 50%;
-                border: 1px solid var(--section-orange);
+            .explain-block h2 {
+                margin: 0;
                 font-size: 12px;
                 font-weight: 600;
-                color: var(--section-orange);
-            }
-
-            .section-number.critical { color: var(--critical); border-color: var(--critical); background: color-mix(in srgb, var(--critical) 10%, transparent);}
-            .section-number.high { color: var(--high); border-color: var(--high); background: color-mix(in srgb, var(--high) 10%, transparent); }
-            .section-number.medium { color: var(--medium); border-color: var(--medium); background: color-mix(in srgb, var(--medium) 10%, transparent); }
-
-            .section-title {
-                font-size: 15px;
-                font-weight: 600;
-                letter-spacing: 0.02em;
+                letter-spacing: 0.04em;
                 text-transform: uppercase;
                 color: var(--muted);
-                min-width: 0;
-                overflow-wrap: anywhere;
-                word-break: break-word;
             }
 
-            .section-box {
-                background: var(--panel);
-                border-left: 4px solid var(--border);
-                padding: 16px 20px;
-                line-height: 1.6;
-                font-size: 14px;
-                color: var(--text);
-                border-radius: 4px;
-                width: 100%;
-                min-width: 0;
-                max-width: 100%;
-                box-sizing: border-box;
-                overflow-wrap: anywhere;
-                word-break: break-word;
-            }
-
-            .section-box p {
-                margin: 0 0 10px 0;
-                min-width: 0;
-                max-width: 100%;
-                overflow-wrap: anywhere;
-                word-break: break-word;
-                white-space: normal;
-            }
-            
-            .section-box p:last-child {
+            .explain-block p,
+            .explain-block li {
                 margin: 0;
-            }
-
-            .section-box code {
-                background: var(--code-bg);
-                padding: 2px 6px;
-                border-radius: 4px;
-                color: var(--section-orange);
-                font-family: Consolas, "Courier New", monospace;
-                font-size: 0.95em;
+                font-size: 14px;
+                line-height: 1.5;
                 overflow-wrap: anywhere;
                 word-break: break-word;
-                white-space: pre-wrap;
+            }
+
+            .explain-block ul {
+                margin: 0;
+                padding-left: 1.2em;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .caption,
+            .note {
+                color: var(--muted);
+                font-size: 13px;
+            }
+
+            .code {
+                margin: 0;
+                padding: 4px 0;
+                max-width: 100%;
+                overflow-x: auto;
+                overflow-y: hidden;
+                overscroll-behavior: contain;
+                border-radius: 4px;
+                border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+                background: var(--vscode-editor-background);
+                color: var(--vscode-editor-foreground, var(--vscode-foreground));
+                font-family: var(--snippet-font-family, var(--vscode-editor-font-family, monospace));
+                font-size: var(--snippet-font-size, var(--vscode-editor-font-size, 13px));
+                line-height: var(--snippet-line-height, 1.35);
+            }
+
+            .code-line {
+                display: flex;
+                align-items: center;
+                width: max-content;
+                min-width: 100%;
+                min-height: var(--snippet-line-height, 1.35em);
+            }
+
+            .code-line.mark {
+                background: var(--vscode-editor-lineHighlightBackground);
+            }
+
+            .ln {
+                flex: none;
+                width: 4em;
+                padding: 0 12px 0 6px;
+                text-align: right;
+                color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
+                user-select: none;
+            }
+
+            .src {
+                flex: none;
+                white-space: pre;
+                color: var(--vscode-editor-foreground, var(--vscode-foreground));
+                user-select: text;
+            }
+
+            .src::selection,
+            .src *::selection {
+                background: var(--vscode-editor-selectionBackground);
+                color: var(--vscode-editor-selectionForeground, inherit);
             }
 
             /* --- SKELETON LOADING ANIMATION --- */
@@ -361,6 +383,12 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
             .skeleton-line:last-child { margin-bottom: 0; }
             .skeleton-line.short { width: 60%; }
             .skeleton-line.medium { width: 80%; }
+            .skeleton-code {
+                height: 92px;
+                border-radius: 4px;
+                border: 1px solid var(--border);
+                background: color-mix(in srgb, var(--text) 6%, transparent);
+            }
 
             @keyframes skeleton-shimmer {
                 0% { background-position: 200% 0; }
@@ -430,61 +458,19 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
                 <p id="error-message"></p>
             </div>
 
-            <main id="sections-container" class="content">
-                <!-- Section 1: What is this vulnerability? -->
-                <section class="info-section" id="section-1">
-                    <div class="section-heading">
-                        <span class="section-number critical">1</span>
-                        <span class="section-title">What is this vulnerability?</span>
-                    </div>
-                    <div class="section-box" id="section-1-body">
-                        <div class="skeleton-line"></div>
-                        <div class="skeleton-line medium"></div>
-                        <div class="skeleton-line short"></div>
-                    </div>
-                </section>
-
-                <!-- Section 2: Why is it dangerous? -->
-                <section class="info-section" id="section-2">
-                    <div class="section-heading">
-                        <span class="section-number high">2</span>
-                        <span class="section-title">Why is it dangerous?</span>
-                    </div>
-                    <div class="section-box" id="section-2-body">
-                        <div class="skeleton-line"></div>
-                        <div class="skeleton-line medium"></div>
-                        <div class="skeleton-line short"></div>
-                    </div>
-                </section>
-
-                <!-- Section 3: Where should you look? -->
-                <section class="info-section" id="section-3">
-                    <div class="section-heading">
-                        <span class="section-number medium">3</span>
-                        <span class="section-title">Where should you look?</span>
-                    </div>
-                    <div class="section-box" id="section-3-body">
-                        <div class="skeleton-line"></div>
-                        <div class="skeleton-line medium"></div>
-                        <div class="skeleton-line short"></div>
-                    </div>
-                </section>
+            <main id="explanation" class="content">
+                <div class="skeleton-line medium"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line short"></div>
+                <div class="skeleton-code"></div>
             </main>
 
             <div class="footer">
-                Ariadne provides conceptual guidance only. Always conduct thorough code review and testing to validate findings in your specific context.
+                The examples are patterns to study, not a patch for your file. Check the questions against your own code before you change it.
             </div>
         </div>
 
         <script>
-            const vscode = acquireVsCodeApi();
-
-            function escapeHtml(str) {
-                const div = document.createElement('div');
-                div.textContent = str;
-                return div.innerHTML;
-            }
-
             const requestId = document.body.dataset.requestId || '';
 
             window.addEventListener('message', (event) => {
@@ -493,17 +479,12 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
                     return;
                 }
 
-                if (msg.type === 'llm-result') {
-                    // Populate the 3 sections from the FeedbackFinding
-                    const f = msg.finding;
-                    document.getElementById('section-1-body').innerHTML = '<p>' + escapeHtml(f.vulnerability) + '</p>';
-                    document.getElementById('section-2-body').innerHTML = '<p>' + escapeHtml(f.impact) + '</p>';
-                    document.getElementById('section-3-body').innerHTML = '<p>' + escapeHtml(f.suggestion) + '</p>';
+                if (msg.type === 'llm-result' && typeof msg.html === 'string') {
+                    document.getElementById('explanation').innerHTML = msg.html;
                 }
 
                 if (msg.type === 'llm-error') {
-                    // Hide sections and show error
-                    document.getElementById('sections-container').style.display = 'none';
+                    document.getElementById('explanation').style.display = 'none';
                     const errorBox = document.getElementById('error-box');
                     errorBox.classList.add('visible');
                     document.getElementById('error-message').textContent = msg.message;

@@ -6,15 +6,16 @@
  * data package for initializing the feedback panel.
  */
 
+import type { LLMExplanation } from '../llm_request/requestTypes.js';
 import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackPanelState } from '../views/feedbackPanel.js';
 
 /**
  * The complete feedback finding sent to the WebView for rendering.
- * Combines vulnerability metadata (from SAST/mock input) with
- * LLM-generated educational text (vulnerability, impact, suggestion).
+ * Combines vulnerability metadata with the model's explanation.
+ * The code fields are made-up examples, not a patch for this finding.
  */
-export interface FeedbackFinding {
+export interface FeedbackFinding extends LLMExplanation {
 	/** Vulnerability type/name (e.g. "SQL Injection") */
 	type: string;
 	/** CWE identifier (e.g. "CWE-89") */
@@ -27,12 +28,6 @@ export interface FeedbackFinding {
 	path: string;
 	/** Line number of the finding */
 	line: number;
-	/** LLM-generated: what this vulnerability is */
-	vulnerability: string;
-	/** LLM-generated: why this vulnerability is dangerous */
-	impact: string;
-	/** LLM-generated: where the student should look */
-	suggestion: string;
 }
 
 /**

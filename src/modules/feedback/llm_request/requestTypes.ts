@@ -32,16 +32,29 @@ export interface AriadneLLMRequestBody {
 	messages: LLMMessage[];
 }
 
+/** A made-up example. Not the student's file or server. */
+export interface ExplanationSnippet {
+	caption: string;
+	code: string;
+	/** 1-based line that shows the mistake or the injected value. */
+	line?: number;
+}
+
 /**
- * The parsed 3-field educational response from the LLM.
- * The system prompt instructs the LLM to return a JSON object
- * with exactly these three fields.
+ * Educational explanation returned by the model.
+ * Examples illustrate the pattern. They are not a patch for the finding.
  */
-export interface LLMThreeSectionResponse {
-	/** What this vulnerability is (plain-language explanation) */
-	vulnerability: string;
-	/** Why this vulnerability is dangerous (real-world impact) */
-	impact: string;
-	/** Where the student should look in their code */
-	suggestion: string;
+export interface LLMExplanation {
+	/** One sentence naming the bug. */
+	summary: string;
+	/** At most two sentences on the concrete harm. */
+	why: string;
+	/** A made-up method with the same mistake. */
+	mistake: ExplanationSnippet;
+	/** A made-up request or payload that would reach that mistake. */
+	attack: ExplanationSnippet;
+	/** A safer shape of that same made-up method. */
+	safer: ExplanationSnippet;
+	/** Questions about the student's own file, then the concept to study. */
+	checks: string[];
 }

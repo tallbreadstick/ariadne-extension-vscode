@@ -45,7 +45,7 @@ export class CopilotClientManager {
 		}
 	}
 
-	/** Starts the client in the background so the first Ask Ariadne is faster. */
+	/** Starts the client in the background so the first explanation is faster. */
 	prewarm(options: CopilotRuntimeOptions): void {
 		void this.getClient(options).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);

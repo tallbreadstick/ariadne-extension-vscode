@@ -19,7 +19,7 @@
  *
  *   [Open in audit graph →](command:ariadne-extension-vscode.showFindingInAudit)
  *
- *   [Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel)
+ *   [Explain Vulnerability →](command:ariadne-extension-vscode.openFeedbackPanel)
  */
 
 import * as vscode from "vscode";
@@ -68,7 +68,7 @@ const REFERENCE_COLOR = "#CE9178"; // matches --reference in activeVulnerabiliti
 /**
  * Builds the MarkdownString for the hover popup from a single finding.
  *
- * isTrusted  → command:// links render (Ask Ariadne button)
+ * isTrusted  → command:// links render (Explain Vulnerability button)
  * supportHtml → <span style="color:…"> renders (colour badges, taint path)
  *
  * background-color is sanitised by VS Code in hover context, so severity
@@ -110,7 +110,7 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
     `*[Open in audit graph →](command:ariadne-extension-vscode.showFindingInAudit?${auditCommandQuery(finding)})*\n\n`,
   );
 
-  // ── Ask Ariadne CTA — italic link ────────────────────────────────────
+  // ── Explain Vulnerability CTA — italic link ──────────────────────────
   // The query is this finding's artifact. startLine is 0-based; the
   // vulnerability list uses the 1-based engine line.
   const commandArgs = askAriadneCommandQuery({
@@ -119,7 +119,7 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
     filePath: finding.filePath,
     line: finding.startLine + 1,
   });
-  md.appendMarkdown(`*[Ask Ariadne →](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs})*`);
+  md.appendMarkdown(`*[Explain Vulnerability →](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs})*`);
 
   return md;
 }

@@ -1,8 +1,10 @@
 /**
- * Data audit panel. The core sends one graph for the whole program:
- * every binding (variable, field, literal, environment value, condition,
- * actual and formal parameter, return value, object) and every movement
- * between two bindings, with the moment it happens.
+ * Data audit panel. The graph draws the active vulnerability paths.
+ * Bindings keep their kinds (variable, literal, field, and the rest)
+ * and movements keep theirs (reference copy, bitwise copy, derive,
+ * member). A red ring marks a source or a sink, and the name color is
+ * the severity. A condition is drawn only when a vulnerable step
+ * touches it.
  *
  * Each scope (method, constructor, field block, runtime) is a frame.
  * A movement that depends on a condition is drawn through that
@@ -55,6 +57,8 @@ export interface BindingView {
 export interface GuardView {
 	condition: string;
 	branch: string;
+	/** Binding name, kept when the condition itself is not drawn. */
+	label?: string;
 }
 
 export interface MovementView {
@@ -102,6 +106,83 @@ export interface AuditGraph {
 	nodes: BindingView[];
 	edges: MovementView[];
 	issues?: IssueView[];
+}
+
+const HTTP_ENTRY = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'ANY', 'HTTP'];
+
+function isHttpEntry(entry: string | undefined): boolean {
+	if (!entry) return false;
+	const cut = entry.indexOf(' ');
+	if (cut < 1) return false;
+	return HTTP_ENTRY.indexOf(entry.slice(0, cut)) >= 0 && entry.slice(cut + 1).trim().length > 0;
+}
+
+/** Bindings and movements that sit on an active vulnerability. */
+export function retainActiveAudit(payload: DataAuditPayload): DataAuditPayload {
+	const graph = payload.graph;
+	const issues = graph.issues || [];
+	const nodes = new Set<string>();
+	const edges = new Set<string>();
+	if (issues.length === 0) {
+		return {
+			...payload,
+			graph: {
+				...graph,
+				nodes: [],
+				edges: [],
+				scopes: graph.scopes.filter((scope) => isHttpEntry(scope.entry)),
+			},
+		};
+	}
+	for (const issue of issues) {
+		for (const id of issue.nodes || []) nodes.add(id);
+		for (const id of issue.ends || []) nodes.add(id);
+		if (issue.focus) nodes.add(issue.focus);
+		for (const id of issue.edges || []) edges.add(id);
+	}
+	for (const edge of graph.edges) {
+		if (edge.kind === 'member' && nodes.has(edge.from) && nodes.has(edge.to)) edges.add(edge.id);
+	}
+	const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+	const endpoints = new Set<string>();
+	for (const edge of graph.edges) {
+		if (!edges.has(edge.id)) continue;
+		endpoints.add(edge.from);
+		endpoints.add(edge.to);
+	}
+	const focuses = new Set(issues.map((issue) => issue.focus).filter(Boolean));
+	for (const id of Array.from(nodes)) {
+		const node = byId.get(id);
+		if (!node || node.kind !== 'condition') continue;
+		if (endpoints.has(id) || focuses.has(id)) continue;
+		nodes.delete(id);
+	}
+	for (const edge of graph.edges) {
+		if (edges.has(edge.id) && (!nodes.has(edge.from) || !nodes.has(edge.to))) edges.delete(edge.id);
+	}
+	const keptNodes = graph.nodes.filter((node) => nodes.has(node.id));
+	const keptEdges = graph.edges
+		.filter((edge) => edges.has(edge.id))
+		.map((edge) => ({
+			...edge,
+			reads: (edge.reads || []).filter((id) => edges.has(id)),
+			guards: (edge.guards || []).map((guard) => ({
+				...guard,
+				label: guard.label || (byId.get(guard.condition) && byId.get(guard.condition)!.label) || undefined,
+			})),
+		}));
+	const scopesUsed = new Set<string>();
+	for (const node of keptNodes) scopesUsed.add(node.scope);
+	for (const edge of keptEdges) scopesUsed.add(edge.scope);
+	return {
+		...payload,
+		graph: {
+			...graph,
+			nodes: keptNodes,
+			edges: keptEdges,
+			scopes: graph.scopes.filter((scope) => scopesUsed.has(scope.id) || isHttpEntry(scope.entry)),
+		},
+	};
 }
 
 export interface DataAuditPayload {
@@ -309,6 +390,7 @@ export function buildDataAuditHtml(
 			font-family: var(--vscode-editor-font-family, monospace);
 		}
 		.rail-note { padding: 0 8px 8px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+		.path-empty { padding: 28px 32px; max-width: 460px; color: var(--vscode-descriptionForeground); font-size: 13px; line-height: 1.45; }
 		.stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 		.filter {
 			position: absolute;
@@ -801,7 +883,34 @@ export function buildDataAuditHtml(
 			if (!list) { list = []; map.set(key, list); }
 			list.push(value);
 		}
+		const active = { nodes: new Set(), edges: new Set() };
+		for (const issue of G.issues || []) {
+			for (const id of issue.nodes || []) if (id) active.nodes.add(id);
+			for (const id of issue.ends || []) if (id) active.nodes.add(id);
+			if (issue.focus) active.nodes.add(issue.focus);
+			for (const id of issue.edges || []) if (id) active.edges.add(id);
+		}
 		for (const e of G.edges) {
+			if (e.kind === 'member' && active.nodes.has(e.from) && active.nodes.has(e.to)) active.edges.add(e.id);
+		}
+		const touched = new Set();
+		for (const e of G.edges) {
+			if (!active.edges.has(e.id)) continue;
+			touched.add(e.from);
+			touched.add(e.to);
+		}
+		const focusIds = new Set();
+		for (const issue of G.issues || []) if (issue.focus) focusIds.add(issue.focus);
+		for (const id of Array.from(active.nodes)) {
+			const n = nodeById.get(id);
+			if (!n || n.kind !== 'condition' || touched.has(id) || focusIds.has(id)) continue;
+			active.nodes.delete(id);
+		}
+		for (const e of G.edges) {
+			if (active.edges.has(e.id) && (!active.nodes.has(e.from) || !active.nodes.has(e.to))) active.edges.delete(e.id);
+		}
+		for (const e of G.edges) {
+			if (!active.edges.has(e.id)) continue;
 			push(outEdges, e.from, e);
 			push(inEdges, e.to, e);
 			for (const g of e.guards || []) push(guarded, g.condition, e);
@@ -861,6 +970,13 @@ export function buildDataAuditHtml(
 		function esc(s) {
 			return String(s == null ? '' : s)
 				.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+		}
+		function nodeEl(id) {
+			const list = document.querySelectorAll('.node');
+			for (let i = 0; i < list.length; i++) {
+				if (list[i].getAttribute('data-node-id') === id) return list[i];
+			}
+			return null;
 		}
 		function clip(s, n) {
 			const t = String(s || '');
@@ -970,10 +1086,12 @@ export function buildDataAuditHtml(
 		}
 
 		function visibleFrames() {
-			const all = new Set(G.nodes.map(frameOf));
+			const all = new Set();
+			for (const n of G.nodes) if (active.nodes.has(n.id)) all.add(frameOf(n));
 			if (!focusScope) return all;
 			const keep = new Set([focusScope]);
 			for (const e of G.edges) {
+				if (!active.edges.has(e.id)) continue;
 				const from = nodeById.get(e.from);
 				const to = nodeById.get(e.to);
 				if (!from || !to) continue;
@@ -1004,6 +1122,7 @@ export function buildDataAuditHtml(
 				queue.push(id);
 			}
 			for (const e of G.edges) {
+				if (!active.edges.has(e.id)) continue;
 				const from = nodeById.get(e.from);
 				const to = nodeById.get(e.to);
 				if (!from || !to) continue;
@@ -1016,18 +1135,28 @@ export function buildDataAuditHtml(
 			}
 			while (queue.length) {
 				const id = queue.pop();
-				for (const e of outEdges.get(id) || []) consider(e.to);
-				for (const e of inEdges.get(id) || []) consider(e.from);
+				for (const e of outEdges.get(id) || []) if (active.edges.has(e.id)) consider(e.to);
+				for (const e of inEdges.get(id) || []) if (active.edges.has(e.id)) consider(e.from);
 			}
 			return related;
 		}
 
 		function layoutAll() {
 			const frames = visibleFrames();
-			const nodes = G.nodes.filter((n) => frames.has(frameOf(n)));
+			const seen = new Set();
+			const nodes = [];
+			for (const n of G.nodes) {
+				if (!active.nodes.has(n.id) || seen.has(n.id) || !frames.has(frameOf(n))) continue;
+				seen.add(n.id);
+				nodes.push(n);
+			}
 			if (focusScope) {
 				const related = relatedRuntimeNodes(frames);
-				for (const n of G.nodes) if (related.has(n.id)) nodes.push(n);
+				for (const n of G.nodes) {
+					if (!related.has(n.id) || !active.nodes.has(n.id) || seen.has(n.id)) continue;
+					seen.add(n.id);
+					nodes.push(n);
+				}
 			}
 			const sizes = {};
 			const firstStep = {};
@@ -1050,7 +1179,7 @@ export function buildDataAuditHtml(
 			const framePairs = [];
 			const sameFrame = (a, b) => frameOf(nodeById.get(a)) === frameOf(nodeById.get(b));
 			for (const e of G.edges) {
-				if (!(e.from in sizes) || !(e.to in sizes) || structural(e)) continue;
+				if (!active.edges.has(e.id) || !(e.from in sizes) || !(e.to in sizes) || structural(e)) continue;
 				// A condition is placed before what it guards, but not after
 				// what flows through it: values computed after the test would
 				// otherwise form a cycle through the diamond.
@@ -1120,15 +1249,10 @@ export function buildDataAuditHtml(
 
 		function ring(n, b) {
 			const ended = n.role === 'end' || (!n.role && n.alert);
-			const along = n.role === 'path';
-			if (!ended && !along && (!n.marks || !n.marks.length)) return '';
+			if (!ended) return '';
 			const pad = 4;
 			const x = b.x - pad, y = b.y - pad, w = b.w + pad * 2, h = b.h + pad * 2;
-			const red = ended || along;
-			const stroke = red
-				? ALERT
-				: 'var(--vscode-editorWarning-foreground, #d18616)';
-			const paint = ' fill="none" stroke="' + stroke + '" stroke-width="1.5"' + (ended ? '' : ' stroke-dasharray="5 3"');
+			const paint = ' fill="none" stroke="' + ALERT + '" stroke-width="1.6"';
 			if (n.kind === 'condition') {
 				const cx = x + w / 2, cy = y + h / 2;
 				return '<polygon' + paint + ' points="' + cx + ',' + y + ' ' + (x + w) + ',' + cy + ' ' + cx + ',' + (y + h) + ' ' + x + ',' + cy + '"/>';
@@ -1160,7 +1284,7 @@ export function buildDataAuditHtml(
 				return '<polygon' + paint + ' points="' + pts.map((p) => p.join(',')).join(' ') + '"/>';
 			}
 			if (n.kind === 'return') {
-				return '<rect' + paint + ' x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="' + h / 2 + '"/>';
+				return '<rect' + paint + ' x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="' + (h / 2) + '"/>';
 			}
 			if (n.kind === 'object') {
 				return '<rect' + paint + ' x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1"/>';
@@ -1241,9 +1365,13 @@ export function buildDataAuditHtml(
 			setHot(null);
 			laid = layoutAll();
 			const pos = laid.pos;
+			if (!Object.keys(pos).length) {
+				document.getElementById('viewport').innerHTML = '<div class="path-empty">No active vulnerability on this view. The graph draws only the steps from a source to an unsecure exit.</div>';
+				return;
+			}
 			const segs = [];
 			for (const e of G.edges) {
-				if (!pos[e.from] || !pos[e.to]) continue;
+				if (!active.edges.has(e.id) || !pos[e.from] || !pos[e.to]) continue;
 				const g = innerGuard(e);
 				const d = g && pos[g.condition];
 				const a = pos[e.from];
@@ -1291,11 +1419,7 @@ export function buildDataAuditHtml(
 				if (p3.x <= p0.x + 14 && !bDiamond) p3 = port(b, 'right', Math.max(0, iList.indexOf(s)), iList.length, false);
 				const c = curve(a, b, p0, p3, s.a === s.b);
 				const e = s.e;
-				const stroke = e.taint === 'alert'
-					? ALERT
-					: e.taint === 'flow'
-						? 'var(--vscode-editorWarning-foreground, #d18616)'
-						: EDGE;
+				const stroke = e.taint === 'alert' || e.taint === 'flow' ? ALERT : EDGE;
 				const dash = e.kind === 'member' ? ' stroke-dasharray="2 3"' : e.expanded ? ' stroke-dasharray="7 4"' : '';
 				const marker = s.last ? ' marker-end="' + markerFor(e.kind) + '"' : '';
 				const attrs = ' data-edge="' + e.id + '" data-from="' + esc(e.from) + '" data-to="' + esc(e.to) + '"' + (s.via ? ' data-via="' + esc(s.via) + '"' : '');
@@ -1307,12 +1431,12 @@ export function buildDataAuditHtml(
 				}
 				if (s.tag) {
 					const p = spot(c, 0.86);
-					labels += '<text class="edge-label"' + attrs + ' x="' + p.x + '" y="' + p.y + '" text-anchor="middle" fill="' + PAINT.condition + '" font-weight="700">' + esc(clip(s.tag, 18)) + '</text>';
+					labels += '<text class="edge-label"' + attrs + ' x="' + p.x + '" y="' + p.y + '" text-anchor="middle" fill="' + INK + '" font-weight="700">' + esc(clip(s.tag, 18)) + '</text>';
 				}
 				if (s.branch) {
 					for (const t of [0.14, 0.86]) {
 						const p = spot(c, t);
-						labels += '<text class="edge-label"' + attrs + ' x="' + p.x + '" y="' + p.y + '" text-anchor="middle" fill="' + PAINT.condition + '" font-weight="700">' + esc(clip(s.branch, 18)) + '</text>';
+						labels += '<text class="edge-label"' + attrs + ' x="' + p.x + '" y="' + p.y + '" text-anchor="middle" fill="' + INK + '" font-weight="700">' + esc(clip(s.branch, 18)) + '</text>';
 					}
 				}
 			}
@@ -1461,18 +1585,19 @@ export function buildDataAuditHtml(
 			applyTrace();
 		}
 
-		function traceEdge(id) {
-			const e = edgeById.get(id);
-			if (!e) return;
-			trace = { origin: null, edge: id, dir: 'edge', nodes: new Set([e.from, e.to]), edges: new Set([id]), implicit: new Set() };
-			for (const r of e.reads || []) {
-				const w = edgeById.get(r);
-				if (!w) continue;
-				trace.edges.add(r);
-				trace.nodes.add(w.from);
+		function focusEdge(edgeId, dest) {
+			const e = edgeById.get(edgeId);
+			const nodes = new Set();
+			const edges = new Set();
+			if (e) {
+				nodes.add(e.from);
+				nodes.add(e.to);
+				edges.add(e.id);
+				const g = innerGuard(e);
+				if (g && g.condition) nodes.add(g.condition);
 			}
-			applyTrace();
-			revealNode(e.to);
+			if (dest) nodes.add(dest);
+			trace = { origin: dest || null, edge: edgeId, dir: 'edge', nodes: nodes, edges: edges, implicit: new Set() };
 		}
 
 		function applyTrace() {
@@ -1492,9 +1617,16 @@ export function buildDataAuditHtml(
 			if (laid) renderRail();
 			const status = document.getElementById('status');
 			if (!trace) { status.innerHTML = ''; return; }
-			const what = trace.origin
-				? (trace.dir === 'forward' ? 'Where ' : trace.dir === 'backward' ? 'What feeds ' : 'Everything touching ') + nodeById.get(trace.origin).label + (trace.dir === 'forward' ? ' can go' : '')
-				: 'Movement ' + trace.edge + ' and the writes it reads';
+			let what = 'This step';
+			if (trace.dir === 'edge') {
+				const e = edgeById.get(trace.edge);
+				const from = e && nodeById.get(e.from);
+				const to = e && nodeById.get(e.to);
+				what = (from ? from.label : 'binding') + ' → ' + (to ? to.label : 'binding');
+			} else if (trace.origin) {
+				const label = nodeById.get(trace.origin).label;
+				what = trace.dir === 'forward' ? 'Where ' + label + ' can go' : trace.dir === 'backward' ? 'What feeds ' + label : 'Everything touching ' + label;
+			}
 			const hidden = Array.from(trace.nodes).filter((id) => !laid.pos[id]).length;
 			status.innerHTML = esc(what) + '  ·  ' + trace.nodes.size + ' bindings, ' + trace.edges.size + ' movements'
 				+ (hidden ? '  ·  ' + hidden + ' outside this view' : '')
@@ -1523,7 +1655,8 @@ export function buildDataAuditHtml(
 			let html = left + ' <span class="verb">' + esc(verb) + '</span>' + tail;
 			const when = (e.guards || []).map((g) => {
 				const c = nodeById.get(g.condition);
-				return ident(c ? c.label : g.condition) + ' is ' + esc(g.branch);
+				const name = (c && c.label) || g.label || g.condition;
+				return ident(name) + ' is ' + esc(g.branch);
 			});
 			if (when.length) html += ', when ' + when.join(' and ');
 			if (e.expanded) html += ' (expanded)';
@@ -1617,8 +1750,8 @@ export function buildDataAuditHtml(
 			let shown = '';
 			for (const e of sorted) {
 				const other = inbound ? e.from : e.to;
-				const tone = e.taint === 'alert' ? ' alert' : e.taint === 'flow' ? ' flow' : '';
-				html += '<button type="button" class="move' + tone + '" data-goto="' + esc(other) + '"><span class="move-text">' + movementHtml(e) + '</span></button>';
+				const tone = e.taint === 'alert' || e.taint === 'flow' ? ' alert' : '';
+				html += '<button type="button" class="move' + tone + '" data-goto="' + esc(other) + '" data-edge="' + esc(e.id) + '"><span class="move-text">' + movementHtml(e) + '</span></button>';
 				const loc = (e.file || '') + ':' + (e.line || 0);
 				const same = node.file === e.file && node.line === e.line;
 				if (e.snippet && !same && loc !== shown) {
@@ -1713,7 +1846,7 @@ export function buildDataAuditHtml(
 				const frame = frameOf(n);
 				setFocus(frame === OUT ? null : frame);
 			}
-			const el = document.querySelector('.node[data-node-id="' + id + '"]');
+			const el = nodeEl(id);
 			if (!el) return;
 			revealNode(id);
 			setHot(id);
@@ -1787,20 +1920,20 @@ export function buildDataAuditHtml(
 		}
 
 		function renderHeader() {
-			const files = new Set(G.nodes.map((n) => n.file).filter(Boolean));
+			const files = new Set();
+			for (const n of G.nodes) if (active.nodes.has(n.id) && n.file) files.add(n.file);
 			const counts = {};
 			for (const n of G.nodes) counts[n.kind] = (counts[n.kind] || 0) + 1;
-			document.getElementById('title').textContent = focusScope ? scopeTitle(focusScope) : 'Whole program';
+			document.getElementById('title').textContent = focusScope ? scopeTitle(focusScope) : 'Active vulnerabilities';
 			document.getElementById('meta').textContent = [
-				G.scopes.length + ' scopes',
-				G.nodes.length + ' bindings',
-				G.edges.length + ' movements',
+				active.nodes.size + ' bindings',
+				active.edges.size + ' movements',
 				files.size + ' files',
 			].join('  ·  ');
 		}
 
 		function legendNode(kind, extra) {
-			const n = { kind, label: '', subtitle: '', expanded: extra === 'expanded', origin: extra === 'library' ? 'library' : 'source' };
+			const n = { kind: kind, label: '', subtitle: '', expanded: extra === 'expanded', origin: extra === 'library' ? 'library' : 'source' };
 			const b = kind === 'condition' ? { x: 2, y: 1, w: 24, h: 14 } : { x: 2, y: 2, w: 24, h: 12 };
 			return '<svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true">' + shapeOf(n, b) + '</svg>';
 		}
@@ -1815,26 +1948,22 @@ export function buildDataAuditHtml(
 				+ '<marker id="lg-derive" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M 1 1.5 L 11 6 L 1 10.5 z" fill="' + BG + '" stroke="' + EDGE + '" stroke-width="1.4"/></marker>'
 				+ '<marker id="lg-member" viewBox="0 0 14 10" refX="13" refY="5" markerWidth="11" markerHeight="8" orient="auto"><path d="M 1 5 L 7 1 L 13 5 L 7 9 z" fill="' + BG + '" stroke="' + EDGE + '" stroke-width="1.3"/></marker>'
 				+ '</defs></svg>';
+			const sink = '<svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="' + ALERT + '" stroke-width="1.6"/></svg>';
 			const items = Object.keys(KIND_NAMES).map((k) => '<span>' + legendNode(k) + esc(KIND_NAMES[k]) + '</span>');
 			items.push('<span>' + legendNode('variable', 'expanded') + 'Expanded</span>');
 			items.push('<span>' + legendNode('return', 'library') + 'Library</span>');
 			items.push('<span>' + legendEdge('reference') + 'Reference copy</span>');
 			items.push('<span>' + legendEdge('bitwise') + 'Bitwise copy</span>');
-			items.push('<span>' + legendEdge('derive') + 'Derived (operator)</span>');
-			items.push('<span>' + legendEdge('member', '2 3') + 'Member of</span>');
+			items.push('<span>' + legendEdge('derive') + 'Derived</span>');
+			items.push('<span>' + legendEdge('member', '2 3') + 'Member</span>');
 			items.push('<span>' + legendEdge('reference', '7 4') + 'Expanded movement</span>');
-			items.push('<span><svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="var(--vscode-editorWarning-foreground, #d18616)" stroke-width="1.5" stroke-dasharray="3 2"/></svg>Sensitive</span>');
-			items.push('<span><svg width="40" height="12" viewBox="0 0 40 12" aria-hidden="true"><path d="M 2 6 L 34 6" stroke="var(--vscode-editorWarning-foreground, #d18616)" stroke-width="1.7"/></svg>Tainted flow</span>');
+			items.push('<span>' + sink + 'Source or sink</span>');
+			items.push('<span><svg width="40" height="12" viewBox="0 0 40 12" aria-hidden="true"><path d="M 2 6 L 34 6" stroke="' + ALERT + '" stroke-width="1.7"/></svg>Unsecure step</span>');
 			items.push('<span style="color:' + SEV_COLOR.critical + ';font-weight:700">Critical</span>');
 			items.push('<span style="color:' + SEV_COLOR.high + ';font-weight:700">High</span>');
 			items.push('<span style="color:' + SEV_COLOR.medium + ';font-weight:700">Medium</span>');
 			items.push('<span style="color:' + SEV_COLOR.low + ';font-weight:700">Low</span>');
-			items.push('<span><svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="' + ALERT + '" stroke-width="1.6"/></svg>Source or sink</span>');
-			items.push('<span><svg width="28" height="16" viewBox="0 0 28 16" aria-hidden="true"><rect x="1.5" y="1.5" width="25" height="13" rx="4" fill="none" stroke="' + ALERT + '" stroke-width="1.6" stroke-dasharray="3 2"/></svg>On the unsecure path</span>');
-			items.push('<span>Click a binding to inspect it · double-click opens source</span>');
-			items.push('<span>Drag with the mouse, or middle-click and drag, to move around</span>');
-			items.push('<span>Scroll to zoom in and out</span>');
-			items.push('<span>Ctrl + scroll to move up and down</span>');
+			items.push('<span>Click an edge in the list to follow that step</span>');
 			document.getElementById('legend').innerHTML = defs + items.join('');
 		}
 
@@ -2191,7 +2320,12 @@ export function buildDataAuditHtml(
 			}
 			const go = event.target.closest('[data-goto]');
 			if (go) {
-				travelTo(go.getAttribute('data-goto'));
+				const dest = go.getAttribute('data-goto');
+				const edge = go.getAttribute('data-edge');
+				if (edge) focusEdge(edge, dest);
+				else trace = null;
+				travelTo(dest);
+				if (edge) applyTrace();
 				return;
 			}
 			const line = event.target.closest('.code-line');
@@ -2217,7 +2351,7 @@ export function buildDataAuditHtml(
 		});
 		document.getElementById('viewport').addEventListener('scroll', () => {
 			if (hover.style.display !== 'block' || !hotId) return;
-			const el = document.querySelector('.node[data-node-id="' + hotId + '"]');
+			const el = nodeEl(hotId);
 			if (el) placeHover(el);
 		});
 

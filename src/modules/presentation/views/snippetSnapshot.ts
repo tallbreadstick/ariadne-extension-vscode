@@ -453,6 +453,51 @@ function fill(kinds: Kind[], start: number, end: number, kind: Kind): void {
 	}
 }
 
+/** Same gutter, token colors, and line layout as an audit-graph code snippet. */
+export function renderExampleCode(code: string, markLine?: number): string {
+	const palette = loadPalette();
+	const lines = code.replace(/\r\n/g, '\n').split('\n').slice(0, 12);
+	while (lines.length > 1 && lines[lines.length - 1].trim() === '') {
+		lines.pop();
+	}
+	const rows = lines.map((text, index) => {
+		const kinds: Kind[] = Array.from({ length: text.length }, () => 'plain');
+		applyFallback(text, kinds);
+		const line = String(index + 1);
+		const marked = markLine === index + 1 ? ' mark' : '';
+		return `<div class="code-line${marked}" data-line="${line}"><span class="ln">${line}</span><span class="src">${colorize(text, kinds, palette)}</span></div>`;
+	}).join('');
+	return `<div class="code">${rows}</div>`;
+}
+
+function colorize(text: string, kinds: Kind[], palette: Palette): string {
+	let html = '';
+	let i = 0;
+	while (i < text.length) {
+		const kind = kinds[i];
+		let j = i + 1;
+		while (j < text.length && kinds[j] === kind) {
+			j += 1;
+		}
+		const chunk = esc(text.slice(i, j));
+		const color = kind === 'plain' ? undefined : safeColor(palette[kind]);
+		html += color ? `<span style="color:${color}">${chunk}</span>` : chunk;
+		i = j;
+	}
+	return html;
+}
+
+function safeColor(color: string): string | undefined {
+	const trimmed = color.trim();
+	if (/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed)) {
+		return trimmed;
+	}
+	if (/^(?:rgb|hsl)a?\([^)]*\)$/.test(trimmed) && !/[;"'<>]/.test(trimmed)) {
+		return trimmed;
+	}
+	return undefined;
+}
+
 function parseRow(raw: string): { marked: boolean; line: number; text: string } | undefined {
 	const match = /^([> ])\s+(\d+)\s{2}(.*)$/.exec(raw);
 	if (!match) {

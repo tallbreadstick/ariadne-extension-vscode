@@ -24,6 +24,7 @@ import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presenta
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
 import {
 	buildTreeViewHtml,
+	retainActiveAudit,
 	type AuditFocus,
 	type TreeViewPayload,
 } from './modules/presentation/views/treeViewPanel.js';
@@ -73,7 +74,8 @@ import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js'
 import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
-import { parseThreeSectionResponse } from './modules/feedback/llm_request/parseResponse.js';
+import { parseExplanation } from './modules/feedback/llm_request/parseResponse.js';
+import { renderExplanation } from './modules/feedback/views/renderExplanation.js';
 import { sanitizeLlmError } from './modules/feedback/llm_request/sanitizeError.js';
 import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
@@ -755,6 +757,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					? undefined
 					: String(msg.key);
 				void store.saveExpandedVulnKey(key);
+			}
+			if (msg.type === 'explain-vulnerability' && msg.cwe && msg.title && msg.filePath && msg.line) {
+				void vscode.commands.executeCommand('ariadne-extension-vscode.openFeedbackPanel', {
+					cwe: String(msg.cwe),
+					title: String(msg.title),
+					filePath: String(msg.filePath),
+					line: Number(msg.line),
+				});
 			}
 			if (msg.type === 'toggle-tree-view') {
 				showTreeViewPanel();
@@ -1515,7 +1525,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		session.onTreeView((payload) => {
-			latestTreeView = payload;
+			latestTreeView = retainActiveAudit(payload);
 			refreshTreeViewPanel();
 		}),
 	);
@@ -2191,7 +2201,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				vscode.window.showWarningMessage(
 					latestVulnerabilities.length === 0
 						? 'Ariadne: No vulnerability data available yet. Wait for the engine to finish its first analysis.'
-						: 'Ariadne: Open Ask Ariadne from the vulnerability you want explained.',
+						: 'Ariadne: Open Explain Vulnerability from the finding you want explained.',
 				);
 				return;
 			}
@@ -2239,7 +2249,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				panelOpen = false;
 			});
 			panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId);
-			const deliver = (message: { type: string; requestId: string; finding?: FeedbackFinding; message?: string }): void => {
+			const deliver = (message: { type: string; requestId: string; html?: string; message?: string }): void => {
 				if (panelOpen) {
 					void panel.webview.postMessage(message);
 				}
@@ -2256,8 +2266,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					...copilotRuntimeOptions(context, gitHubToken),
 					clientManager: copilotManager,
 				});
-				const sections = parseThreeSectionResponse(rawResponse);
-
+				const sections = parseExplanation(rawResponse);
 				const finding: FeedbackFinding = {
 					type: vuln.title,
 					cwe: vuln.cwe,
@@ -2268,7 +2277,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					...sections,
 				};
 
-				deliver({ type: 'llm-result', requestId, finding });
+				deliver({ type: 'llm-result', requestId, html: renderExplanation(finding) });
 			} catch (error: unknown) {
 				const rawMessage =
 					error instanceof Error ? error.message : 'Unknown error';

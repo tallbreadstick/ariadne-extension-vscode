@@ -68,7 +68,7 @@
       },
       {
         "command": "ariadne-extension-vscode.openFeedbackPanel",
-        "title": "Ariadne: Ask Ariadne"
+        "title": "Ariadne: Explain Vulnerability"
       },
       {
         "command": "ariadne-extension-vscode.analyze",

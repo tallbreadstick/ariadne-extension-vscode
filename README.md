@@ -60,20 +60,20 @@ Open the **Ariadne** area in the bottom panel bar:
 After a scan completes:
 
 - **Highlights** — Vulnerable lines are marked with a severity-colored background and an end-of-line label.
-- **Hover** — Point at highlighted code for a short summary and a link to **Ask Ariadne**.
+- **Hover** — Point at highlighted code for a short summary and a link to **Explain Vulnerability**.
 - **Status bar** — A summary of active issues appears in the VS Code status bar.
 
 Findings appear in the Ariadne panels, not the standard Problems panel.
 
-## Ask Ariadne
+## Explain Vulnerability
 
-**Ask Ariadne** opens an explanation panel for a selected finding. It describes the issue, why it matters, and which security concept to study — it does not provide code fixes or completions.
+**Explain Vulnerability** opens an explanation for one finding. It says what the bug is, why it matters, and shows a short made-up example of the mistake and a safer shape. It does not rewrite your file.
 
 Ways to open it:
 
-- Click **Ask Ariadne** from a finding in the **Active Vulnerabilities** panel.
+- Click **Explain Vulnerability** on a finding in the **Active Vulnerabilities** panel.
 - Use the link in the editor hover popup.
-- Run **Ariadne: Ask Ariadne** from the Command Palette.
+- Run **Ariadne: Explain Vulnerability** from the Command Palette.
 
 Explanations use Gemini Flash through your GitHub Copilot allowance. Ensure Copilot is available in your VS Code setup.
 
@@ -84,7 +84,7 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for **Ariad
 | Command | Description |
 |---|---|
 | **Ariadne: Analyze** | Run a full analysis on the workspace |
-| **Ariadne: Ask Ariadne** | Open the AI explanation panel for a finding |
+| **Ariadne: Explain Vulnerability** | Open the explanation panel for a finding |
 | **Ariadne: Sign In to GitHub** | Open the sign-in panel |
 | **Ariadne: Open Panel** | Focus the Ariadne bottom panel |
 | **Ariadne: Settings** | Open Ariadne settings in the sidebar |
@@ -116,7 +116,7 @@ Ariadne can show toast notifications when findings change (new issues, fixes, re
 | Scanner or download errors | In the sidebar **Core** section, confirm **Auto** is on or pick the correct OS and binary. |
 | Highlights missing | Turn **Highlights** on in the sidebar **Core** section. |
 | Stale results after an update | Reload the VS Code window (**Developer: Reload Window**). |
-| Ask Ariadne fails | Confirm GitHub sign-in and that Copilot is available in VS Code. |
+| Explain Vulnerability fails | Confirm GitHub sign-in and that Copilot is available in VS Code. |
 
 ## License
 

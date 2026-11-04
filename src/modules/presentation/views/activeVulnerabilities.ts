@@ -10,9 +10,7 @@ import { Vulnerability, Severity } from '../panelTypes.js';
 import { severityCssVars } from '../severityColors.js';
 import { collectVulnFilterFacets, formatCategoryLabel } from './vulnFilters.js';
 import { buildStartupLoadingHtml } from './startupLoading.js';
-import { askAriadneCommandQuery } from '../../feedback/views/feedbackPanel.js';
 
-const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
 const OPEN_SETTINGS_COMMAND = 'ariadne-extension-vscode.openSettings';
 
@@ -74,6 +72,31 @@ const FILE_SVG =
 			M10 2.41L12.59 5H10V2.41zM4 14V2h5v4h4v8H4z"/>
 	</svg>`;
 
+const LOC_GO_SVG =
+	`<svg class="loc-go" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+		<path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.4"
+			stroke-linecap="round" stroke-linejoin="round"/>
+	</svg>`;
+
+/** Immediate parent plus filename, so a long absolute path does not hide the file. */
+function locationParts(filePath: string): { parent: string; name: string } {
+	const segments = filePath
+		.replaceAll('\\', '/')
+		.split('/')
+		.filter((seg) => seg && seg !== '.' && !/^[a-zA-Z]:$/.test(seg));
+	const name = segments.pop() ?? filePath;
+	const parent = segments.length > 0 ? segments[segments.length - 1] : '';
+	return { parent, name };
+}
+
+function locationHtml(filePath: string, line: number): string {
+	const { parent, name } = locationParts(filePath);
+	const parentHtml = parent
+		? `<span class="loc-dir">${escapeHtml(parent)}/</span>`
+		: '';
+	return `${FILE_SVG}<span class="loc-path">${parentHtml}<span class="loc-name">${escapeHtml(name)}</span></span><span class="loc-line">${line}</span>`;
+}
+
 const CHEVRON_SVG =
 	`<svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
@@ -111,14 +134,9 @@ const CHECK_MARK_SVG =
 function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const meta = buildMeta(vuln);
 	const label = capitalize(vuln.severity);
-	const location = `${vuln.filePath} : Line ${vuln.line}`;
+	const location = locationHtml(vuln.filePath, vuln.line);
+	const locationTitle = escapeAttr(`${vuln.filePath}:${vuln.line}`);
 	const openAttr = expanded ? ' open' : '';
-	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${askAriadneCommandQuery({
-		cwe: vuln.cwe,
-		title: vuln.title,
-		filePath: vuln.filePath,
-		line: vuln.line,
-	})}`;
 	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
 	const searchText = escapeAttr(
 		[vuln.title, vuln.filePath].join(' ').toLowerCase(),
@@ -144,9 +162,8 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 								<span class="issue-meta">${meta}</span>
 							</div>
 							<div class="issue-title">${vuln.title}</div>
-							<div class="summary-file">
-								${FILE_SVG}
-								<span>${location}</span>
+							<div class="summary-file" title="${locationTitle}">
+								${location}
 							</div>
 						</div>
 					</div>
@@ -161,12 +178,12 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">File Location</div>
-						<button type="button" class="detail-value file goto-location"
-						   data-file="${vuln.filePath}"
+						<button type="button" class="detail-value goto-location"
+						   data-file="${escapeAttr(vuln.filePath)}"
 						   data-line="${vuln.line}"
-						   title="Open ${vuln.filePath} at line ${vuln.line}">
-							${FILE_SVG}
-							<span>${location}</span>
+						   title="Open ${locationTitle}">
+							${location}
+							${LOC_GO_SVG}
 						</button>
 					</div>
 					<div class="detail-row">
@@ -175,12 +192,16 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 					</div>
 				</div>
 				<div class="cta-row">
-                    <a class="action-button" role="button" href="${feedbackHref}">
-						<span>Ask Ariadne</span>
+                    <button type="button" class="action-button explain-vulnerability"
+						data-cwe="${escapeAttr(vuln.cwe)}"
+						data-title="${escapeAttr(vuln.title)}"
+						data-file="${escapeAttr(vuln.filePath)}"
+						data-line="${vuln.line}">
+						<span>Explain Vulnerability</span>
 						<svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 							<path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8l-4.357-4.357.618-.62L11 7.69v.62L6.333 13l-.618-.619L10.072 8z"/>
 						</svg>
-                    </a>
+                    </button>
 				</div>
 			</div>
 		</details>`;
@@ -198,8 +219,7 @@ const CSS = /* css */ `
         --text: var(--vscode-foreground);
         --muted: var(--vscode-descriptionForeground);
         ${severityCssVars()}
-		--file: #569CD6;
-		--reference: #CE9178 ;
+		--reference: #CE9178;
         --button-bg: var(--vscode-button-background);
         --button-text: var(--vscode-button-foreground);
         --radius: 10px;
@@ -700,35 +720,33 @@ const CSS = /* css */ `
 
     summary::-webkit-details-marker { display: none; }
 
-	.detail-value.file {
-		color: var(--file);
-	}
-
 	button.goto-location {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
-		gap: 6px;
-		text-decoration: none;
-		color: var(--file);
+		gap: 8px;
+		width: 100%;
+		min-width: 0;
+		padding: 7px 8px 7px 10px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--text) 4%, transparent);
+		color: var(--text);
 		cursor: pointer;
-		border-radius: 3px;
-		padding: 2px 4px;
-		margin: -2px -4px;
-		transition: background 0.15s ease, color 0.15s ease;
-		background: none;
-		border: none;
 		font: inherit;
 		text-align: left;
+		word-break: normal;
+		transition: background 0.15s ease, border-color 0.15s ease;
 	}
 
 	button.goto-location:hover {
-		text-decoration: underline;
+		background: var(--vscode-list-hoverBackground);
+		border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+		text-decoration: none;
 	}
 
-	button.goto-location .file-icon {
-		width: 14px;
-		height: 14px;
-		flex: 0 0 auto;
+	button.goto-location:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: 1px;
 	}
 
 	.detail-value.reference {
@@ -783,18 +801,74 @@ const CSS = /* css */ `
         gap: 6px;
         font-size: 12px;
         color: var(--muted);
-        min-width: 0; /* Allows the file container to shrink */
+        min-width: 0;
     }
 
-    /* Force the file path text to truncate */
-    .summary-file span {
+    .loc-path {
+        display: flex;
+        align-items: baseline;
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+    }
+
+    .loc-dir {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 0 1000 auto;
+        min-width: 0;
+    }
+
+    .loc-name {
+        color: var(--text);
+        font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-		color: #4EC9B0;
+        flex: 0 1 auto;
+        min-width: 0;
     }
 
-    .file-icon { width: 14px; height: 14px; flex: 0 0 auto; }
+    .summary-file .loc-path {
+        flex: 0 1 auto;
+    }
+
+    .summary-file .loc-name {
+        color: #4EC9B0;
+        font-weight: 500;
+    }
+
+    .loc-line {
+        flex: 0 0 auto;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        line-height: 1.5;
+        padding: 0 6px;
+        border-radius: 999px;
+        color: var(--muted);
+        background: color-mix(in srgb, var(--text) 8%, transparent);
+    }
+
+    button.goto-location .loc-line {
+        color: #4EC9B0;
+        background: color-mix(in srgb, #4EC9B0 16%, transparent);
+    }
+
+    .loc-go {
+        width: 12px;
+        height: 12px;
+        flex: 0 0 auto;
+        color: var(--muted);
+    }
+
+    button.goto-location:hover .loc-go,
+    button.goto-location:hover .file-icon {
+        color: var(--text);
+    }
+
+    .file-icon { width: 14px; height: 14px; flex: 0 0 auto; color: var(--muted); }
 
     .badge {
         padding: 4px 8px;
@@ -874,17 +948,15 @@ const CSS = /* css */ `
     }
 
     .action-button {
-    /* New Flexbox properties to align the text and icon */
     display: inline-flex;
     align-items: center;
     gap: 6px;
     text-decoration: none;
     user-select: none;
-    
-    /* Your existing properties */
 		border: none;
 		border-radius: 3px;
 		padding: 8px 14px;
+		font: inherit;
 		font-size: 12px;
 		font-weight: 600;
 		background: var(--button-bg);
@@ -1378,6 +1450,19 @@ export function buildActiveVulnerabilitiesHtml(
 				document.addEventListener(
 					'click',
 					(e) => {
+						const explain = e.target.closest('.explain-vulnerability');
+						if (explain) {
+							e.preventDefault();
+							e.stopPropagation();
+							vscode.postMessage({
+								type: 'explain-vulnerability',
+								cwe: explain.dataset.cwe,
+								title: explain.dataset.title,
+								filePath: explain.dataset.file,
+								line: Number(explain.dataset.line),
+							});
+							return;
+						}
 						const link = e.target.closest('.goto-location');
 						if (!link) return;
 						e.preventDefault();
