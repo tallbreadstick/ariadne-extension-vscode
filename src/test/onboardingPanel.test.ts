@@ -72,6 +72,12 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(html.includes('class="demo-media-caption"'), 'Should render media captions');
 		});
 
+		it('renders placeholders or GIFs for Explain Vulnerability dual variants in Step 2.2', () => {
+			assert.match(html, /explain-variants-grid/);
+			assert.match(html, /In-Editor Hover Popup/);
+			assert.match(html, /Active Vulnerabilities Card/);
+		});
+
 		it('removes configurable auto-scan from settings description', () => {
 			assert.ok(!html.includes('2–180 min'), 'Should not mention 2-180 min interval');
 			assert.ok(!html.includes('configurable'), 'Should not mention configurable auto-scan');

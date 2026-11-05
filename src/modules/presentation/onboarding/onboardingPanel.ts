@@ -132,6 +132,8 @@ const READY_CHECK_SVG = /* html */ `
 
 export interface OnboardingMediaUris {
 	step21GifUri?: string;
+	step22HoverGifUri?: string;
+	step22PanelGifUri?: string;
 	step23GifUri?: string;
 	step24GifUri?: string;
 	step25GifUri?: string;
@@ -366,6 +368,55 @@ const CSS = /* css */ `
 		flex-shrink: 0;
 	}
 
+	/* Explain Vulnerability Dual Variants Grid */
+	.explain-variants-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+		margin-top: 12px;
+	}
+
+	@media (max-width: 600px) {
+		.explain-variants-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.demo-media-placeholder {
+		width: 100%;
+		min-height: 140px;
+		background: color-mix(in srgb, var(--card-bg) 60%, black);
+		border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--border));
+		border-radius: 4px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		padding: 18px 12px;
+		text-align: center;
+	}
+
+	.demo-media-placeholder-icon {
+		width: 22px;
+		height: 22px;
+		color: var(--accent);
+		opacity: 0.85;
+	}
+
+	.demo-media-placeholder-label {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--fg);
+	}
+
+	.demo-media-placeholder-desc {
+		font-size: 11px;
+		color: var(--muted);
+		max-width: 240px;
+		line-height: 1.4;
+	}
+
 	/* Feature Cards Grid */
 	.features-grid {
 		display: grid;
@@ -574,6 +625,8 @@ const CSS = /* css */ `
 export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 	const cspSource = mediaUris?.cspSource;
 	const step21GifUri = mediaUris?.step21GifUri ?? 'media/Step 2.1 Session Started (Optimized).gif';
+	const step22HoverGifUri = mediaUris?.step22HoverGifUri;
+	const step22PanelGifUri = mediaUris?.step22PanelGifUri;
 	const step23GifUri = mediaUris?.step23GifUri ?? 'media/Session 2.3 (Optimized).gif';
 	const step24GifUri = mediaUris?.step24GifUri ?? 'media/Step 2.4 Session Started (Optimized).gif';
 	const step25GifUri = mediaUris?.step25GifUri ?? 'media/Step 2.45 Session Started (optimized).gif';
@@ -642,8 +695,49 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 							<h4>Near Real-Time Vulnerability Scanning</h4>
 							<p>
 								Scanning is near real-time as you write. Each detected vulnerability instance is logged, 
-								fingerprinted, and tracked throughout its entire lifecycle.
+								fingerprinted, and tracked throughout its entire lifecycle. When security flaws are detected, 
+								you can inspect guided explanations via <strong>[💡 Explain Vulnerability]</strong> in two ways:
 							</p>
+							<div class="explain-variants-grid">
+								<!-- Variant 1: In-Editor Hover -->
+								<div class="demo-media-wrapper">
+									${step22HoverGifUri ? /* html */ `
+									<img src="${step22HoverGifUri}" alt="Explain Vulnerability via Editor Hover" class="demo-media" loading="lazy" />
+									` : /* html */ `
+									<div class="demo-media-placeholder">
+										<svg class="demo-media-placeholder-icon" viewBox="0 0 16 16" fill="currentColor">
+											<path d="M8 1.5a5 5 0 0 0-3.4 8.67l.4.33v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2l.4-.33A5 5 0 0 0 8 1.5zm-2 13h4v1H6v-1z"/>
+										</svg>
+										<span class="demo-media-placeholder-label">GIF: In-Editor Hover Popup</span>
+										<span class="demo-media-placeholder-desc">Hover over highlighted code in the editor to click [💡 Explain Vulnerability]</span>
+									</div>
+									`}
+									<div class="demo-media-caption">
+										<span class="caption-dot"></span>
+										<span><strong>Variant 1:</strong> In-Editor Hover popup over highlighted line.</span>
+									</div>
+								</div>
+
+								<!-- Variant 2: Active Vulnerabilities Panel -->
+								<div class="demo-media-wrapper">
+									${step22PanelGifUri ? /* html */ `
+									<img src="${step22PanelGifUri}" alt="Explain Vulnerability via Active Vulnerabilities Panel" class="demo-media" loading="lazy" />
+									` : /* html */ `
+									<div class="demo-media-placeholder">
+										<svg class="demo-media-placeholder-icon" viewBox="0 0 16 16" fill="currentColor">
+											<path fill-rule="evenodd" clip-rule="evenodd" d="M7.56 1h.88l6.54 12.26-.44.74H1.44L1 13.26 7.56 1zM8 2.28L2.28 13H13.72L8 2.28zM7.5 5.5h1v4h-1v-4zm.5 6a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+										</svg>
+										<span class="demo-media-placeholder-label">GIF: Active Vulnerabilities Card</span>
+										<span class="demo-media-placeholder-desc">Click [💡 Explain Vulnerability] directly on a panel card</span>
+									</div>
+									`}
+									<div class="demo-media-caption">
+										<span class="caption-dot"></span>
+										<span><strong>Variant 2:</strong> Active Vulnerabilities finding card action button.</span>
+									</div>
+								</div>
+							</div>
+							
 						</div>
 					</div>
 
