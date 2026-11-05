@@ -106,11 +106,12 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
   // ── Divider ───────────────────────────────────────────────────────────
   md.appendMarkdown("---\n\n");
 
+  // ── Open in audit graph CTA ───────────────────────────────────────────
   md.appendMarkdown(
     `*[Open in audit graph →](command:ariadne-extension-vscode.showFindingInAudit?${auditCommandQuery(finding)})*\n\n`,
   );
 
-  // ── Explain Vulnerability CTA — italic link ──────────────────────────
+  // ── Explain Vulnerability CTA — prominent button-styled action ───────
   // The query is this finding's artifact. startLine is 0-based; the
   // vulnerability list uses the 1-based engine line.
   const commandArgs = askAriadneCommandQuery({
@@ -119,7 +120,7 @@ function buildMarkdown(finding: AriadneFinding): vscode.MarkdownString {
     filePath: finding.filePath,
     line: finding.startLine + 1,
   });
-  md.appendMarkdown(`*[Explain Vulnerability →](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs})*`);
+  md.appendMarkdown(`[ \`$(lightbulb) Explain Vulnerability\` ](command:ariadne-extension-vscode.openFeedbackPanel?${commandArgs} "View structured security explanation")\n\n`);
 
   return md;
 }

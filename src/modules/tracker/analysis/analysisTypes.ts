@@ -71,6 +71,8 @@ export interface VulnerabilityDelta {
 	previousInstanceCount: number;
 	/** Occurrence count in the current observation (0 if resolved) */
 	currentInstanceCount: number;
+	/** Number of successful full reports across which this finding has persisted */
+	reportCount?: number;
 }
 
 // ── Severity counts ───────────────────────────────────────────────────

@@ -8,6 +8,8 @@ import {
 import {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
+	formatGraduatingSoonMessage,
+	formatGraduatedMessage,
 	determinePrioritizedToast,
 	determineStackedToasts,
 } from '../modules/tracker/analysis/candidateToasts.js';
@@ -682,6 +684,64 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 			assert.strictEqual(plans.length, 2, 'Both resolved and newCandidate should be returned in stacked mode');
 			assert.strictEqual(plans[0].type, 'resolved');
 			assert.strictEqual(plans[1].type, 'newCandidate');
+		});
+	});
+
+	describe('Common Vulnerabilities Graduation Toasts — Formatting (No Gamification)', () => {
+		it('formats single type graduating soon message without gamification', () => {
+			const msg = formatGraduatingSoonMessage(['SQL Injection']);
+			assert.strictEqual(
+				msg,
+				'Ariadne: SQL Injection is on track to graduate. It will disappear from Common Vulnerabilities next session if no new issues are introduced.',
+			);
+		});
+
+		it('formats multiple types graduating soon message without gamification', () => {
+			const msg = formatGraduatingSoonMessage(['SQL Injection', 'Cross-Site Scripting']);
+			assert.strictEqual(
+				msg,
+				'Ariadne: SQL Injection and Cross-Site Scripting are on track to graduate. They will disappear from Common Vulnerabilities next session if no new issues are introduced.',
+			);
+		});
+
+		it('formats three or more types graduating soon message with oxford-style formatting', () => {
+			const msg = formatGraduatingSoonMessage(['SQL Injection', 'Cross-Site Scripting', 'Path Traversal']);
+			assert.strictEqual(
+				msg,
+				'Ariadne: SQL Injection, Cross-Site Scripting, and Path Traversal are on track to graduate. They will disappear from Common Vulnerabilities next session if no new issues are introduced.',
+			);
+		});
+
+		it('returns empty string for empty graduating soon list', () => {
+			assert.strictEqual(formatGraduatingSoonMessage([]), '');
+		});
+
+		it('formats single type graduated message without gamification', () => {
+			const msg = formatGraduatedMessage(['SQL Injection']);
+			assert.strictEqual(
+				msg,
+				'Ariadne: SQL Injection has graduated and was removed from Common Vulnerabilities.',
+			);
+		});
+
+		it('formats multiple types graduated message without gamification', () => {
+			const msg = formatGraduatedMessage(['SQL Injection', 'Cross-Site Scripting']);
+			assert.strictEqual(
+				msg,
+				'Ariadne: SQL Injection and Cross-Site Scripting have graduated and were removed from Common Vulnerabilities.',
+			);
+		});
+
+		it('returns empty string for empty graduated list', () => {
+			assert.strictEqual(formatGraduatedMessage([]), '');
+		});
+
+		it('deduplicates duplicate type names in messages', () => {
+			const msg = formatGraduatedMessage(['SQL Injection', 'SQL Injection']);
+			assert.strictEqual(
+				msg,
+				'Ariadne: SQL Injection has graduated and was removed from Common Vulnerabilities.',
+			);
 		});
 	});
 });

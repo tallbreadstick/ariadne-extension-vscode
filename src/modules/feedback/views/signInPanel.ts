@@ -830,6 +830,19 @@ function buildSessionSection(): string {
 		</p>`;
 }
 
+function buildHelpSection(): string {
+	return /* html */ `
+		<p class="subtitle">Review guided workflows, scanning lifecycles, and core security features.</p>
+		<div class="actions">
+			<button class="btn btn-primary" id="open-onboarding-btn" type="button">
+				Onboarding Guide
+			</button>
+		</div>
+		<p class="footer-note">
+			Opens the interactive guide with explanations of all panels, scans, and settings.
+		</p>`;
+}
+
 /**
  * Builds the Ariadne sidebar HTML (accordion settings).
  */
@@ -871,10 +884,16 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					${buildScriptingSection(model)}
 				</div>
 			</details>
+			<details class="accordion-item" id="accordion-help" name="ariadne-settings">
+				<summary>Help<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildHelpSection()}
+				</div>
+			</details>
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
-			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-scripting'];
+			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-scripting', 'accordion-help'];
 
 			function restoreAccordion() {
 				const saved = vscode.getState()?.openSection;
@@ -965,6 +984,10 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 
 			clearSessionBtn?.addEventListener('click', () => {
 				vscode.postMessage({ type: 'clear-session-data' });
+			});
+
+			document.getElementById('open-onboarding-btn')?.addEventListener('click', () => {
+				vscode.postMessage({ type: 'open-onboarding' });
 			});
 
 			const scannerSpinner = '<span class="spin" role="status" aria-label="Loading"></span>';

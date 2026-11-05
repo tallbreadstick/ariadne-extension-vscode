@@ -11,8 +11,13 @@ import { severityCssVars } from '../severityColors.js';
 import { collectVulnFilterFacets, formatCategoryLabel } from './vulnFilters.js';
 import { buildStartupLoadingHtml } from './startupLoading.js';
 
+const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
 const OPEN_SETTINGS_COMMAND = 'ariadne-extension-vscode.openSettings';
+
+function askAriadneCommandQuery(artifact: { cwe: string; title: string; filePath: string; line: number }): string {
+	return encodeURIComponent(JSON.stringify([artifact]));
+}
 
 const SEVERITY_OPTIONS: Severity[] = ['critical', 'high', 'medium', 'low'];
 
@@ -27,6 +32,92 @@ export interface ActiveVulnerabilitiesOptions {
 	loading?: boolean;
 	/** When true, the data audit tab is the editor currently showing. */
 	treeViewOpen?: boolean;
+	/** Number of vulnerabilities resolved so far in this session. */
+	resolvedCount?: number;
+	/** Authoritative baseline or total issues tracked in this session. */
+	totalSessionIssues?: number;
+	/** Common vulnerability habit types (for Next Focus prioritization). */
+	commonVulnTypes?: string[];
+}
+
+export interface NextFocusTarget {
+	vuln: Vulnerability;
+	isCommonHabit: boolean;
+	reason: string;
+}
+
+/**
+ * Determines the highest pedagogical priority finding for the student to resolve next.
+ * Prioritizes active findings that match recurring Common Vulnerability habits,
+ * followed by highest severity (Critical > High > Medium > Low).
+ */
+export function determineNextFocus(
+	vulns: Vulnerability[],
+	commonVulnTypes: string[] = [],
+): NextFocusTarget | null {
+	if (vulns.length === 0) {
+		return null;
+	}
+
+	const severityWeights: Record<Severity, number> = {
+		critical: 4,
+		high: 3,
+		medium: 2,
+		low: 1,
+	};
+
+	const normalizedCommon = new Set(
+		commonVulnTypes.map((t) => t.trim().toLowerCase()),
+	);
+
+	// 1. Check for active findings that match recurring Common Vulnerability habits
+	const habitFindings = vulns.filter((v) => {
+		const titleKey = v.title.trim().toLowerCase();
+		const cweKey = v.cwe.trim().toLowerCase();
+		return normalizedCommon.has(titleKey) || normalizedCommon.has(cweKey);
+	});
+
+	if (habitFindings.length > 0) {
+		habitFindings.sort(
+			(a, b) => (severityWeights[b.severity] ?? 0) - (severityWeights[a.severity] ?? 0),
+		);
+		return {
+			vuln: habitFindings[0],
+			isCommonHabit: true,
+			reason: 'Recurring Habit',
+		};
+	}
+
+	// 2. Otherwise prioritize highest severity (Critical > High > Medium > Low)
+	const sorted = [...vulns].sort(
+		(a, b) => (severityWeights[b.severity] ?? 0) - (severityWeights[a.severity] ?? 0),
+	);
+
+	return {
+		vuln: sorted[0],
+		isCommonHabit: false,
+		reason: `${capitalize(sorted[0].severity)} Priority`,
+	};
+}
+
+/** Formats an urgent, actionable tooltip for the Next Focus recommendation chip. */
+export function buildNextFocusTooltip(target: NextFocusTarget): string {
+	const loc = `${target.vuln.filePath}:${target.vuln.line}`;
+	if (target.isCommonHabit) {
+		return `Recurring Habit (${capitalize(target.vuln.severity)}) — Repeated pattern detected in your coding habits. Address ${target.vuln.title} at ${loc} to break the cycle.`;
+	}
+	switch (target.vuln.severity) {
+		case 'critical':
+			return `Critical Risk — Address ${target.vuln.title} immediately at ${loc} to protect your code.`;
+		case 'high':
+			return `High Priority — Vulnerability needs prompt attention at ${loc} (${target.vuln.title}).`;
+		case 'medium':
+			return `Medium Priority — Review and resolve ${target.vuln.title} at ${loc}.`;
+		case 'low':
+			return `Low Priority — Resolve ${target.vuln.title} at ${loc} when convenient.`;
+		default:
+			return `Fix ${target.vuln.title} at ${loc}`;
+	}
 }
 
 /** Stable key for accordion persistence across scans and workspace reopens. */
@@ -114,19 +205,44 @@ const TREE_SVG =
 		<path d="M8 1.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM3 6.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm10 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM8 11.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM4.15 7.35l2.9 1.65M8.95 8.9l2.9 1.65M8.95 7.1L6.05 5.45M4.15 8.65l2.9-1.65"/>
 	</svg>`;
 
-const SEARCH_SVG =
-	`<svg class="search-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-		<path fill-rule="evenodd" clip-rule="evenodd" d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85a1.007 1.007 0 00-.115-.1zM12 6.5a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z"/>
-	</svg>`;
-
-const CLOSE_SVG =
-	`<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" aria-hidden="true">
-		<path fill-rule="evenodd" clip-rule="evenodd" d="M8 7.293l3.646-3.647.708.708L8.707 8l3.647 3.646-.708.708L8 8.707l-3.646 3.647-.708-.708L7.293 8 3.646 4.354l.708-.708L8 7.293z"/>
-	</svg>`;
-
 const CHECK_MARK_SVG =
 	`<svg class="check-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 		<path fill-rule="evenodd" clip-rule="evenodd" d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+	</svg>`;
+
+const LIGHTBULB_SVG =
+	`<svg class="lightbulb-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+		<path d="M8 1.5a5 5 0 0 0-3.4 8.67l.4.33v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2l.4-.33A5 5 0 0 0 8 1.5zm-2 13h4v1H6v-1z"/>
+	</svg>`;
+
+const LIVE_SCAN_SVG =
+	`<svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M19.07 4.93A10 10 0 0 0 4.93 19.07"/>
+		<path d="M16.24 7.76A6 6 0 0 0 7.76 16.24"/>
+		<circle cx="12" cy="12" r="2" fill="currentColor"/>
+		<path d="m13.41 10.59 5.66-5.66"/>
+	</svg>`;
+
+const PROGRESS_ICON_SVG =
+	`<svg class="progress-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<circle cx="8" cy="8" r="6.25"/>
+		<path d="M5.5 8l2 2 3.5-3.5"/>
+	</svg>`;
+
+const VICTORY_ICON_SVG =
+	`<svg class="progress-icon victory-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M3.5 2.5h9v4.5a4.5 4.5 0 0 1-9 0V2.5z"/>
+		<path d="M1.5 4h2v2a2 2 0 0 1-2-2z"/>
+		<path d="M14.5 4h-2v2a2 2 0 0 0 2-2z"/>
+		<path d="M8 11.5v3"/>
+		<path d="M5.5 14.5h5"/>
+	</svg>`;
+
+const FOCUS_ICON_SVG = (severity?: Severity) =>
+	`<svg class="focus-icon${severity ? ' ' + severity : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<circle cx="8" cy="8" r="6"/>
+		<circle cx="8" cy="8" r="2.25"/>
+		<path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>
 	</svg>`;
 
 // ── Card builder ──────────────────────────────────────────────────────
@@ -137,10 +253,13 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const location = locationHtml(vuln.filePath, vuln.line);
 	const locationTitle = escapeAttr(`${vuln.filePath}:${vuln.line}`);
 	const openAttr = expanded ? ' open' : '';
+	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${askAriadneCommandQuery({
+		cwe: vuln.cwe,
+		title: vuln.title,
+		filePath: vuln.filePath,
+		line: vuln.line,
+	})}`;
 	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
-	const searchText = escapeAttr(
-		[vuln.title, vuln.filePath].join(' ').toLowerCase(),
-	);
 
 	return /* html */ `
 		<details
@@ -150,8 +269,7 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 			data-cwe="${escapeAttr(vuln.cwe)}"
 			data-category="${escapeAttr(vuln.owaspRef ?? '')}"
 			data-type="${escapeAttr(vuln.title)}"
-			data-file="${escapeAttr(vuln.filePath)}"
-			data-search-text="${searchText}"${openAttr}>
+			data-file="${escapeAttr(vuln.filePath)}"${openAttr}>
 			<summary>
 				<div class="summary-row">
 					<div class="summary-left">
@@ -162,6 +280,17 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 								<span class="issue-meta">${meta}</span>
 							</div>
 							<div class="issue-title">${vuln.title}</div>
+							<div class="cta-row">
+								<a class="action-button btn-explain" role="button" href="${feedbackHref}"
+									data-cwe="${escapeAttr(vuln.cwe)}"
+									data-title="${escapeAttr(vuln.title)}"
+									data-file="${escapeAttr(vuln.filePath)}"
+									data-line="${vuln.line}"
+									title="View AI conceptual explanation">
+									${LIGHTBULB_SVG}
+									<span>Explain Vulnerability</span>
+								</a>
+							</div>
 							<div class="summary-file" title="${locationTitle}">
 								${location}
 							</div>
@@ -191,18 +320,6 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 						<div class="detail-value reference">${meta}</div>
 					</div>
 				</div>
-				<div class="cta-row">
-                    <button type="button" class="action-button explain-vulnerability"
-						data-cwe="${escapeAttr(vuln.cwe)}"
-						data-title="${escapeAttr(vuln.title)}"
-						data-file="${escapeAttr(vuln.filePath)}"
-						data-line="${vuln.line}">
-						<span>Explain Vulnerability</span>
-						<svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-							<path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8l-4.357-4.357.618-.62L11 7.69v.62L6.333 13l-.618-.619L10.072 8z"/>
-						</svg>
-                    </button>
-				</div>
 			</div>
 		</details>`;
 }
@@ -213,6 +330,7 @@ const CSS = /* css */ `
     :root {
         color-scheme: dark;
         --bg: var(--vscode-editor-background);
+        --list-bg: color-mix(in srgb, var(--vscode-editor-background) 96.5%, white 3.5%);
         --panel: color-mix(in srgb, var(--vscode-editor-background) 70%, black);
         --card: var(--vscode-editorWidget-background);
         --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
@@ -229,10 +347,296 @@ const CSS = /* css */ `
 
     body {
         margin: 0;
-        padding: 14px 16px 18px;
+        padding: 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--bg);
+        background: var(--list-bg);
         color: var(--text);
+    }
+
+    .sticky-top-bar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: var(--bg);
+        margin: -16px -16px 12px -16px;
+        padding: 16px 16px 6px 16px;
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+        transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+
+    .sticky-top-bar.is-scrolled {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        border-bottom-color: var(--border);
+    }
+
+    .live-scan-header,
+    .active-vuln-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+        padding-bottom: 10px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .live-scan-header-left,
+    .active-vuln-header-left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .section-icon {
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
+        flex-shrink: 0;
+    }
+
+    /* ── Session Progress & Next Focus ── */
+    .session-progress-card {
+        margin-bottom: 8px;
+        padding: 13px 12px 11px 12px;
+        background: color-mix(in srgb, var(--card) 96%, white 4%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .session-progress-card.victory {
+        background: color-mix(in srgb, #2ea043 15%, var(--card));
+        border-color: color-mix(in srgb, #2ea043 40%, var(--border));
+    }
+
+    .progress-info-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+    }
+
+    .progress-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .progress-title strong {
+        color: var(--text);
+        font-weight: 700;
+    }
+
+    .victory-title {
+        color: #3fb950;
+        font-weight: 600;
+    }
+
+    .progress-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--accent, #46d5c4);
+        flex-shrink: 0;
+    }
+
+    .progress-icon.victory-icon {
+        color: #3fb950;
+    }
+
+    .progress-pct {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent-strong, #5ce6d7);
+        flex-shrink: 0;
+    }
+
+    .victory .progress-pct {
+        color: #3fb950;
+    }
+
+    .progress-track {
+        height: 8px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #46d5c4, #5ce6d7);
+        border-radius: 999px;
+        transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .progress-bar-fill.victory-fill {
+        background: linear-gradient(90deg, #3fb950, #2ea043);
+    }
+
+    .toolbar-row.actions-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .next-focus-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1 1 auto;
+        padding-left: 12px;
+        overflow: hidden;
+    }
+
+    .next-focus-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .focus-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--accent, #46d5c4);
+        flex-shrink: 0;
+    }
+
+    .focus-icon.critical { color: var(--critical, #ff5370); }
+    .focus-icon.high { color: var(--high, #ff9e64); }
+    .focus-icon.medium { color: var(--medium, #ffcb6b); }
+    .focus-icon.low { color: var(--low, #82aaff); }
+
+    .next-focus-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--accent, #46d5c4) 10%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--accent, #46d5c4) 30%, var(--border));
+        color: var(--text);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        text-align: left;
+        min-width: 0;
+        width: auto;
+        flex: 0 1 auto;
+        max-width: 100%;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .next-focus-chip.critical {
+        background: color-mix(in srgb, var(--critical, #ff5370) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--critical, #ff5370) 50%, var(--border));
+    }
+    .next-focus-chip.critical:hover {
+        background: color-mix(in srgb, var(--critical, #ff5370) 25%, var(--card));
+        border-color: var(--critical, #ff5370);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip.high {
+        background: color-mix(in srgb, var(--high, #ff9e64) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--high, #ff9e64) 50%, var(--border));
+    }
+    .next-focus-chip.high:hover {
+        background: color-mix(in srgb, var(--high, #ff9e64) 25%, var(--card));
+        border-color: var(--high, #ff9e64);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip.medium {
+        background: color-mix(in srgb, var(--medium, #ffcb6b) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--medium, #ffcb6b) 50%, var(--border));
+    }
+    .next-focus-chip.medium:hover {
+        background: color-mix(in srgb, var(--medium, #ffcb6b) 25%, var(--card));
+        border-color: var(--medium, #ffcb6b);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip.low {
+        background: color-mix(in srgb, var(--low, #82aaff) 15%, var(--card));
+        border: 1px solid color-mix(in srgb, var(--low, #82aaff) 50%, var(--border));
+    }
+    .next-focus-chip.low:hover {
+        background: color-mix(in srgb, var(--low, #82aaff) 25%, var(--card));
+        border-color: var(--low, #82aaff);
+        transform: translateY(-0.5px);
+    }
+
+    .next-focus-chip:active {
+        transform: translateY(0);
+    }
+
+    .focus-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .vuln-card {
+        --pulse-color: var(--accent, #46d5c4);
+    }
+    .vuln-card[data-severity="critical"] {
+        --pulse-color: var(--critical, #ff5370);
+    }
+    .vuln-card[data-severity="high"] {
+        --pulse-color: var(--high, #ff9e64);
+    }
+    .vuln-card[data-severity="medium"] {
+        --pulse-color: var(--medium, #ffcb6b);
+    }
+    .vuln-card[data-severity="low"] {
+        --pulse-color: var(--low, #82aaff);
+    }
+
+    @keyframes focusPulse {
+        0% {
+            box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-color) 75%, transparent);
+            border-color: var(--pulse-color);
+        }
+        50% {
+            box-shadow: 0 0 0 5px color-mix(in srgb, var(--pulse-color) 45%, transparent);
+            border-color: var(--pulse-color);
+        }
+        100% {
+            box-shadow: 0 0 0 0 transparent;
+        }
+    }
+
+    .vuln-card.highlight-pulse {
+        animation: focusPulse 1.6s ease-out;
     }
 
     .vuln-stack { display: grid; gap: 12px; }
@@ -240,24 +644,17 @@ const CSS = /* css */ `
     .toolbar {
         display: grid;
         gap: 8px;
-        margin-bottom: 12px;
-        position: sticky;
-        top: 0;
-        z-index: 2;
-        padding-bottom: 8px;
-        background: var(--bg);
-    }
-
-    .toolbar-row {
-        display: grid;
-        gap: 8px;
-		grid-template-columns: minmax(0, 1fr) auto;
+        margin-bottom: 4px;
+        padding-bottom: 2px;
+        background: transparent;
     }
 
 	.toolbar-actions {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
+		margin-left: auto;
+		flex-shrink: 0;
 	}
 
 	.tree-toggle {
@@ -269,83 +666,27 @@ const CSS = /* css */ `
 		padding: 0;
 		border-radius: 4px;
 		border: 1px solid var(--border);
-		background: var(--card);
-		color: var(--text);
+		background: var(--vscode-button-secondaryBackground, var(--card));
+		color: var(--vscode-button-secondaryForeground, var(--text));
 		cursor: pointer;
+		flex-shrink: 0;
+		transition: background 0.15s ease-out, border-color 0.15s ease-out;
 	}
 
 	.tree-toggle:hover {
-		background: color-mix(in srgb, var(--card) 80%, var(--text));
+		background: var(--vscode-button-secondaryHoverBackground, var(--panel));
 	}
 
 	.tree-toggle.open {
-		border-color: var(--vscode-textLink-foreground);
-		box-shadow: inset 0 0 0 1px var(--vscode-textLink-foreground);
+		border-color: var(--vscode-focusBorder, var(--button-bg));
+		box-shadow: inset 0 0 0 1px var(--vscode-focusBorder, var(--button-bg));
 	}
 
 	.tree-icon {
-		width: 16px;
-		height: 16px;
-	}
-
-	.search-wrap {
-		position: relative;
-		display: flex;
-		align-items: center;
-		width: 100%;
-	}
-
-	.search-icon {
-		position: absolute;
-		left: 9px;
 		width: 14px;
 		height: 14px;
-		color: var(--muted);
-		pointer-events: none;
+		flex-shrink: 0;
 	}
-
-    .search-input {
-        width: 100%;
-        padding: 6px 26px 6px 28px;
-        border-radius: 4px;
-        border: 1px solid var(--border);
-        background: var(--vscode-input-background, var(--card));
-        color: var(--vscode-input-foreground, var(--text));
-        font: inherit;
-        font-size: 12px;
-    }
-
-	.search-input::-webkit-search-cancel-button,
-	.search-input::-webkit-search-decoration {
-		-webkit-appearance: none;
-		appearance: none;
-	}
-
-	.search-clear-btn {
-		position: absolute;
-		right: 5px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 18px;
-		height: 18px;
-		padding: 0;
-		border: 0;
-		background: transparent;
-		color: var(--muted);
-		cursor: pointer;
-		border-radius: 50%;
-	}
-
-	.search-clear-btn:hover {
-		color: var(--text);
-		background: color-mix(in srgb, var(--text) 12%, transparent);
-	}
-
-	.search-clear-btn[hidden] {
-		display: none;
-	}
-
     .filter-select {
         width: 100%;
         padding: 6px 24px 6px 8px;
@@ -366,7 +707,6 @@ const CSS = /* css */ `
         overflow: hidden;
     }
 
-    .search-input:focus,
     .filter-select:focus {
         outline: 1px solid var(--vscode-focusBorder, var(--file));
         outline-offset: -1px;
@@ -374,17 +714,23 @@ const CSS = /* css */ `
 
 	.filter-toggle {
 		position: relative;
-		display: inline-grid;
-		place-items: center;
-		width: 32px;
-		min-width: 32px;
-		padding: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 28px;
+		padding: 0 10px;
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		background: var(--vscode-button-secondaryBackground, var(--card));
 		color: var(--vscode-button-secondaryForeground, var(--text));
 		cursor: pointer;
+		font-family: inherit;
+		font-size: 11px;
+		font-weight: 500;
 		transition: background 0.15s ease-out, border-color 0.15s ease-out;
+		white-space: nowrap;
+		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.filter-toggle:hover,
@@ -403,8 +749,14 @@ const CSS = /* css */ `
 	}
 
 	.filter-icon {
-		width: 16px;
-		height: 16px;
+		width: 14px;
+		height: 14px;
+		flex-shrink: 0;
+	}
+
+	.filter-toggle-label {
+		font-size: 11px;
+		font-weight: 500;
 	}
 
 	.filter-badge {
@@ -591,7 +943,11 @@ const CSS = /* css */ `
 
 	.filter-menu-footer {
 		display: flex;
-		justify-content: flex-end;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding-top: 6px;
+		border-top: 1px solid var(--border);
 	}
 
 	.reset-filters {
@@ -756,7 +1112,7 @@ const CSS = /* css */ `
     .summary-row {
         display: flex;
         gap: 10px;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
         min-width: 0; /* Allows the row to shrink */
     }
@@ -905,6 +1261,7 @@ const CSS = /* css */ `
     .chevron {
         width: 16px;
         height: 16px;
+        margin-top: 3px;
         flex: 0 0 auto; /* Prevents chevron from shrinking or squishing */
         color: var(--muted);
         transition: transform 0.2s ease;
@@ -947,27 +1304,34 @@ const CSS = /* css */ `
         justify-content: space-between;
     }
 
-    .action-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    text-decoration: none;
-    user-select: none;
-		border: none;
-		border-radius: 3px;
-		padding: 8px 14px;
-		font: inherit;
-		font-size: 12px;
-		font-weight: 600;
-		background: var(--button-bg);
-		color: var(--button-text);
-        opacity: 1;
+    .action-button,
+    .btn-explain {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+        user-select: none;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        background: var(--button-bg);
+        color: var(--button-text);
         cursor: pointer;
-        transition: filter 0.15s ease, opacity 0.15s ease;
-	}
+        transition: background 0.15s ease, filter 0.15s ease;
+    }
 
-    .action-button:hover {
+    .action-button:hover,
+    .btn-explain:hover {
+        background: var(--vscode-button-hoverBackground, var(--button-bg));
         filter: brightness(1.08);
+    }
+
+    .lightbulb-icon {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
     }
 
 	/* Size and prevent the icon from shrinking */
@@ -1021,9 +1385,76 @@ function buildTreeToggle(open: boolean): string {
 		</button>`;
 }
 
-function buildToolbar(vulns: Vulnerability[], treeViewOpen = false): string {
-	const facets = vulns.length > 0 ? collectVulnFilterFacets(vulns) : null;
-	const filterBlock = facets ? /* html */ `
+function buildNextFocusHtml(
+	vulns: Vulnerability[],
+	options: ActiveVulnerabilitiesOptions = {},
+): string {
+	if (options.loading || vulns.length === 0) {
+		return '';
+	}
+	const nextFocus = determineNextFocus(vulns, options.commonVulnTypes);
+	if (!nextFocus) {
+		return '';
+	}
+
+	return /* html */ `
+		<div class="next-focus-group">
+			<span class="next-focus-label">
+				${FOCUS_ICON_SVG(nextFocus.vuln.severity)}
+				<span>Next Focus:</span>
+			</span>
+			<button
+				class="next-focus-chip ${nextFocus.vuln.severity}"
+				type="button"
+				data-vuln-key="${encodeURIComponent(buildVulnKey(nextFocus.vuln))}"
+				title="${escapeAttr(buildNextFocusTooltip(nextFocus))}"
+				aria-label="Focus ${escapeAttr(nextFocus.vuln.title)}"
+			>
+				<span class="focus-title">${escapeHtml(nextFocus.vuln.title)}</span>
+			</button>
+		</div>`;
+}
+
+function buildToolbar(
+	vulns: Vulnerability[],
+	options: ActiveVulnerabilitiesOptions = {},
+): string {
+	const facets = collectVulnFilterFacets(vulns);
+	const nextFocusHtml = buildNextFocusHtml(vulns, options);
+	const treeToggleHtml = buildTreeToggle(options.treeViewOpen === true);
+
+	if (vulns.length === 0) {
+		return /* html */ `
+		<div class="toolbar">
+			<div class="toolbar-row actions-row empty-vulns">
+				<div class="toolbar-actions">
+					${treeToggleHtml}
+				</div>
+			</div>
+		</div>`;
+	}
+
+	return /* html */ `
+		<div class="toolbar">
+			<div class="toolbar-row actions-row">
+				${nextFocusHtml}
+				<div class="toolbar-actions">
+					<button
+						class="filter-toggle"
+						type="button"
+						id="filter-toggle"
+						aria-controls="filter-menu"
+						aria-expanded="false"
+						title="Filter vulnerabilities"
+						aria-label="Filter vulnerabilities"
+					>
+						${FILTER_SVG}
+						<span class="filter-toggle-label">Filter</span>
+						<span class="filter-badge" id="filter-badge" hidden>0</span>
+					</button>
+					${treeToggleHtml}
+				</div>
+			</div>
 			<div class="filter-menu" id="filter-menu" aria-hidden="true">
 				<fieldset class="filter-fieldset">
 					<legend class="filter-legend">Severity</legend>
@@ -1046,55 +1477,76 @@ function buildToolbar(vulns: Vulnerability[], treeViewOpen = false): string {
 					</label>
 				</div>
 				<div class="filter-menu-footer">
+					<div class="results-meta" id="results-meta" aria-live="polite">Showing ${vulns.length} of ${vulns.length} issues</div>
 					<button class="reset-filters" type="button" id="reset-filters-btn" disabled>
 						Reset filters
 					</button>
 				</div>
 			</div>
-			<div class="results-meta" id="results-meta" aria-live="polite">Live scan • ${vulns.length} vulnerabilit${vulns.length === 1 ? 'y' : 'ies'}</div>` : '';
+		</div>`;
+}
+
+function buildSessionProgressSection(
+	vulns: Vulnerability[],
+	options: ActiveVulnerabilitiesOptions,
+): string {
+	const resolvedCount = Math.max(0, options.resolvedCount ?? 0);
+	const activeCount = vulns.length;
+	const totalSessionIssues = Math.max(
+		activeCount + resolvedCount,
+		options.totalSessionIssues ?? (activeCount + resolvedCount),
+	);
+
+	if (options.loading || totalSessionIssues === 0) {
+		return '';
+	}
+
+	// Victory State: All issues tracked in this session have been resolved
+	if (activeCount === 0 && resolvedCount > 0 && resolvedCount >= totalSessionIssues) {
+		return /* html */ `
+			<section class="session-progress-card victory" aria-label="Session Resolution Progress">
+				<div class="progress-info-row">
+					<div class="progress-title victory-title">
+						${VICTORY_ICON_SVG}
+						<span>All ${resolvedCount} Vulnerabilit${resolvedCount === 1 ? 'y' : 'ies'} Resolved! Workspace is Clean!</span>
+					</div>
+					<span class="progress-pct">100%</span>
+				</div>
+				<div class="progress-track">
+					<div
+						class="progress-bar-fill victory-fill"
+						style="width: 100%;"
+						role="progressbar"
+						aria-valuenow="100"
+						aria-valuemin="0"
+						aria-valuemax="100"
+					></div>
+				</div>
+			</section>`;
+	}
+
+	const pct = Math.min(100, Math.round((resolvedCount / totalSessionIssues) * 100));
 
 	return /* html */ `
-		<div class="toolbar">
-			<div class="toolbar-row">
-				<div class="search-wrap">
-					${SEARCH_SVG}
-					<input
-						class="search-input"
-						id="vuln-search"
-						type="search"
-						placeholder="Search title or file…"
-						aria-label="Search vulnerabilities by title or file"
-						${vulns.length === 0 ? 'disabled' : ''}
-					/>
-					<button
-						class="search-clear-btn"
-						id="search-clear-btn"
-						type="button"
-						aria-label="Clear search query"
-						title="Clear search"
-						hidden
-					>
-						${CLOSE_SVG}
-					</button>
+		<section class="session-progress-card" aria-label="Session Resolution Progress">
+			<div class="progress-info-row">
+				<div class="progress-title">
+					${PROGRESS_ICON_SVG}
+					<span>Session Progress: <strong>${resolvedCount} of ${totalSessionIssues}</strong> Issue${totalSessionIssues === 1 ? '' : 's'} Resolved</span>
 				</div>
-				<div class="toolbar-actions">
-					${vulns.length > 0 ? `<button
-						class="filter-toggle"
-						type="button"
-						id="filter-toggle"
-						aria-controls="filter-menu"
-						aria-expanded="false"
-						title="Show filters"
-						aria-label="Show filters"
-					>
-						${FILTER_SVG}
-						<span class="filter-badge" id="filter-badge" hidden>0</span>
-					</button>` : ''}
-					${buildTreeToggle(treeViewOpen)}
-				</div>
+				<span class="progress-pct">${pct}%</span>
 			</div>
-			${filterBlock}
-		</div>`;
+			<div class="progress-track">
+				<div
+					class="progress-bar-fill"
+					style="width: ${pct}%;"
+					role="progressbar"
+					aria-valuenow="${pct}"
+					aria-valuemin="0"
+					aria-valuemax="100"
+				></div>
+			</div>
+		</section>`;
 }
 
 /**
@@ -1169,7 +1621,7 @@ export function buildActiveVulnerabilitiesHtml(
         </div>`;
 	const filterEmptyState = /* html */ `
 		<div class="filter-empty" id="filter-empty" role="status" aria-live="polite">
-			No vulnerabilities match the current search or filters.
+			No vulnerabilities match the current filters.
 		</div>`;
 
 	return /* html */ `<!DOCTYPE html>
@@ -1181,7 +1633,16 @@ export function buildActiveVulnerabilitiesHtml(
 		<style>${CSS}</style>
 	</head>
 	<body>
-		${buildToolbar(vulns, options.treeViewOpen === true)}
+		<div class="sticky-top-bar">
+			<header class="live-scan-header active-vuln-header">
+				<div class="live-scan-header-left active-vuln-header-left">
+					${LIVE_SCAN_SVG}
+					<span>Live Scan</span>
+				</div>
+			</header>
+			${buildSessionProgressSection(vulns, options)}
+			${buildToolbar(vulns, options)}
+		</div>
 		<section class="vuln-stack" id="vuln-stack">
             ${vulns.length === 0 ? emptyState : cards}
 		</section>
@@ -1190,8 +1651,6 @@ export function buildActiveVulnerabilitiesHtml(
 			(function () {
 				const vscode = acquireVsCodeApi();
 				const cards = Array.from(document.querySelectorAll('.vuln-card'));
-				const searchInput = document.getElementById('vuln-search');
-				const searchClearBtn = document.getElementById('search-clear-btn');
 				const filterToggle = document.getElementById('filter-toggle');
 				const filterMenu = document.getElementById('filter-menu');
 				const categoryFilter = document.getElementById('category-filter');
@@ -1201,6 +1660,7 @@ export function buildActiveVulnerabilitiesHtml(
 				const filterBadge = document.getElementById('filter-badge');
 				const resultsMeta = document.getElementById('results-meta');
 				const filterEmpty = document.getElementById('filter-empty');
+				const stickyTopBar = document.querySelector('.sticky-top-bar');
 				const totalCount = cards.length;
 				const treeToggle = document.getElementById('tree-view-toggle');
 				treeToggle?.addEventListener('click', () => {
@@ -1238,7 +1698,6 @@ export function buildActiveVulnerabilitiesHtml(
 
 				function activeFilterCount() {
 					let count = 0;
-					if ((searchInput?.value ?? '').trim()) count += 1;
 					if (selectedSeverities().length) count += 1;
 					if (categoryFilter?.value) count += 1;
 					if (typeFilter?.value) count += 1;
@@ -1256,9 +1715,6 @@ export function buildActiveVulnerabilitiesHtml(
 					}
 					if (resetBtn) {
 						resetBtn.disabled = count === 0;
-					}
-					if (searchClearBtn && searchInput) {
-						searchClearBtn.hidden = searchInput.value.length === 0;
 					}
 				}
 
@@ -1283,7 +1739,6 @@ export function buildActiveVulnerabilitiesHtml(
 				}
 
 				function cardMatchesFilters(el) {
-					const query = (searchInput?.value ?? '').trim().toLowerCase();
 					const severities = selectedSeverities();
 					const category = categoryFilter?.value ?? '';
 					const type = typeFilter?.value ?? '';
@@ -1295,9 +1750,6 @@ export function buildActiveVulnerabilitiesHtml(
 						return false;
 					}
 					if (type && el.dataset.type !== type) {
-						return false;
-					}
-					if (query && !(el.dataset.searchText ?? '').includes(query)) {
 						return false;
 					}
 					return true;
@@ -1315,8 +1767,8 @@ export function buildActiveVulnerabilitiesHtml(
 
 					if (resultsMeta) {
 						resultsMeta.textContent = visibleCount === totalCount
-							? 'Live scan • ' + totalCount + ' vulnerabilit' + (totalCount === 1 ? 'y' : 'ies')
-							: 'Live scan • Showing ' + visibleCount + ' of ' + totalCount;
+							? 'Showing ' + totalCount + ' of ' + totalCount + ' issues'
+							: 'Showing ' + visibleCount + ' of ' + totalCount + ' issues';
 					}
 
 					if (filterEmpty) {
@@ -1327,7 +1779,6 @@ export function buildActiveVulnerabilitiesHtml(
 
 				function persistFilters() {
 					persistUiState({
-						searchQuery: searchInput?.value ?? '',
 						severityFilters: selectedSeverities(),
 						categoryFilter: categoryFilter?.value ?? '',
 						typeFilter: typeFilter?.value ?? '',
@@ -1335,9 +1786,6 @@ export function buildActiveVulnerabilitiesHtml(
 				}
 
 				function resetFilters() {
-					if (searchInput) {
-						searchInput.value = '';
-					}
 					severityChips.forEach((chip) => {
 						chip.setAttribute('aria-pressed', 'false');
 						chip.setAttribute('aria-checked', 'false');
@@ -1351,10 +1799,6 @@ export function buildActiveVulnerabilitiesHtml(
 				function restoreUiState() {
 					const state = readUiState();
 					setFilterVisibility(state.filterPanelOpen === true, false);
-
-					if (searchInput && typeof state.searchQuery === 'string') {
-						searchInput.value = state.searchQuery;
-					}
 
 					const savedSeverities = Array.isArray(state.severityFilters)
 						? state.severityFilters
@@ -1379,14 +1823,20 @@ export function buildActiveVulnerabilitiesHtml(
 					if (typeof state.scrollTop === 'number' && state.scrollTop > 0) {
 						requestAnimationFrame(() => {
 							window.scrollTo(0, state.scrollTop);
+							updateScrollState();
 						});
+					}
+				}
+
+				function updateScrollState() {
+					if (stickyTopBar) {
+						stickyTopBar.classList.toggle('is-scrolled', window.scrollY > 2);
 					}
 				}
 
 				function snapshotUiState() {
 					persistUiState({
 						scrollTop: window.scrollY,
-						searchQuery: searchInput?.value ?? '',
 						severityFilters: selectedSeverities(),
 						categoryFilter: categoryFilter?.value ?? '',
 						typeFilter: typeFilter?.value ?? '',
@@ -1396,6 +1846,7 @@ export function buildActiveVulnerabilitiesHtml(
 				window.addEventListener(
 					'scroll',
 					() => {
+						updateScrollState();
 						persistUiState({ scrollTop: window.scrollY });
 					},
 					{ passive: true },
@@ -1417,10 +1868,6 @@ export function buildActiveVulnerabilitiesHtml(
 					});
 				});
 
-				searchInput?.addEventListener('input', () => {
-					persistFilters();
-					applyFilters();
-				});
 				[categoryFilter, typeFilter].forEach((el) => {
 					el?.addEventListener('change', () => {
 						persistFilters();
@@ -1438,19 +1885,40 @@ export function buildActiveVulnerabilitiesHtml(
 					});
 				});
 				resetBtn?.addEventListener('click', resetFilters);
-				searchClearBtn?.addEventListener('click', () => {
-					if (searchInput) {
-						searchInput.value = '';
-						searchInput.focus();
-						persistFilters();
-						applyFilters();
-					}
+
+				document.querySelectorAll('.next-focus-chip').forEach((chip) => {
+					chip.addEventListener('click', () => {
+						const rawKey = chip.getAttribute('data-vuln-key');
+						if (!rawKey) return;
+						const decodedKey = decodeURIComponent(rawKey);
+
+						const targetCard = cards.find((c) => {
+							const cardKey = c.getAttribute('data-vuln-key');
+							return cardKey === rawKey || decodeURIComponent(cardKey || '') === decodedKey;
+						});
+
+						if (targetCard) {
+							if (targetCard.classList.contains('hidden') || targetCard.style.display === 'none') {
+								if (resetBtn && !resetBtn.disabled) {
+									resetBtn.click();
+								}
+							}
+							targetCard.open = true;
+							applyAccordion(targetCard);
+							persistExpandedKey(decodedKey);
+							targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+							targetCard.classList.remove('highlight-pulse');
+							void targetCard.offsetWidth;
+							targetCard.classList.add('highlight-pulse');
+							setTimeout(() => targetCard.classList.remove('highlight-pulse'), 1800);
+						}
+					});
 				});
 
 				document.addEventListener(
 					'click',
 					(e) => {
-						const explain = e.target.closest('.explain-vulnerability');
+						const explain = e.target.closest('.explain-vulnerability') || e.target.closest('.btn-explain');
 						if (explain) {
 							e.preventDefault();
 							e.stopPropagation();
@@ -1481,6 +1949,69 @@ export function buildActiveVulnerabilitiesHtml(
 				if (totalCount > 0) {
 					applyFilters();
 				}
+
+				// Cross-filtering message listener from Session Metrics or external commands
+				window.addEventListener('message', (event) => {
+					const msg = event.data;
+					if (!msg || typeof msg !== 'object') return;
+					if (msg.type === 'set-filter-severity') {
+						const targetSeverity = String(msg.severity || '').toLowerCase();
+						const currentSelected = selectedSeverities();
+						const isAlreadyActive =
+							currentSelected.length === 1 &&
+							currentSelected[0] === targetSeverity &&
+							!categoryFilter?.value &&
+							!typeFilter?.value;
+
+						if (isAlreadyActive) {
+							resetFilters();
+							return;
+						}
+
+						if (categoryFilter) categoryFilter.value = '';
+						if (typeFilter) typeFilter.value = '';
+						severityChips.forEach((chip) => {
+							const matches = chip.dataset.severity === targetSeverity;
+							chip.setAttribute('aria-pressed', matches ? 'true' : 'false');
+							chip.setAttribute('aria-checked', matches ? 'true' : 'false');
+						});
+						setFilterVisibility(true);
+						persistFilters();
+						applyFilters();
+					} else if (msg.type === 'set-filter-type') {
+						const targetType = String(msg.vulnType || '').trim();
+						const currentSelected = selectedSeverities();
+						const isAlreadyActiveInSelect =
+							Boolean(typeFilter?.value) &&
+							typeFilter.value.toLowerCase() === targetType.toLowerCase() &&
+							currentSelected.length === 0 &&
+							!categoryFilter?.value;
+
+						if (isAlreadyActiveInSelect) {
+							resetFilters();
+							return;
+						}
+
+						severityChips.forEach((chip) => {
+							chip.setAttribute('aria-pressed', 'false');
+							chip.setAttribute('aria-checked', 'false');
+						});
+						if (categoryFilter) categoryFilter.value = '';
+						if (typeFilter) {
+							const option = Array.from(typeFilter.options).find(
+								(opt) => opt.value.toLowerCase() === targetType.toLowerCase(),
+							);
+							if (option) {
+								typeFilter.value = option.value;
+							} else {
+								typeFilter.value = '';
+							}
+						}
+						setFilterVisibility(true);
+						persistFilters();
+						applyFilters();
+					}
+				});
 			})();
 		</script>
 	</body>

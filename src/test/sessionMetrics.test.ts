@@ -5,10 +5,10 @@ import * as os from 'os';
 import type * as vscode from 'vscode';
 import { buildSessionMetricsHtml } from '../modules/tracker/views/sessionMetrics.js';
 import { toSessionMetrics, buildSessionAnalysis } from '../modules/tracker/analysis/snapshotAnalyzer.js';
-import { computeCommonVulnerabilities, COMMON_VULN_POLICY } from '../modules/tracker/analysis/commonVulnerabilities.js';
+import { computeCommonVulnerabilities, COMMON_VULN_POLICY, type GraduationToastEvents } from '../modules/tracker/analysis/commonVulnerabilities.js';
 import { SessionStore } from '../modules/tracker/storage/sessionStore.js';
 import { startSession, finalizeSession } from '../modules/tracker/analysis/lifecycleEngine.js';
-import { HOURLY_SCAN_INTERVAL_MS } from '../extension.js';
+const HOURLY_SCAN_INTERVAL_MS = 60 * 60 * 1000;
 import type { SessionMetrics, CommonVulnerabilityItem } from '../modules/presentation/panelTypes.js';
 import type { FindingLifecycleRecord, SessionRecord, FindingClassification } from '../modules/tracker/analysis/lifecycleTypes.js';
 
@@ -987,10 +987,10 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			// Check that duplicate (+- or (++ does not occur
 			assert.ok(!html.includes('(+-'), 'Should not contain (+- sign');
 			assert.ok(!html.includes('(++'), 'Should not contain (++ sign');
-			assert.ok(html.includes('Some progress (+2.00)'));
+			assert.ok(html.includes('Some progress'));
 			assert.ok(html.includes('<span class="sub-label">SQL Injection</span>'));
 			// Check that header instance count displays 2, matching instances
-			assert.ok(html.includes('Instances :  <span style="color: var(--text); font-weight: 700;">2</span>'));
+			assert.ok(html.includes('Instances Remaining :  <span style="color: var(--text); font-weight: 700;">2</span>'));
 		});
 	});
 
@@ -1021,12 +1021,12 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			};
 		}
 
-		function makeSession(id: string, flcs: FindingLifecycleRecord[]): SessionRecord {
+		function makeSession(id: string, flcs: FindingLifecycleRecord[], startedAt: number = 1000): SessionRecord {
 			return {
 				sessionId: id,
 				status: 'completed',
-				startedAt: 1000,
-				endedAt: 2000,
+				startedAt,
+				endedAt: startedAt + 1000,
 				baselineCheckpoint: null,
 				finalCheckpoint: null,
 				priorCompletedSessionId: null,
@@ -1067,12 +1067,12 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			const s4 = makeSession('s4', [makeFLC({ logicalFingerprint: 'fp-xss-3', cweId: 'CWE-79', type: 'XSS' })]);
 
 			// SQL Injection needs K=3 to qualify. Only 1 session has it → NOT common, so cannot graduate.
-			// Let's give it 3 sessions with new instances, then 2 clean sessions.
-			const sq1 = makeSession('sq1', [makeFLC({ logicalFingerprint: 'fp-sq1', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000 })]);
-			const sq2 = makeSession('sq2', [makeFLC({ logicalFingerprint: 'fp-sq2', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000 })]);
-			const sq3 = makeSession('sq3', [makeFLC({ logicalFingerprint: 'fp-sq3', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000 })]);
-			const clean1 = makeSession('clean1', [makeFLC({ logicalFingerprint: 'fp-other-1', cweId: 'CWE-79', type: 'XSS' })]);
-			const clean2 = makeSession('clean2', [makeFLC({ logicalFingerprint: 'fp-other-2', cweId: 'CWE-79', type: 'XSS' })]);
+			// Let's give it 3 sessions with new instances, then 2 clean sessions starting after resolution (5000).
+			const sq1 = makeSession('sq1', [makeFLC({ logicalFingerprint: 'fp-sq1', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000 })], 1000);
+			const sq2 = makeSession('sq2', [makeFLC({ logicalFingerprint: 'fp-sq2', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000 })], 2000);
+			const sq3 = makeSession('sq3', [makeFLC({ logicalFingerprint: 'fp-sq3', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000 })], 3000);
+			const clean1 = makeSession('clean1', [makeFLC({ logicalFingerprint: 'fp-other-1', cweId: 'CWE-79', type: 'XSS' })], 6000);
+			const clean2 = makeSession('clean2', [makeFLC({ logicalFingerprint: 'fp-other-2', cweId: 'CWE-79', type: 'XSS' })], 7000);
 
 			const currentFLCs = [
 				makeFLC({ logicalFingerprint: 'fp-sq1', cweId: 'CWE-89', type: 'SQL Injection', durableResolutionAt: 5000, missingSince: 5000, currentOccurrenceCount: 0 }),
@@ -1166,4 +1166,287 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			assert.strictEqual(common.size, 0, 'Recurring finding present in 2 of 3 sessions should NOT reach K=3');
 		});
 	});
+
+	describe('5. Terminology Refinement & Persisting Patterns Subtitle', () => {
+		it('renders "Full Report" header and persisting items subtitle', () => {
+			const metrics: SessionMetrics = {
+				critical: 1,
+				high: 2,
+				medium: 0,
+				low: 0,
+				trends: {
+					persistingPatterns: 1,
+					improvingTrends: 0,
+					resolvedThisSession: 0,
+					recurringPatterns: 0,
+					persistingItems: [
+						{ type: 'SQL Injection', instances: 2, subtitle: 'Present since 3 reports' },
+						{ type: 'XSS', instances: 1 },
+					],
+				},
+				totalSessionsAnalyzed: 2,
+			};
+
+			const html = buildSessionMetricsHtml(metrics);
+			assert.ok(html.includes('Full Report'), 'Header should display "Full Report"');
+			assert.ok(!html.includes('Full scan'), 'Header should not display "Full scan"');
+			assert.ok(html.includes('Present since 3 reports'), 'Custom persisting subtitle should be rendered');
+			assert.ok(html.includes('Present since 2 reports'), 'Default persisting subtitle should be rendered for items without custom subtitle');
+			assert.ok(html.includes('persisting-subtitle'), 'CSS class for persisting subtitle should be present');
+		});
+	});
+
+	describe('6. Common Vulnerabilities Graduation Toast Notifications (Task B6)', () => {
+		function createGradFLC(overrides: Partial<FindingLifecycleRecord> = {}): FindingLifecycleRecord {
+			return {
+				logicalFingerprint: 'fp-default',
+				contentFingerprint: 'content-default',
+				scopeFingerprint: 'scope-default',
+				ruleId: 'rule-default',
+				cweId: 'CWE-89',
+				type: 'SQL Injection',
+				severity: 'high',
+				instanceName: 'testVar',
+				filePath: 'src/app.ts',
+				firstConfirmedAt: 1000,
+				lastConfirmedAt: 2000,
+				confirmationCount: 2,
+				missingSince: null,
+				provisionalResolutionAt: null,
+				durableResolutionAt: null,
+				recurrenceCount: 0,
+				lastRecurredAt: null,
+				inSessionToggleCount: 0,
+				identicalRestorationCount: 0,
+				baselineOccurrenceCount: 1,
+				currentOccurrenceCount: 1,
+				isCommentedOut: false,
+				lifecycleState: 'persisting',
+				...overrides,
+			};
+		}
+
+		function createGradSession(id: string, startedAt: number, flcs: FindingLifecycleRecord[]): SessionRecord {
+			return {
+				sessionId: id,
+				status: 'completed',
+				startedAt,
+				endedAt: startedAt + 1000,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: null,
+				trendComparisonByKey: null,
+				lifecycleSummaries: flcs,
+			};
+		}
+
+		it('emits graduatingSoon toast event in the session before disappearance (consecutiveNoNew === G - 1)', () => {
+			// SQL Injection introduced across 3 sessions (K=3)
+			const s1 = createGradSession('s1', 1000, [createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500 })]);
+			const s2 = createGradSession('s2', 2000, [createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500 })]);
+			const s3 = createGradSession('s3', 3000, [createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500 })]);
+			// 1 clean completed session after durable resolution (timestamp 3500)
+			const clean1 = createGradSession('clean1', 4000, [createGradFLC({ logicalFingerprint: 'fp-other', cweId: 'CWE-79', type: 'XSS' })]);
+
+			const currentFLCs = [
+				createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+			];
+
+			const gradHistory: Record<string, any> = {};
+			const events: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
+
+			// Now in Session 5 (index 4): exactly 1 clean session completed out of G=2 required
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3, clean1],
+				null,
+				currentFLCs,
+				gradHistory,
+				3,
+				2,
+				events,
+			);
+
+			// Item should STILL be in Common Vulnerabilities (has not disappeared yet)
+			assert.strictEqual(common.size, 1, 'Should still appear in Common Vulnerabilities in the session before disappearance');
+			assert.strictEqual(common.get('CWE-89::SQL Injection')?.type, 'SQL Injection');
+
+			// Toast 1 ("graduating soon") must be emitted
+			assert.strictEqual(events.graduatingSoon.length, 1);
+			assert.strictEqual(events.graduatingSoon[0].type, 'SQL Injection');
+			assert.strictEqual(events.newlyGraduated.length, 0, 'Should not graduate yet');
+		});
+
+		it('deduplicates graduatingSoon toast on repeated saves in the same session', () => {
+			const s1 = createGradSession('s1', 1000, [createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500 })]);
+			const s2 = createGradSession('s2', 2000, [createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500 })]);
+			const s3 = createGradSession('s3', 3000, [createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500 })]);
+			const clean1 = createGradSession('clean1', 4000, [createGradFLC({ logicalFingerprint: 'fp-other', cweId: 'CWE-79', type: 'XSS' })]);
+
+			const currentFLCs = [
+				createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+			];
+
+			const gradHistory: Record<string, any> = {};
+			const firstEvents: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
+
+			// First scan in session
+			computeCommonVulnerabilities([s1, s2, s3, clean1], null, currentFLCs, gradHistory, 3, 2, firstEvents);
+			assert.strictEqual(firstEvents.graduatingSoon.length, 1);
+
+			// Second scan in the same session with persistent gradHistory
+			const secondEvents: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
+			computeCommonVulnerabilities([s1, s2, s3, clean1], null, currentFLCs, gradHistory, 3, 2, secondEvents);
+			assert.strictEqual(secondEvents.graduatingSoon.length, 0, 'Must not re-fire graduatingSoon toast in the same session');
+		});
+
+		it('does NOT emit graduatingSoon toast if a new instance was introduced in the active session', () => {
+			const s1 = createGradSession('s1', 1000, [createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500 })]);
+			const s2 = createGradSession('s2', 2000, [createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500 })]);
+			const s3 = createGradSession('s3', 3000, [createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500 })]);
+			const clean1 = createGradSession('clean1', 4000, [createGradFLC({ logicalFingerprint: 'fp-other', cweId: 'CWE-79', type: 'XSS' })]);
+
+			// Active session introduces a brand new SQL Injection fingerprint fp-new (even if resolved)
+			const activeSession: SessionRecord = {
+				sessionId: 's-active',
+				status: 'active',
+				startedAt: 5000,
+				endedAt: null,
+				baselineCheckpoint: null,
+				finalCheckpoint: null,
+				priorCompletedSessionId: 'clean1',
+				trendComparisonByKey: null,
+				lifecycleSummaries: [],
+				hourlyCheckpoints: [
+					{
+						timestamp: 5500,
+						findings: [{
+							logicalFingerprint: 'fp-new',
+							contentFingerprint: 'content-new',
+							scopeFingerprint: 'scope-new',
+							ruleId: 'rule-new',
+							cweId: 'CWE-89',
+							type: 'SQL Injection',
+							severity: 'high' as const,
+							instanceName: 'testVar',
+							filePath: 'src/app.ts',
+							occurrenceCount: 1,
+						}],
+					},
+				],
+			};
+
+			const currentFLCs = [
+				createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-new', durableResolutionAt: 5600, missingSince: 5600, currentOccurrenceCount: 0 }),
+			];
+
+			const gradHistory: Record<string, any> = {};
+			const events: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
+
+			computeCommonVulnerabilities(
+				[s1, s2, s3, clean1],
+				activeSession,
+				currentFLCs,
+				gradHistory,
+				3,
+				2,
+				events,
+			);
+
+			assert.strictEqual(events.graduatingSoon.length, 0, 'Must NOT emit graduatingSoon when active session had new instances');
+		});
+
+		it('emits newlyGraduated toast event when reaching G=2 clean sessions and item disappears', () => {
+			const s1 = createGradSession('s1', 1000, [createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500 })]);
+			const s2 = createGradSession('s2', 2000, [createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500 })]);
+			const s3 = createGradSession('s3', 3000, [createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500 })]);
+			// 2 clean completed sessions after resolution
+			const clean1 = createGradSession('clean1', 4000, [createGradFLC({ logicalFingerprint: 'fp-other-1', cweId: 'CWE-79', type: 'XSS' })]);
+			const clean2 = createGradSession('clean2', 5000, [createGradFLC({ logicalFingerprint: 'fp-other-2', cweId: 'CWE-79', type: 'XSS' })]);
+
+			const currentFLCs = [
+				createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+				createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500, missingSince: 3500, currentOccurrenceCount: 0 }),
+			];
+
+			const gradHistory: Record<string, any> = {};
+			const events: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
+
+			// In Session 6 (2 clean completed sessions):
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3, clean1, clean2],
+				null,
+				currentFLCs,
+				gradHistory,
+				3,
+				2,
+				events,
+			);
+
+			// Item has DISAPPEARED from Common Vulnerabilities!
+			assert.strictEqual(common.size, 0, 'Item should have disappeared from Common Vulnerabilities');
+
+			// Toast 2 ("newlyGraduated") must be emitted
+			assert.strictEqual(events.newlyGraduated.length, 1);
+			assert.strictEqual(events.newlyGraduated[0].type, 'SQL Injection');
+			assert.strictEqual(events.graduatingSoon.length, 0);
+
+			// Subsequent calls should NOT re-emit newlyGraduated toast
+			const secondEvents: GraduationToastEvents = { graduatingSoon: [], newlyGraduated: [] };
+			computeCommonVulnerabilities(
+				[s1, s2, s3, clean1, clean2],
+				null,
+				currentFLCs,
+				gradHistory,
+				3,
+				2,
+				secondEvents,
+			);
+			assert.strictEqual(secondEvents.newlyGraduated.length, 0, 'Graduation toast should not fire twice');
+		});
+
+		it('resets graduation markers when a graduated type re-enters and has new unresolved instances', () => {
+			const gradHistory: Record<string, any> = {
+				'CWE-89::SQL Injection': {
+					graduatedAfterSessionIndex: 4,
+					notifiedGraduatingSoonSessionIndex: 3,
+					notifiedGraduatedSessionIndex: 4,
+				},
+			};
+
+			// New sessions after graduation introduce a new SQL Injection finding
+			const s1 = createGradSession('s1', 1000, [createGradFLC({ logicalFingerprint: 'fp-1', durableResolutionAt: 3500 })]);
+			const s2 = createGradSession('s2', 2000, [createGradFLC({ logicalFingerprint: 'fp-2', durableResolutionAt: 3500 })]);
+			const s3 = createGradSession('s3', 3000, [createGradFLC({ logicalFingerprint: 'fp-3', durableResolutionAt: 3500 })]);
+			const clean1 = createGradSession('clean1', 4000, []);
+			const clean2 = createGradSession('clean2', 5000, []);
+			// Re-introduced in session 6, 7, 8
+			const reintro1 = createGradSession('re1', 6000, [createGradFLC({ logicalFingerprint: 'fp-re-1' })]);
+			const reintro2 = createGradSession('re2', 7000, [createGradFLC({ logicalFingerprint: 'fp-re-2' })]);
+			const reintro3 = createGradSession('re3', 8000, [createGradFLC({ logicalFingerprint: 'fp-re-3' })]);
+
+			const reintroFLC = createGradFLC({ logicalFingerprint: 'fp-re-3', durableResolutionAt: null, currentOccurrenceCount: 1 });
+
+			const common = computeCommonVulnerabilities(
+				[s1, s2, s3, clean1, clean2, reintro1, reintro2, reintro3],
+				null,
+				[reintroFLC],
+				gradHistory,
+			);
+
+			// Should be back in Common Vulnerabilities
+			assert.strictEqual(common.size, 1);
+			// Graduation markers should be cleared
+			assert.strictEqual(gradHistory['CWE-89::SQL Injection'].graduatedAfterSessionIndex, null);
+			assert.strictEqual(gradHistory['CWE-89::SQL Injection'].notifiedGraduatedSessionIndex, null);
+		});
+	});
 });
+

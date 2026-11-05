@@ -28,41 +28,19 @@ let statusBarItem: vscode.StatusBarItem | undefined;
 // ══════════════════════════════════════════════════════════════════════
 
 /**
- * Builds the status bar text based on severity priority rules:
- *
- * - If critical AND high > 0  →  "X Critical · Y High"
- * - If only critical > 0      →  critical + next available (medium > low)
- * - If only high > 0          →  high + next available (medium > low)
- * - If no critical/high       →  medium and/or low
- * - If all zero               →  "All Clear"
+ * Builds the status bar text with a single authoritative total count.
+ * Matches the Active Vulnerabilities panel and toast notifications to avoid
+ * user confusion across different presentation surfaces.
  */
 function buildStatusText(analysis: SessionAnalysis): string {
 	const { critical, high, medium, low } = analysis.severityCounts;
+	const total = critical + high + medium + low;
 
-	const segments: string[] = [];
-
-	if (critical > 0 && high > 0) {
-		segments.push(`${critical} Critical`, `${high} High`);
-	} else if (critical > 0) {
-		segments.push(`${critical} Critical`);
-		if (medium > 0) { segments.push(`${medium} Medium`); }
-		else if (low > 0) { segments.push(`${low} Low`); }
-	} else if (high > 0) {
-		segments.push(`${high} High`);
-		if (medium > 0) { segments.push(`${medium} Medium`); }
-		else if (low > 0) { segments.push(`${low} Low`); }
-	} else if (medium > 0) {
-		segments.push(`${medium} Medium`);
-		if (low > 0) { segments.push(`${low} Low`); }
-	} else if (low > 0) {
-		segments.push(`${low} Low`);
+	if (total === 0) {
+		return `$(check) Ariadne: All Clear`;
 	}
 
-	if (segments.length === 0) {
-		return `$(circle-filled) Ariadne — All Clear`;
-	}
-
-	return `$(circle-filled) Ariadne | ${segments.join(' · ')}`;
+	return `$(shield) Ariadne: ${total} ${total === 1 ? 'Issue' : 'Issues'}`;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -131,12 +109,13 @@ export function createAriadneStatusBarItem(
 		vscode.StatusBarAlignment.Left,
 		0,
 	);
+	statusBarItem.command = 'ariadne-extension-vscode.openPanel';
 
 	if (analysis) {
 		statusBarItem.text = buildStatusText(analysis);
 		statusBarItem.tooltip = buildTooltip(analysis);
 	} else {
-		statusBarItem.text = `$(circle-filled) Ariadne`;
+		statusBarItem.text = `$(shield) Ariadne`;
 	}
 
 	statusBarItem.show();

@@ -75,6 +75,24 @@ export interface TypeGraduationState {
 	 * Null if the type has never graduated.
 	 */
 	graduatedAfterSessionIndex: number | null;
+	/**
+	 * Session index when the 'graduating soon' pre-graduation toast was shown.
+	 * Prevents re-firing the warning toast multiple times within the same session.
+	 */
+	notifiedGraduatingSoonSessionIndex?: number | null;
+	/**
+	 * Session index when the final 'graduated' toast was shown.
+	 * Prevents re-firing the graduation toast once already announced.
+	 */
+	notifiedGraduatedSessionIndex?: number | null;
+}
+
+/** Events generated during Common Vulnerabilities evaluation for toast notifications. */
+export interface GraduationToastEvents {
+	/** Common vulnerability types that are on track to graduate in the next session. */
+	graduatingSoon: Array<{ type: string; cweId: string }>;
+	/** Common vulnerability types that have just graduated and disappeared from the list. */
+	newlyGraduated: Array<{ type: string; cweId: string }>;
 }
 
 /** Result for a single Common Vulnerability type. */
@@ -157,7 +175,12 @@ export function computeCommonVulnerabilities(
 	graduationHistory: Record<string, TypeGraduationState>,
 	K: number = COMMON_VULN_POLICY.K,
 	G: number = COMMON_VULN_POLICY.G,
+	outEvents?: GraduationToastEvents,
 ): Map<string, CommonVulnerabilityEntry> {
+	if (outEvents) {
+		if (!outEvents.graduatingSoon) { outEvents.graduatingSoon = []; }
+		if (!outEvents.newlyGraduated) { outEvents.newlyGraduated = []; }
+	}
 
 	// ── Phase 1: Build milestone list with fingerprints ─────────────
 	//
@@ -250,6 +273,7 @@ export function computeCommonVulnerabilities(
 	 * Used by the graduation G-check.
 	 */
 	const csNewTypes: Array<Set<string>> = completedSessions.map(() => new Set());
+	const activeNewTypes = new Set<string>();
 
 	for (const [mIdx, milestone] of milestones.entries()) {
 		const typesPresent = new Set<string>();
@@ -302,6 +326,8 @@ export function computeCommonVulnerabilities(
 		for (const key of newTypesHere) {
 			if (milestone.completedSessionIdx >= 0) {
 				csNewTypes[milestone.completedSessionIdx].add(key);
+			} else {
+				activeNewTypes.add(key);
 			}
 		}
 	}
@@ -314,6 +340,7 @@ export function computeCommonVulnerabilities(
 	//    sessions (can prevent)
 
 	const common = new Map<string, CommonVulnerabilityEntry>();
+	const currentSessionIdx = completedSessions.length;
 
 	for (const [key, data] of typeData) {
 		if (data.sessionCount < K) { continue; }
@@ -346,15 +373,56 @@ export function computeCommonVulnerabilities(
 			}
 		}
 
+		// If a previously graduated type re-entered and has unresolved issues or 0 clean sessions,
+		// reset graduation and notification markers for the new learning cycle.
+		const existingGradState = graduationHistory[key];
+		if (existingGradState && typeof existingGradState.graduatedAfterSessionIndex === 'number' && (!allResolved || consecutiveNoNew === 0)) {
+			graduationHistory[key] = {
+				graduatedAfterSessionIndex: null,
+				notifiedGraduatingSoonSessionIndex: null,
+				notifiedGraduatedSessionIndex: null,
+			};
+		}
+
 		const graduated = allResolved && consecutiveNoNew >= G;
 
 		if (graduated) {
+			const existingGradState = graduationHistory[key];
+			const wasAlreadyNotified = existingGradState?.notifiedGraduatedSessionIndex !== undefined &&
+				existingGradState.notifiedGraduatedSessionIndex !== null;
+
+			if (!wasAlreadyNotified && outEvents) {
+				outEvents.newlyGraduated.push({ type: data.type, cweId: data.cweId });
+			}
+
 			// Record graduation using the completed session index (stable
 			// across milestone recalculations, unlike milestone index)
 			graduationHistory[key] = {
+				...existingGradState,
 				graduatedAfterSessionIndex: completedSessions.length - 1,
+				notifiedGraduatedSessionIndex: outEvents
+					? (wasAlreadyNotified ? existingGradState?.notifiedGraduatedSessionIndex : currentSessionIdx)
+					: existingGradState?.notifiedGraduatedSessionIndex ?? null,
 			};
 			continue; // Graduated types are not Common
+		}
+
+		// Check if graduating soon: 1 session before it is supposed to disappear.
+		// Requires all instances resolved, no new instances in the active session,
+		// and exactly G - 1 clean completed sessions.
+		if (allResolved && !activeNewTypes.has(key) && consecutiveNoNew === G - 1) {
+			const existingGradState = graduationHistory[key];
+			const alreadyNotifiedThisSession =
+				existingGradState?.notifiedGraduatingSoonSessionIndex === currentSessionIdx;
+
+			if (!alreadyNotifiedThisSession && outEvents) {
+				outEvents.graduatingSoon.push({ type: data.type, cweId: data.cweId });
+				graduationHistory[key] = {
+					...existingGradState,
+					graduatedAfterSessionIndex: existingGradState?.graduatedAfterSessionIndex ?? null,
+					notifiedGraduatingSoonSessionIndex: currentSessionIdx,
+				};
+			}
 		}
 
 		const totalRecurrences = typeFLCs.reduce(
