@@ -127,6 +127,10 @@ export function buildVulnKey(vuln: Vulnerability): string {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+function inlineCode(value: string): string {
+	return escapeHtml(value).replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
 function escapeHtml(value: string): string {
 	return value
 		.replaceAll('&', '&amp;')
@@ -303,7 +307,7 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 				<div class="detail-grid">
 					<div class="detail-row span-2">
 						<div class="detail-label">Description</div>
-						<div class="detail-value">${vuln.description}</div>
+						<div class="detail-value">${inlineCode(vuln.description)}</div>
 					</div>
 					<div class="detail-row">
 						<div class="detail-label">File Location</div>
@@ -1295,6 +1299,24 @@ const CSS = /* css */ `
 
     /* Note: Allowing detail values to wrap naturally so they remain readable */
     .detail-value { font-size: 13px; color: var(--text); line-height: 1.4; word-break: break-word; }
+    .detail-value code {
+        font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 4px;
+        border-radius: 4px;
+        color: var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground));
+        background: color-mix(
+            in srgb,
+            var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground)) 18%,
+            var(--vscode-textCodeBlock-background)
+        );
+        box-shadow: inset 0 0 0 1px color-mix(
+            in srgb,
+            var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground)) 45%,
+            transparent
+        );
+    }
 
     .cta-row {
         display: flex;

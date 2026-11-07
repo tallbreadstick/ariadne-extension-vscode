@@ -1,123 +1,52 @@
 # Ariadne for VS Code
 
-Ariadne is a student-first security assistant for Java projects in VS Code. It scans your code for common vulnerabilities, highlights issues inline, and explains what went wrong in plain language.
+Ariadne checks Java code for common security problems while you work. It marks the line, tells you what reached a dangerous call, and can explain the idea behind the finding.
 
-## Requirements
+It does not rewrite your file. The explanation is a short example to study, not a patch.
 
-| Requirement | Notes |
-|---|---|
-| [Visual Studio Code](https://code.visualstudio.com/) | **1.107 or newer** |
-| A Java workspace | Open a folder that contains `.java` source files |
-| GitHub account | Required to sign in and run scans |
-| Supported OS | Linux, Windows, or macOS (see **Core** below) |
+You need VS Code 1.107 or newer, a folder with Java source, and a GitHub account.
 
-On first scan, Ariadne downloads the scanner for your computer from the [latest Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases). Leave **Auto** enabled in the sidebar unless you need a specific build.
+## Start
 
-## Install
+1. Install **Ariadne** from the Extensions view.
+2. Open the **Ariadne** shield in the activity bar and sign in with GitHub.
+3. Open your Java project. The first scan starts on its own.
+4. Read the marks in the editor, or open **Active Vulnerabilities** in the bottom panel and jump to a line.
 
-1. Obtain the packaged `.vsix` file for this release.
-2. In VS Code, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
-3. Run **Extensions: Install from VSIX...** and select the file.
-4. Reload VS Code if prompted.
+## What a finding shows
 
-## Quick start
+The description names the value in your code and the call or response it reached. Names and file paths are shown as code, for example `password` or `application.properties`.
 
-1. Click the **Ariadne** shield icon in the activity bar (left sidebar).
-2. Sign in with **GitHub** when prompted.
-3. Open a folder that contains Java source files.
-4. Wait for the first scan to finish — the status bar and bottom panel update as findings arrive.
-5. Click a highlighted line in the editor or open **ARIADNE (ACTIVE VULNERABILITIES)** in the bottom panel to review issues.
+If the finding says a word came from the sensitive-name list, that word matched `rules/_library.ariadne`. Rename the variable, or remove the word from that list if it is not actually a secret. Otherwise fix the exposure.
 
-## Sidebar (activity bar)
-
-The Ariadne sidebar is organized into sections:
-
-- **Sign in** — Connect your GitHub account. Scanning, custom rules, and AI explanations require an active session.
-- **Sessions** — View session-related options and status.
-- **Core** — Control editor highlights, whether the bottom panel opens on startup, **Auto** scanner selection, operating system, and scanner binary.
-- **Scripting** — Manage `.ariadne` rule files when present in your workspace.
-
-### Core settings
-
-| Option | What it does |
-|---|---|
-| **Highlights** | Show or hide colored marks on vulnerable code in the editor. Turning highlights off does not stop scanning. |
-| **Open panel on startup** | Open the Ariadne bottom panel when the extension activates. |
-| **Auto** | Automatically pick the scanner build for this computer (recommended). |
-| **Operating system / binary** | Choose a specific platform or build when Auto is off. |
-
-## Bottom panel
-
-Open the **Ariadne** area in the bottom panel bar:
-
-| Panel | Purpose |
-|---|---|
-| **ARIADNE (ACTIVE VULNERABILITIES)** | Browse current findings, filter by severity, and jump to code |
-| **SESSION METRICS** | See counts, trends, and session progress over time |
-
-## In the editor
-
-After a scan completes:
-
-- **Highlights** — Vulnerable lines are marked with a severity-colored background and an end-of-line label.
-- **Hover** — Point at highlighted code for a short summary and a link to **Explain Vulnerability**.
-- **Status bar** — A summary of active issues appears in the VS Code status bar.
-
-Findings appear in the Ariadne panels, not the standard Problems panel.
+Highlights use a color for the severity. Turn them off from the Ariadne sidebar if you only want the panel. Scanning continues either way.
 
 ## Explain Vulnerability
 
-**Explain Vulnerability** opens an explanation for one finding. It says what the bug is, why it matters, and shows a short made-up example of the mistake and a safer shape. It does not rewrite your file.
+**Explain Vulnerability** describes one finding: what the bug is, why it matters, a made-up example of the mistake, and a safer shape of that example. It is not a replacement for your file.
 
-Ways to open it:
-
-- Click **Explain Vulnerability** on a finding in the **Active Vulnerabilities** panel.
-- Use the link in the editor hover popup.
-- Run **Ariadne: Explain Vulnerability** from the Command Palette.
-
-Explanations use Gemini Flash through your GitHub Copilot allowance. Ensure Copilot is available in your VS Code setup.
+Open it from the finding in **Active Vulnerabilities**, from the link in the editor hover, or with **Ariadne: Explain Vulnerability** in the Command Palette. Explanations use GitHub Copilot.
 
 ## Commands
 
-Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for **Ariadne**:
+Open the Command Palette and search for **Ariadne**:
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| **Ariadne: Analyze** | Run a full analysis on the workspace |
-| **Ariadne: Explain Vulnerability** | Open the explanation panel for a finding |
-| **Ariadne: Sign In to GitHub** | Open the sign-in panel |
-| **Ariadne: Open Panel** | Focus the Ariadne bottom panel |
-| **Ariadne: Settings** | Open Ariadne settings in the sidebar |
-| **Ariadne: Terms of Use** | View terms of use |
-| **Ariadne: Privacy Policy** | View the privacy policy |
+| **Ariadne: Analyze** | Scan the project again |
+| **Ariadne: Explain Vulnerability** | Explain the finding you opened it from |
+| **Ariadne: Sign In to GitHub** | Sign in |
+| **Ariadne: Open Panel** | Show the Ariadne panel |
+| **Ariadne: Settings** | Open the sidebar settings |
+| **Ariadne: Terms of Use** | Read the terms |
+| **Ariadne: Privacy Policy** | Read the privacy policy |
 
-## VS Code settings
+## If a scan looks empty
 
-You can also adjust behavior under **File → Preferences → Settings** (search for **Ariadne**):
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `ariadne.executable` | `"ariadne"` | Optional path to a local scanner binary. Leave the default to use the binary selected in the sidebar **Core** section. |
-| `ariadne.notifications.level` | `"milestones"` | Popup notification verbosity: `milestones`, `all`, or `quiet`. |
-| `ariadne.autoScan.intervalMinutes` | `60` | Minutes between automatic full scans (2–180). |
-
-Most day-to-day options — highlights, scanner selection, sign-in — are in the **Ariadne** sidebar rather than the Settings UI.
-
-## Notifications
-
-Ariadne can show toast notifications when findings change (new issues, fixes, recurrences, and similar milestones). Set **Notifications** to **quiet** in settings if you prefer to check the panels and status bar only.
-
-## Troubleshooting
-
-| Problem | What to try |
-|---|---|
-| Extension asks you to sign in | Open the Ariadne sidebar and complete GitHub sign-in. |
-| No findings after opening a Java project | Run **Ariadne: Analyze** from the Command Palette. Check for a scanner download notification. |
-| Scanner or download errors | In the sidebar **Core** section, confirm **Auto** is on or pick the correct OS and binary. |
-| Highlights missing | Turn **Highlights** on in the sidebar **Core** section. |
-| Stale results after an update | Reload the VS Code window (**Developer: Reload Window**). |
-| Explain Vulnerability fails | Confirm GitHub sign-in and that Copilot is available in VS Code. |
+Sign in from the sidebar, then run **Ariadne: Analyze**. If the marks are missing, turn **Highlights** on in the sidebar. After an update, run **Developer: Reload Window**.
 
 ## License
 
-Proprietary. Users may install and run it during data collection. See [LICENSE](LICENSE).
+Proprietary. See [LICENSE](LICENSE).
+
+Working on the extension itself: [dev.md](dev.md).

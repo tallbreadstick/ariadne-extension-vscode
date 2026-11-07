@@ -1,10 +1,10 @@
 # ariadne-extension-vscode — Developer Guide
 
-VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and an optional “Ask Ariadne” feedback panel powered by GitHub Copilot.
+VS Code extension for **Ariadne** — inline security diagnostics, vulnerability panels, session metrics, and Explain Vulnerability, powered by GitHub Copilot.
 
 The scanner binary is downloaded from the [latest Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases) the first time a scan runs. **Auto** in the sidebar Core section picks the build for this computer. You can choose a specific build there.
 
-End-user installation and usage instructions live in [README.md](README.md).
+The marketplace page is [README.md](README.md). It does not describe the binary picker, settings keys, or this build loop.
 
 ## Install (development)
 
@@ -88,15 +88,33 @@ See `.vscode/extensions.json` for suggested extensions (ESLint, esbuild problem 
 
 ## Extension behavior (reference)
 
-See [README.md](README.md) for the full end-user guide. Quick reference:
+The published page is [README.md](README.md). This section is the lab and development reference for the same surfaces.
+
+### Sidebar
+
+- **Sign in** — GitHub session. Scanning, custom rules, and explanations require it.
+- **Sessions** — Session status.
+- **Core** — Editor highlights, whether the bottom panel opens on startup, **Auto** scanner selection, operating system, and scanner binary. Leave **Auto** on unless you need a specific build from the [Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases).
+- **Scripting** — `.ariadne` rule files in the workspace.
+
+| Core option | What it does |
+|---|---|
+| **Highlights** | Colored marks on vulnerable lines. Off hides the marks and does not stop scanning. |
+| **Open panel on startup** | Open the bottom panel when the extension activates. |
+| **Auto** | Pick the scanner build for this computer. |
+| **Operating system / binary** | A specific platform or build when Auto is off. |
 
 ### Commands (Command Palette: `Ctrl+Shift+P`)
 
 | Command | Title | Description |
 |---|---|---|
 | `ariadne-extension-vscode.analyze` | **Ariadne: Analyze** | Run analysis on the workspace |
-| `ariadne-extension-vscode.openFeedbackPanel` | **Ariadne: Ask Ariadne** | Open AI explanation panel for a finding |
+| `ariadne-extension-vscode.openFeedbackPanel` | **Ariadne: Explain Vulnerability** | Open the explanation panel for a finding |
 | `ariadne-extension-vscode.helloWorld` | Hello World | Development stub |
+
+### Explain Vulnerability
+
+The card, the hover link, and the command open one explanation: what the bug is, why it matters, a made-up example, and a safer shape. It does not rewrite the file. Requests use Gemini Flash through the user's Copilot allowance.
 
 ### Panels
 
@@ -140,7 +158,7 @@ GitHub sign-in is required to use the extension (scanning, rule scripts, and AI 
 | Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
 | No findings / core errors in Debug Console | Scanner download or process failed | Check the notification and Debug Console; change Core in the sidebar or set `ariadne.executable` |
 | Stale results after a new core release | Old scanner process still running | Reload the extension window |
-| Ask Ariadne errors | Copilot auth failure | Check VS Code Copilot extension status |
+| Explain Vulnerability errors | Copilot auth failure | Check VS Code Copilot extension status |
 
 Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.
 
@@ -154,7 +172,7 @@ ariadne-extension-vscode/
 │       ├── core/                 ← binary resolution
 │       ├── detection/bridge/     ← IPC with scanner (spawn, messages, convert)
 │       ├── presentation/         ← diagnostics, webviews, panels
-│       ├── feedback/             ← Copilot "Ask Ariadne", auth, settings
+│       ├── feedback/             ← Explain Vulnerability, auth, settings
 │       ├── tracker/              ← status bar, session metrics, storage
 │       └── rules/                ← .ariadne rule file support
 ├── scripts/                      ← workflow CLI tooling

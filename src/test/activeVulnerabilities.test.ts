@@ -81,6 +81,18 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(titleIdx < explainIdx && explainIdx < fileIdx, 'Explain Vulnerability button should sit between issue-title and summary-file');
 		assert.ok(explainIdx < detailsPanelIdx, 'Explain Vulnerability button should be visible inside summary outside details-panel');
 	});
+
+	it('renders backtick spans in the description as inline code', () => {
+		const html = buildActiveVulnerabilitiesHtml(
+			[{ ...sample[0], description: 'A binding named `accessToken` is returned from `leakAccessToken`.' }],
+			{ signedIn: true },
+		);
+		assert.ok(html.includes('<code>accessToken</code>'));
+		assert.ok(html.includes('<code>leakAccessToken</code>'));
+		assert.ok(!html.includes('`accessToken`'));
+		assert.ok(html.includes('--vscode-textPreformat-foreground'));
+		assert.ok(html.includes('--vscode-textCodeBlock-background'));
+	});
 });
 
 describe('Next Focus Recommendation Engine', () => {
