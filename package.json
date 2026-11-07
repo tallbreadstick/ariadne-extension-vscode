@@ -63,10 +63,6 @@
     ],
     "commands": [
       {
-        "command": "ariadne-extension-vscode.helloWorld",
-        "title": "Hello World"
-      },
-      {
         "command": "ariadne-extension-vscode.openFeedbackPanel",
         "title": "Ariadne: Explain Vulnerability"
       },
@@ -106,38 +102,6 @@
       {
         "command": "ariadne-extension-vscode.openPrivacyPolicy",
         "title": "Ariadne: Privacy Policy"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugLifecycles",
-        "title": "Ariadne: Debug — Show Lifecycle Data"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugResetLifecycles",
-        "title": "Ariadne: Debug — Reset All Lifecycle Data"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugShowSaveScanState",
-        "title": "Ariadne: Debug — Show Save Scan State"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugResetSaveScanState",
-        "title": "Ariadne: Debug — Reset Save Scan State"
-      },
-      {
-        "command": "ariadne-extension-vscode.triggerHourlyRollover",
-        "title": "Ariadne: Debug — Trigger Hourly Session Rollover"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugSimulateAbruptRecovery",
-        "title": "Ariadne: Debug — Simulate Abrupt Session Recovery"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugResetWelcomeToast",
-        "title": "Ariadne: Debug — Reset Welcome Onboarding Toast"
-      },
-      {
-        "command": "ariadne-extension-vscode.debugResetOnboarding",
-        "title": "Ariadne: Debug — Reset Onboarding Guide State"
       }
     ],
     "viewsContainers": {

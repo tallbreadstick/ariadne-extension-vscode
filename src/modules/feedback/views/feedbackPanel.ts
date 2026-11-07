@@ -81,7 +81,45 @@ export function askAriadneRequestId(artifact: AskAriadneArtifact): string {
 	return `${artifact.cwe}|${artifact.filePath}|${artifact.line}|${artifact.title}`;
 }
 
-export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = ''): string {
+/** A finished explanation. The page shows this markup and does not ask again. */
+export interface SettledExplanation {
+	html?: string;
+	error?: string;
+}
+
+export interface RestoredExplanation {
+	requestId: string;
+	title: string;
+	html: string;
+}
+
+/** State saved by a finished explanation page. Empty restores are not explanations. */
+export function restoredExplanation(state: unknown): RestoredExplanation | undefined {
+	if (!state || typeof state !== 'object') {
+		return undefined;
+	}
+	const value = state as Record<string, unknown>;
+	if (typeof value.requestId !== 'string' || value.requestId.length === 0) {
+		return undefined;
+	}
+	if (typeof value.html !== 'string' || !value.html.includes('data-request-id')) {
+		return undefined;
+	}
+	const title = typeof value.title === 'string' && value.title.length > 0
+		? value.title
+		: 'Ariadne';
+	return { requestId: value.requestId, title, html: value.html };
+}
+
+function scriptJson(value: unknown): string {
+	return JSON.stringify(value).replaceAll('<', '\\u003c');
+}
+
+export function buildFeedbackPanelHtml(
+	meta: VulnerabilityMetadata,
+	requestId = '',
+	settled?: SettledExplanation,
+): string {
     const title = escapeHtml(meta.type);
     const severity = escapeHtml(severityLabel(meta.severity));
     const severityClass = meta.severity;
@@ -311,9 +349,48 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
             }
 
             .caption,
-            .note {
+            .note,
+            .flow figcaption {
                 color: var(--muted);
                 font-size: 13px;
+            }
+
+            .flow {
+                margin: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                min-width: 0;
+            }
+
+            .flow ol {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .flow-step {
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                padding: 8px 10px;
+                background: var(--panel-2);
+                font-size: 13px;
+                line-height: 1.4;
+            }
+
+            .flow-step.start { border-color: var(--vscode-textLink-foreground); }
+            .flow-step.weak { border-color: var(--vscode-editorWarning-foreground); }
+            .flow-step.harm { border-color: var(--vscode-editorError-foreground, var(--critical)); }
+            .flow-step.safe { border-color: var(--vscode-testing-iconPassed, var(--vscode-charts-green)); }
+
+            .flow-join {
+                align-self: center;
+                width: 0;
+                height: 14px;
+                border-left: 2px solid var(--muted);
             }
 
             .code {
@@ -454,15 +531,17 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
             </header>
 
             <!-- Error state (hidden by default) -->
-            <div id="error-box" class="error-box">
-                <p id="error-message"></p>
+            <div id="error-box" class="error-box${settled?.error ? ' visible' : ''}">
+                <p id="error-message">${settled?.error ? escapeHtml(settled.error) : ''}</p>
             </div>
 
-            <main id="explanation" class="content">
-                <div class="skeleton-line medium"></div>
+            <main id="explanation" class="content"${settled?.error ? ' style="display:none"' : ''}>
+                ${settled
+					? (settled.html ?? '')
+					: `<div class="skeleton-line medium"></div>
                 <div class="skeleton-line"></div>
                 <div class="skeleton-line short"></div>
-                <div class="skeleton-code"></div>
+                <div class="skeleton-code"></div>`}
             </main>
 
             <div class="footer">
@@ -471,6 +550,14 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
         </div>
 
         <script>
+            ${settled ? `
+            const vscodeApi = acquireVsCodeApi();
+            vscodeApi.setState({
+                requestId: ${scriptJson(requestId)},
+                title: ${scriptJson(`Ariadne: ${meta.type}`)},
+                html: document.documentElement.outerHTML,
+            });
+            ` : `
             const requestId = document.body.dataset.requestId || '';
 
             window.addEventListener('message', (event) => {
@@ -490,6 +577,7 @@ export function buildFeedbackPanelHtml(meta: VulnerabilityMetadata, requestId = 
                     document.getElementById('error-message').textContent = msg.message;
                 }
             });
+            `}
         </script>
     </body>
 </html>`;

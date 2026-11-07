@@ -126,13 +126,14 @@ export function scannerOsForTarget(target: string): ScannerOs | undefined {
 
 /**
  * Fills missing Auto / OS / binary choices.
- * Auto defaults on. A previously saved concrete `ariadne.scanner` value turns Auto off.
+ * Auto is on until a saved choice sets it false. A leftover scanner name only
+ * fills the manual binary; it does not turn Auto off.
  */
 export function normalizeScannerPreferences(input: ScannerPreferenceInput): ScannerPreferences {
 	const legacyTarget = input.legacy && input.legacy !== SCANNER_AUTO && isScannerTarget(input.legacy)
 		? input.legacy
 		: undefined;
-	const auto = input.auto ?? !legacyTarget;
+	const auto = input.auto ?? true;
 	const storedTarget = input.target && isScannerTarget(input.target) ? input.target : legacyTarget;
 	const os = input.os && isScannerOs(input.os)
 		? input.os

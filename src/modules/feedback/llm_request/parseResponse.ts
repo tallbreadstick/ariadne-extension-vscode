@@ -6,7 +6,7 @@
  * panel can highlight the Java itself.
  */
 
-import type { ExplanationSnippet, LLMExplanation } from './requestTypes.js';
+import type { ExplanationDiagram, ExplanationSnippet, FlowStep, LLMExplanation } from './requestTypes.js';
 
 const TEXT_FIELDS = ['summary', 'why'] as const;
 
@@ -27,9 +27,10 @@ export function parseExplanation(rawContent: string): LLMExplanation {
 	return {
 		summary: text['summary'],
 		why: text['why'],
-		mistake: requiredSnippet(parsed['mistake'], 'mistake'),
-		attack: requiredSnippet(parsed['attack'], 'attack'),
-		safer: requiredSnippet(parsed['safer'], 'safer'),
+		diagram: optionalDiagram(parsed['diagram']),
+		mistake: requiredSnippet(parsed['mistake'], 'mistake', 'where'),
+		attack: requiredAttack(parsed['attack']),
+		safer: requiredSnippet(parsed['safer'], 'safer', 'change'),
 		checks: requiredChecks(parsed['checks']),
 	};
 }
@@ -63,7 +64,21 @@ function requiredText(value: unknown, field: string): string {
 	return value.trim();
 }
 
-function requiredSnippet(value: unknown, field: string): ExplanationSnippet {
+function requiredAttack(value: unknown): string {
+	if (typeof value === 'string') {
+		return requiredText(value, 'attack');
+	}
+	if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+		const record = value as Record<string, unknown>;
+		const text = firstText(record.text, record.caption);
+		if (text) {
+			return text;
+		}
+	}
+	throw new Error('LLM response has missing or empty "attack" field');
+}
+
+function requiredSnippet(value: unknown, field: string, detailKey?: string): ExplanationSnippet {
 	if (typeof value === 'string') {
 		const code = stripFences(value);
 		if (!code) {
@@ -81,7 +96,49 @@ function requiredSnippet(value: unknown, field: string): ExplanationSnippet {
 	}
 	const caption = typeof record.caption === 'string' ? record.caption.trim() : '';
 	const lineCount = code.split(/\r?\n/).length;
-	return { caption, code, line: snippetLine(record.line, lineCount) };
+	const detail = detailKey ? firstText(record[detailKey], record.detail) : undefined;
+	return { caption, code, line: snippetLine(record.line, lineCount), detail };
+}
+
+const FLOW_ROLES = new Set<FlowStep['role']>(['start', 'weak', 'harm', 'safe']);
+
+function optionalDiagram(value: unknown): ExplanationDiagram | undefined {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+	const record = value as Record<string, unknown>;
+	const steps = Array.isArray(record.steps)
+		? record.steps.flatMap((step) => flowStep(step))
+		: [];
+	if (steps.length < 2) {
+		return undefined;
+	}
+	const caption = typeof record.caption === 'string' ? record.caption.trim() : '';
+	return { caption, steps: steps.slice(0, 4) };
+}
+
+function flowStep(value: unknown): FlowStep[] {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return [];
+	}
+	const record = value as Record<string, unknown>;
+	const label = typeof record.label === 'string' ? record.label.trim() : '';
+	if (!label) {
+		return [];
+	}
+	const role = typeof record.role === 'string' && FLOW_ROLES.has(record.role as FlowStep['role'])
+		? record.role as FlowStep['role']
+		: 'start';
+	return [{ label: label.slice(0, 80), role }];
+}
+
+function firstText(...values: unknown[]): string | undefined {
+	for (const value of values) {
+		if (typeof value === 'string' && value.trim().length > 0) {
+			return value.trim();
+		}
+	}
+	return undefined;
 }
 
 function snippetLine(value: unknown, lineCount: number): number | undefined {

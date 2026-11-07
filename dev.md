@@ -110,7 +110,6 @@ The published page is [README.md](README.md). This section is the lab and develo
 |---|---|---|
 | `ariadne-extension-vscode.analyze` | **Ariadne: Analyze** | Run analysis on the workspace |
 | `ariadne-extension-vscode.openFeedbackPanel` | **Ariadne: Explain Vulnerability** | Open the explanation panel for a finding |
-| `ariadne-extension-vscode.helloWorld` | Hello World | Development stub |
 
 ### Explain Vulnerability
 

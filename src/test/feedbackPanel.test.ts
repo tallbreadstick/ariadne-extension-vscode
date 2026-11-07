@@ -3,6 +3,7 @@ import {
 	askAriadneRequestId,
 	buildFeedbackPanelHtml,
 	formatDisplayPath,
+	restoredExplanation,
 } from '../modules/feedback/views/feedbackPanel.js';
 import type { VulnerabilityMetadata } from '../modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 
@@ -76,6 +77,29 @@ describe('Feedback Panel File Path Display Test Suite', () => {
 			const html = buildFeedbackPanelHtml(mockMeta, requestId);
 			assert.ok(html.includes(`data-request-id="${requestId}"`));
 			assert.ok(html.includes('msg.requestId !== requestId'));
+		});
+
+		it('keeps a finished explanation in the page instead of waiting for another reply', () => {
+			const requestId = askAriadneRequestId({
+				cwe: mockMeta.cwe_id,
+				title: mockMeta.type,
+				filePath: mockMeta.file_path,
+				line: mockMeta.line_number,
+			});
+			const html = buildFeedbackPanelHtml(mockMeta, requestId, {
+				html: '<p>Study the bound parameter.</p>',
+			});
+			assert.ok(html.includes('<p>Study the bound parameter.</p>'));
+			assert.ok(html.includes('acquireVsCodeApi'));
+			assert.ok(!html.includes('msg.requestId !== requestId'));
+			const restored = restoredExplanation({
+				requestId,
+				title: 'Ariadne: SQL Injection',
+				html,
+			});
+			assert.strictEqual(restored?.requestId, requestId);
+			assert.strictEqual(restoredExplanation(undefined), undefined);
+			assert.strictEqual(restoredExplanation({ requestId }), undefined);
 		});
 
 		it('includes CSS rules preventing horizontal overflow', () => {

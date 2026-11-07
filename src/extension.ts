@@ -30,17 +30,17 @@ import {
 } from './modules/presentation/views/treeViewPanel.js';
 import { paintAuditSnippets } from './modules/presentation/views/snippetSnapshot.js';
 import { resolveWorkspaceFsPath } from './modules/detection/bridge/convert.js';
-import { checkAndShowWelcomeToast, resetWelcomeToast } from './modules/presentation/onboarding/welcomeToast';
+import { checkAndShowWelcomeToast } from './modules/presentation/onboarding/welcomeToast';
 import {
 	showOnboardingPanel,
 	checkAndShowOnboarding,
-	resetOnboardingState,
 } from './modules/presentation/onboarding/onboardingPanel.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
 import {
 	askAriadneRequestId,
 	buildFeedbackPanelHtml,
+	restoredExplanation,
 	type AskAriadneArtifact,
 } from './modules/feedback/views/feedbackPanel.js';
 import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
@@ -96,7 +96,6 @@ import {
 	setSessionBaseline,
 	updateSessionLatest,
 	finalizeSession,
-	classifyFinding,
 } from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
@@ -112,7 +111,7 @@ import type {
 } from './modules/presentation/panelTypes.js';
 import type { SessionAnalysis } from './modules/tracker/analysis/analysisTypes.js';
 import { getCurrentRevision } from './modules/detection/bridge/revisionTracker.js';
-import { computeCategoryScores, computeTrendScore, formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
+import { formatTrendDelta, trendLabel } from './modules/tracker/analysis/scoreCalculator.js';
 import {
 	buildAbruptSessionDiagnostics,
 	formatSessionDisplayId,
@@ -291,33 +290,77 @@ function buildVulnsHtml(
 // ─────────────────────────────────────────────────────────────────────
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 
-	const savedSetting = <T>(key: string): T | undefined => {
-		const looked = vscode.workspace.getConfiguration('ariadne').inspect<T>(key);
-		return looked?.workspaceFolderValue ?? looked?.workspaceValue ?? looked?.globalValue;
-	};
-
 	const readScannerChoice = (): ScannerPreferences => {
 		const saved = context.globalState.get<{ auto?: boolean; os?: string; target?: string }>('ariadne.scannerPreferences');
-		const source = saved
-			? { auto: saved.auto, os: saved.os, target: saved.target, legacy: undefined }
-			: {
-				auto: savedSetting<boolean>('scanner.auto') ?? savedSetting<boolean>('scannerAuto'),
-				os: savedSetting<string>('scanner.operatingSystem') ?? savedSetting<string>('scannerOs'),
-				target: savedSetting<string>('scanner.binary') ?? savedSetting<string>('scannerTarget'),
-				legacy: savedSetting<string>('scanner'),
-			};
+		if (!saved || typeof saved.auto !== 'boolean') {
+			const initial = normalizeScannerPreferences({
+				auto: true,
+				os: saved?.os,
+				target: saved?.target,
+				legacy: undefined,
+				platform: process.platform,
+				arch: process.arch,
+			});
+			void context.globalState.update('ariadne.scannerPreferences', {
+				auto: true,
+				os: initial.os,
+				target: initial.target,
+			});
+			return initial;
+		}
 		return normalizeScannerPreferences({
-			...source,
+			auto: saved.auto,
+			os: saved.os,
+			target: saved.target,
+			legacy: undefined,
 			platform: process.platform,
 			arch: process.arch,
 		});
 	};
-	let debugMode = context.globalState.get<boolean>('ariadne.debugMode') === true;
 	configureAriadneExecutable(
 		context.globalStorageUri.fsPath,
 		readScannerChoice,
-		() => debugMode,
 	);
+
+	const explanationPanels = new Map<string, vscode.WebviewPanel>();
+	const explanationRuns = new Map<string, number>();
+	const explanationOptions = {
+		enableScripts: true,
+		retainContextWhenHidden: true,
+	};
+
+	const explanationColumn = (): vscode.ViewColumn => {
+		for (const panel of explanationPanels.values()) {
+			if (panel.viewColumn !== undefined) {
+				return panel.viewColumn;
+			}
+		}
+		return vscode.ViewColumn.Beside;
+	};
+
+	const trackExplanationPanel = (requestId: string, panel: vscode.WebviewPanel): void => {
+		explanationPanels.set(requestId, panel);
+		panel.onDidDispose(() => {
+			if (explanationPanels.get(requestId) === panel) {
+				explanationPanels.delete(requestId);
+				explanationRuns.delete(requestId);
+			}
+		});
+	};
+
+	context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('ariadne.feedback', {
+		async deserializeWebviewPanel(panel, state) {
+			const restored = restoredExplanation(state);
+			if (!restored) {
+				panel.dispose();
+				return;
+			}
+			panel.title = restored.title;
+			panel.webview.options = { enableScripts: true };
+			panel.webview.html = restored.html;
+			trackExplanationPanel(restored.requestId, panel);
+		},
+	}));
 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
@@ -376,12 +419,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			binaries: targetsForOs(prefs.os).map(toOption),
 			downloaded: [...downloadedIds].map(toOption),
 			working: scannerChecked ? !scannerBroken : undefined,
-			overrideActive: debugMode || localExecutableOverride() !== undefined,
+			overrideActive: localExecutableOverride() !== undefined,
 			busy: scannerBusy,
 			busyAction: scannerBusyAction,
 			highlightsVisible,
 			openPanelOnStartup,
-			debugMode,
 		};
 	};
 
@@ -1079,13 +1121,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				openPanelOnStartup = msg.enabled === true;
 				await context.globalState.update('ariadne.openPanelOnStartup', openPanelOnStartup);
 				await refreshSignInPanel(undefined, { skipQuota: true });
-				return;
-			}
-
-			if (msg.type === 'debug-mode-set') {
-				debugMode = msg.enabled === true;
-				await context.globalState.update('ariadne.debugMode', debugMode);
-				await runScannerChange(() => applyScannerSelection());
 				return;
 			}
 
@@ -1944,12 +1979,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
-	// ── Hello World command (kept for development) ───────────────────────
-	const helloWorld = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.helloWorld',
-		() => { vscode.window.showInformationMessage('Hello World from ariadne!'); },
-	);
-
 	// ── Feedback panel command (LLM-powered) ─────────────────────────────
 	const openSignInPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSignInPanel',
@@ -1998,16 +2027,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 
-	const debugResetOnboarding = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.debugResetOnboarding',
-		async () => {
-			await resetOnboardingState(context.globalState);
-			void vscode.window.showInformationMessage(
-				'Ariadne: Onboarding guide state reset. Reload window to trigger it on startup.',
-			);
-		},
-	);
-
 	const openTermsOfUse = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openTermsOfUse',
 		() => {
@@ -2031,385 +2050,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				{ enableScripts: false },
 			);
 			panel.webview.html = buildPrivacyPolicyHtml();
-		},
-	);
-
-	// ── Debug command — inspect lifecycle data ────────────────────────
-	const debugLifecycles = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.debugLifecycles',
-		() => {
-			const sessionData = store.loadActiveSession();
-			const completedSessions = store.loadCompletedSessions();
-
-			console.log('╔══════════════════════════════════════════════════════════╗');
-			console.log('║        ARIADNE — LIFECYCLE DEBUG DUMP                   ║');
-			console.log('╚══════════════════════════════════════════════════════════╝');
-
-			// ── Active Session ──
-			console.log('\n── Active Session ──');
-			if (sessionData) {
-				console.log(`  Session ID : ${sessionData.sessionId}`);
-				console.log(`  Started At : ${new Date(sessionData.startedAt).toISOString()}`);
-				console.log(`  Ended At   : ${sessionData.endedAt ? new Date(sessionData.endedAt).toISOString() : '(active)'}`);
-				if (sessionData.priorCompletedSessionId) {
-					console.log(`  Prior Baseline: ${sessionData.priorCompletedSessionId}`);
-				}
-				if (sessionData.baselineCheckpoint) {
-					console.log(`  Baseline   : ${sessionData.baselineCheckpoint.findings.length} finding(s) at ${new Date(sessionData.baselineCheckpoint.timestamp).toISOString()}`);
-				} else {
-					console.log(`  Baseline   : (not yet captured)`);
-				}
-				if (sessionData.finalCheckpoint) {
-					console.log(`  Final      : ${sessionData.finalCheckpoint.findings.length} finding(s) at ${new Date(sessionData.finalCheckpoint.timestamp).toISOString()}`);
-				} else {
-					console.log(`  Final      : (not yet captured)`);
-				}
-			} else {
-				console.log('  (no active session)');
-			}
-
-			// ── Completed Sessions ──
-			console.log(`\n── Completed Sessions: ${completedSessions.length} ──`);
-			for (const s of completedSessions) {
-				const duration = s.endedAt
-					? `${Math.round((s.endedAt - s.startedAt) / 1000)}s`
-					: '?';
-				const baselineCount = s.baselineCheckpoint?.findings.length ?? 0;
-				const finalCount = s.finalCheckpoint?.findings.length ?? 0;
-				const priorBaselineLine = s.priorCompletedSessionId
-					? `\n  │ Prior Baseline  : ${s.priorCompletedSessionId}`
-					: '';
-				console.log(
-					`\n  ┌─ ${s.sessionId} ──────────────────────────────` +
-					`\n  │ Status          : ${(s.status ?? (s.endedAt ? 'completed' : 'active')).toUpperCase()}` +
-					priorBaselineLine +
-					`\n  │ Started At      : ${new Date(s.startedAt).toISOString()}` +
-					`\n  │ Ended At        : ${s.endedAt ? new Date(s.endedAt).toISOString() : '(not finalized)'}` +
-					`\n  │ Duration        : ${duration}` +
-					`\n  │ Baseline Chkpt  : ${baselineCount} finding(s)${s.baselineCheckpoint ? ` at ${new Date(s.baselineCheckpoint.timestamp).toISOString()}` : ''}` +
-					`\n  │ Final Chkpt     : ${finalCount} finding(s)${s.finalCheckpoint ? ` at ${new Date(s.finalCheckpoint.timestamp).toISOString()}` : ''}` +
-				`\n  │ Lifecycles      : ${s.lifecycleSummaries.length}` +
-					(s.finalScores
-						? `\n  │ Final Scores    : F=${s.finalScores.f.toFixed(2)} P=${s.finalScores.p.toFixed(2)} T=${s.finalScores.t !== null ? s.finalScores.t.toFixed(2) : 'N/A'}`
-						: ''),
-				);
-				for (const lc of s.lifecycleSummaries) {
-					const lcStatus = (lc.lifecycleState ?? classifyFinding(lc, s.endedAt ?? Date.now())).toUpperCase();
-					console.log(
-						`  │   [${lcStatus}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
-						`\n  │     Severity      : ${lc.severity}` +
-						`\n  │     Rule ID       : ${lc.ruleId}` +
-						`\n  │     File          : ${lc.filePath}` +
-						`\n  │     Fingerprint   : ${lc.logicalFingerprint}` +
-						`\n  │     Confirmations : ${lc.confirmationCount}` +
-						`\n  │     Occurrences   : ${lc.baselineOccurrenceCount} → ${lc.currentOccurrenceCount}` +
-						`\n  │     Recurrences   : ${lc.recurrenceCount}`,
-					);
-				}
-				console.log(`  └──────────────────────────────────────────`);
-			}
-
-			// ── Finding Lifecycles ──
-			console.log(`\n── Finding Lifecycles: ${lifecycles.length} ──`);
-			for (const lc of lifecycles) {
-				const age = Date.now() - lc.firstConfirmedAt;
-				const ageStr = age < 60_000
-					? `${Math.round(age / 1000)}s`
-					: `${Math.round(age / 60_000)}m`;
-
-				const status = (lc.lifecycleState ?? classifyFinding(lc, Date.now())).toUpperCase();
-
-				console.log(
-					`  [${status}] ${lc.type} (${lc.cweId}) — ${lc.instanceName || '(unnamed)'}` +
-					`\n    Severity           : ${lc.severity}` +
-					`\n    Rule ID            : ${lc.ruleId}` +
-					`\n    File               : ${lc.filePath}` +
-					`\n    Logical Fingerprint: ${lc.logicalFingerprint}` +
-					`\n    Content Fingerprint: ${lc.contentFingerprint || '(empty)'}` +
-					`\n    Scope Fingerprint  : ${lc.scopeFingerprint || '(empty)'}` +
-					`\n    Age                : ${ageStr}` +
-					`\n    First Confirmed At : ${new Date(lc.firstConfirmedAt).toISOString()}` +
-					`\n    Last Confirmed At  : ${new Date(lc.lastConfirmedAt).toISOString()}` +
-					`\n    Missing Since      : ${lc.missingSince ? new Date(lc.missingSince).toISOString() : '(active)'}` +
-					`\n    Provisional Res.   : ${lc.provisionalResolutionAt ? new Date(lc.provisionalResolutionAt).toISOString() : '(none)'}` +
-					`\n    Durable Res.       : ${lc.durableResolutionAt ? new Date(lc.durableResolutionAt).toISOString() : '(none)'}` +
-					`\n    Confirmations      : ${lc.confirmationCount}` +
-					`\n    Baseline Occs.     : ${lc.baselineOccurrenceCount}` +
-					`\n    Current Occs.      : ${lc.currentOccurrenceCount}` +
-					`\n    Recurrences        : ${lc.recurrenceCount}` +
-					`\n    Toggles            : ${lc.inSessionToggleCount}` +
-					`\n    Restorations       : ${lc.identicalRestorationCount}`,
-				);
-			}
-
-			// ── Live Scores ──
-			if (lifecycles.length > 0) {
-				const catResult = computeCategoryScores(lifecycles);
-				const tResult = computeTrendScore(lifecycles, activeSession?.trendComparisonByKey);
-
-				console.log('\n── Scores ──');
-				console.log(`  Workspace F    : ${catResult.aggregate.f.toFixed(2)} / 10`);
-				console.log(`  Workspace P    : ${catResult.aggregate.p.toFixed(2)} / 10`);
-				if (tResult) {
-					const label = trendLabel(tResult.workspaceT);
-					console.log(`  Workspace T    : ${formatTrendDelta(tResult.workspaceT)}${label ? ` (${label})` : ''}`);
-					if (activeSession?.priorCompletedSessionId) {
-						console.log(`  Prior Session  : ${activeSession.priorCompletedSessionId}`);
-					}
-				} else {
-					console.log(`  Workspace T    : N/A (first session)`);
-				}
-
-				console.log('\n  By Type:');
-				for (const [key, ts] of catResult.byType) {
-					const tForKey = tResult?.byKey[key];
-					const tStr = tForKey !== undefined ? formatTrendDelta(tForKey) : 'N/A';
-					console.log(
-						`    ${ts.type} (${ts.cweId})  ` +
-						`F=${ts.f.toFixed(2)}  P=${ts.p.toFixed(2)}  T=${tStr}  ` +
-						`[${ts.durablyResolved}/${ts.totalEverObserved} resolved]`,
-					);
-				}
-			}
-
-			console.log('\n═══════════════════════════════════════════════════════════');
-
-			vscode.window.showInformationMessage(
-				`Ariadne Debug: ${lifecycles.length} lifecycle(s), ` +
-				`${completedSessions.length} completed session(s). ` +
-				`See Developer Console for details.`,
-			);
-		},
-	);
-
-	// ── Debug command — reset all lifecycle data ──────────────────────
-	const debugResetLifecycles = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.debugResetLifecycles',
-		async () => {
-			if (settlementTimer !== null) {
-				clearTimeout(settlementTimer);
-				settlementTimer = null;
-				pendingSettlementFindings = null;
-			}
-			pendingSaveRevision = null;
-			await store.clearAllLifecycleData();
-			lifecycles = [];
-			activeSession = null;
-			latestSessionAnalysis = null;
-			lastSettledRevision = null;
-			previousScanSnapshot = null;
-			saveScanState = store.loadSaveScanState();
-			reportUpdateStatus = 'idle';
-			refreshSessionMetricsPanel();
-			activeVulnsProvider.updateHtml(
-				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
-			);
-			console.log('[Ariadne Debug] All lifecycle data cleared. Session will start on next settled save.');
-			vscode.window.showInformationMessage(
-				'Ariadne Debug: All data cleared. Next settled save will start a fresh session and initial checkpoint.',
-			);
-		},
-	);
-
-	// ── Debug command — show save scan state ──────────────────────────
-	const debugShowSaveScanState = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.debugShowSaveScanState',
-		() => {
-			const state = store.loadSaveScanState();
-			const currentRev = getCurrentRevision();
-
-			console.log('╔══════════════════════════════════════════════════════════╗');
-			console.log('║        ARIADNE — SAVE SCAN STATE DEBUG DUMP             ║');
-			console.log('╚══════════════════════════════════════════════════════════╝');
-			console.log(`  Initial Checkpoint      : ${state.initialCheckpointDoneAt
-				? new Date(state.initialCheckpointDoneAt).toISOString()
-				: '(not yet set — no settled scan has been processed)'
-				}`);
-			console.log(`  Settled Scans (session) : ${state.totalSaveScansThisSession}`);
-			console.log(`  Settlement Cancellations: ${state.totalSettledCancellations}`);
-			console.log(`  Workspace Revision      : ${currentRev}`);
-			console.log(`  Pending Save Revision   : ${pendingSaveRevision !== null ? pendingSaveRevision : '(none)'
-				}`);
-			console.log(`  Settlement Timer Active : ${settlementTimer !== null}`);
-			console.log('═══════════════════════════════════════════════════════════');
-
-			const checkpointStr = state.initialCheckpointDoneAt
-				? `set at ${new Date(state.initialCheckpointDoneAt).toISOString()}`
-				: 'not yet set';
-			vscode.window.showInformationMessage(
-				`Ariadne Debug: Initial checkpoint ${checkpointStr}. ` +
-				`Settled scans: ${state.totalSaveScansThisSession}. ` +
-				`Cancellations: ${state.totalSettledCancellations}. ` +
-				`Workspace revision: ${currentRev}. ` +
-				`See Developer Console for details.`,
-			);
-		},
-	);
-
-	// ── Debug command — reset save scan state ─────────────────────────
-	const debugResetSaveScanState = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.debugResetSaveScanState',
-		async () => {
-			// Cancel any active settlement before clearing state
-			if (settlementTimer !== null) {
-				clearTimeout(settlementTimer);
-				settlementTimer = null;
-				pendingSettlementFindings = null;
-			}
-			stopHourlyScanTimer();
-			pendingSaveRevision = null;
-			await store.clearSaveScanState();
-			saveScanState = store.loadSaveScanState();
-			if (activeSession !== null) {
-				const finalized = finalizeSession(activeSession, lifecycles, Date.now());
-				void store.appendCompletedSession(finalized);
-				void store.clearActiveSession();
-				activeSession = null;
-			}
-			reportUpdateStatus = 'idle';
-			refreshSessionMetricsPanel();
-			activeVulnsProvider.updateHtml(
-				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
-			);
-			console.log('[Ariadne Debug] Save scan state reset. Next settled save will re-trigger the initial checkpoint.');
-			vscode.window.showInformationMessage(
-				'Ariadne Debug: Save scan state reset. Next settled save will re-trigger the initial checkpoint.',
-			);
-		},
-	);
-
-	const triggerHourlyRollover = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.triggerHourlyRollover',
-		async () => {
-			await performHourlySessionRollover();
-		},
-	);
-
-	const debugSimulateAbruptRecovery = vscode.commands.registerCommand(
-		'ariadne-extension-vscode.debugSimulateAbruptRecovery',
-		async () => {
-			const currentSession = activeSession ?? {
-				sessionId: 'session-004',
-				startedAt: Date.now() - 45 * 60 * 1000,
-				endedAt: null,
-				status: 'incomplete' as const,
-				baselineCheckpoint: null,
-				finalCheckpoint: null,
-				lifecycleSummaries: [],
-				hourlyCheckpoints: [
-					{
-						timestamp: Date.now() - 15 * 60 * 1000,
-						findings: [],
-					},
-				],
-			};
-
-			const simulatedLifecycles = lifecycles.length > 0 ? lifecycles : [
-				{
-					logicalFingerprint: 'sim-fp-1',
-					contentFingerprint: 'sim-c-1',
-					scopeFingerprint: 'sim-s-1',
-					ruleId: 'RULE-SQLI',
-					cweId: 'CWE-89',
-					type: 'SQL Injection',
-					severity: 'critical' as const,
-					instanceName: 'executeQuery',
-					filePath: 'src/database/QueryRunner.java',
-					firstConfirmedAt: Date.now() - 40 * 60 * 1000,
-					lastConfirmedAt: Date.now() - 2 * 60 * 1000,
-					missingSince: null,
-					provisionalResolutionAt: null,
-					durableResolutionAt: null,
-					baselineOccurrenceCount: 1,
-					currentOccurrenceCount: 1,
-					confirmationCount: 3,
-					recurrenceCount: 0,
-					lastRecurredAt: null,
-					inSessionToggleCount: 0,
-					identicalRestorationCount: 0,
-					isCommentedOut: false,
-					lifecycleState: 'persisting' as const,
-				},
-				{
-					logicalFingerprint: 'sim-fp-2',
-					contentFingerprint: 'sim-c-2',
-					scopeFingerprint: 'sim-s-2',
-					ruleId: 'RULE-XSS',
-					cweId: 'CWE-79',
-					type: 'Cross-Site Scripting',
-					severity: 'high' as const,
-					instanceName: 'renderOutput',
-					filePath: 'src/views/UserController.java',
-					firstConfirmedAt: Date.now() - 35 * 60 * 1000,
-					lastConfirmedAt: Date.now() - 10 * 60 * 1000,
-					missingSince: null,
-					provisionalResolutionAt: null,
-					durableResolutionAt: null,
-					baselineOccurrenceCount: 1,
-					currentOccurrenceCount: 1,
-					confirmationCount: 2,
-					recurrenceCount: 1,
-					lastRecurredAt: Date.now() - 15 * 60 * 1000,
-					inSessionToggleCount: 1,
-					identicalRestorationCount: 0,
-					isCommentedOut: false,
-					lifecycleState: 'recurring' as const,
-				},
-				{
-					logicalFingerprint: 'sim-fp-3',
-					contentFingerprint: 'sim-c-3',
-					scopeFingerprint: 'sim-s-3',
-					ruleId: 'RULE-PT',
-					cweId: 'CWE-22',
-					type: 'Path Traversal',
-					severity: 'medium' as const,
-					instanceName: 'getFile',
-					filePath: 'src/storage/FileManager.java',
-					firstConfirmedAt: Date.now() - 42 * 60 * 1000,
-					lastConfirmedAt: Date.now() - 25 * 60 * 1000,
-					missingSince: Date.now() - 20 * 60 * 1000,
-					provisionalResolutionAt: Date.now() - 18 * 60 * 1000,
-					durableResolutionAt: Date.now() - 10 * 60 * 1000,
-					baselineOccurrenceCount: 1,
-					currentOccurrenceCount: 0,
-					confirmationCount: 2,
-					recurrenceCount: 0,
-					lastRecurredAt: null,
-					inSessionToggleCount: 0,
-					identicalRestorationCount: 0,
-					isCommentedOut: false,
-					lifecycleState: 'resolved' as const,
-				},
-			];
-
-			const recoveryTime = Date.now();
-			const diagnostics = buildAbruptSessionDiagnostics(currentSession, simulatedLifecycles, recoveryTime);
-			const displayId = formatSessionDisplayId(currentSession.sessionId);
-
-			const detail = [
-				`SESSION: ${displayId} (${currentSession.sessionId})`,
-				`STARTED: ${new Date(currentSession.startedAt).toLocaleString()}`,
-				`CHECKPOINTS: ${diagnostics.hourlyCheckpointsCount} completed`,
-				'',
-				`• Active at crash: ${diagnostics.activeFindingCount} unresolved`,
-				`• Resolved this session: ${diagnostics.resolvedFindingCount} fixed`,
-				'',
-				'Your code changes are safe. To protect your progress metrics from skewed data, Trend scores will be measured against your last completed session.',
-			].join('\n');
-
-			const viewAction: vscode.MessageItem = { title: 'View Diagnostics' };
-			const dismissAction: vscode.MessageItem = { title: 'Dismiss', isCloseAffordance: true };
-
-			const selection = await vscode.window.showWarningMessage(
-				'Ariadne: The previous session ended abruptly and was recovered as incomplete.',
-				{ modal: true, detail },
-				viewAction,
-				dismissAction,
-			);
-
-			if (selection?.title === 'View Diagnostics') {
-				showAbruptSessionDiagnosticPanel(context, diagnostics);
-			}
 		},
 	);
 
@@ -2480,21 +2120,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
-			const panel = vscode.window.createWebviewPanel(
-				'ariadne.feedback',
-				`Ariadne: ${vuln.title}`,
-				vscode.ViewColumn.Beside,
-				{ enableScripts: true },
-			);
-			let panelOpen = true;
-			panel.onDidDispose(() => {
-				panelOpen = false;
-			});
+			let panel = explanationPanels.get(requestId);
+			if (panel) {
+				panel.reveal(panel.viewColumn ?? explanationColumn());
+			} else {
+				panel = vscode.window.createWebviewPanel(
+					'ariadne.feedback',
+					`Ariadne: ${vuln.title}`,
+					explanationColumn(),
+					explanationOptions,
+				);
+				trackExplanationPanel(requestId, panel);
+			}
+			const generation = (explanationRuns.get(requestId) ?? 0) + 1;
+			explanationRuns.set(requestId, generation);
 			panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId);
-			const deliver = (message: { type: string; requestId: string; html?: string; message?: string }): void => {
-				if (panelOpen) {
-					void panel.webview.postMessage(message);
-				}
+			const stillCurrent = (): boolean => {
+				return explanationRuns.get(requestId) === generation
+					&& explanationPanels.get(requestId) === panel;
 			};
 
 			try {
@@ -2508,6 +2151,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					...copilotRuntimeOptions(context, gitHubToken),
 					clientManager: copilotManager,
 				});
+				if (!stillCurrent()) {
+					return;
+				}
 				const sections = parseExplanation(rawResponse);
 				const finding: FeedbackFinding = {
 					type: vuln.title,
@@ -2518,16 +2164,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					line: vuln.line,
 					...sections,
 				};
-
-				deliver({ type: 'llm-result', requestId, html: renderExplanation(finding) });
+				panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId, {
+					html: renderExplanation(finding),
+				});
 			} catch (error: unknown) {
+				if (!stillCurrent()) {
+					return;
+				}
 				const rawMessage =
 					error instanceof Error ? error.message : 'Unknown error';
 				console.error('[Ariadne] LLM pipeline error:', rawMessage);
-				deliver({
-					type: 'llm-error',
-					requestId,
-					message: sanitizeLlmError(rawMessage),
+				panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId, {
+					error: sanitizeLlmError(rawMessage),
 				});
 			}
 		},
@@ -2537,7 +2185,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(createAriadneStatusBarItem());
 
 	context.subscriptions.push(
-		helloWorld,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
 		signInDisposable,
@@ -2547,25 +2194,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		toggleTreeViewCommand,
 		showFindingInAuditCommand,
 		openOnboarding,
-		debugResetOnboarding,
 		openTermsOfUse,
 		openPrivacyPolicy,
 		openFeedbackPanel,
-		debugLifecycles,
-		debugResetLifecycles,
-		debugShowSaveScanState,
-		debugResetSaveScanState,
-		triggerHourlyRollover,
-		debugSimulateAbruptRecovery,
-		vscode.commands.registerCommand(
-			'ariadne-extension-vscode.debugResetWelcomeToast',
-			async () => {
-				await resetWelcomeToast(context.globalState);
-				void vscode.window.showInformationMessage(
-					'Ariadne: Welcome onboarding toast state reset. Reload window to trigger it.',
-				);
-			},
-		),
 	);
 
 	// ── First-run Onboarding & Welcome Orientation ───────────────────────

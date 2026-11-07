@@ -127,6 +127,6 @@ describe('scanner release selection', () => {
 			legacy: 'x86_64-pc-windows-gnu',
 			platform: 'linux',
 			arch: 'x64',
-		}).auto, false);
+		}).auto, true);
 	});
 });

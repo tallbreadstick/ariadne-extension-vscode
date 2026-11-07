@@ -76,6 +76,4 @@ export interface ScannerSettingsViewModel {
 	highlightsVisible?: boolean;
 	/** When true, showing the sidebar also opens the bottom Ariadne panel. */
 	openPanelOnStartup?: boolean;
-	/** When true, use the `ariadne` command from PATH instead of downloaded binaries. */
-	debugMode?: boolean;
 }

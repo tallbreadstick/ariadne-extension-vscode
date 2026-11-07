@@ -36,8 +36,22 @@ export interface AriadneLLMRequestBody {
 export interface ExplanationSnippet {
 	caption: string;
 	code: string;
-	/** 1-based line that shows the mistake or the injected value. */
+	/** 1-based line that shows the mistake. */
 	line?: number;
+	/** Plain-language note about that example. No code. */
+	detail?: string;
+}
+
+/** One box in the supplementary picture. */
+export interface FlowStep {
+	label: string;
+	role: 'start' | 'weak' | 'harm' | 'safe';
+}
+
+/** A short picture of the idea. Labels are words, not code. */
+export interface ExplanationDiagram {
+	caption: string;
+	steps: FlowStep[];
 }
 
 /**
@@ -45,15 +59,17 @@ export interface ExplanationSnippet {
  * Examples illustrate the pattern. They are not a patch for the finding.
  */
 export interface LLMExplanation {
-	/** One sentence naming the bug. */
+	/** Two or three sentences: the name of the bug, then what that kind of bug is. */
 	summary: string;
 	/** At most two sentences on the concrete harm. */
 	why: string;
+	/** Optional picture of how a value moves through a made-up example. */
+	diagram?: ExplanationDiagram;
 	/** A made-up method with the same mistake. */
 	mistake: ExplanationSnippet;
-	/** A made-up request or payload that would reach that mistake. */
-	attack: ExplanationSnippet;
-	/** A safer shape of that same made-up method. */
+	/** Plain words for how someone could take advantage of that made-up line. */
+	attack: string;
+	/** A safeguarded shape of that same made-up method. */
 	safer: ExplanationSnippet;
 	/** Questions about the student's own file, then the concept to study. */
 	checks: string[];

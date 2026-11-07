@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rename, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import * as vscode from 'vscode';
 import {
 	LATEST_RELEASE_URL,
@@ -26,7 +26,6 @@ const RELEASE_HOSTS = [
 let cacheDir: string | undefined;
 let inflightKey: string | undefined;
 let inflight: Promise<string> | undefined;
-let readDebugMode: () => boolean = () => false;
 let readPrefs: () => ScannerPreferences = () => normalizeScannerPreferences({
 	auto: undefined,
 	os: undefined,
@@ -40,13 +39,9 @@ let readPrefs: () => ScannerPreferences = () => normalizeScannerPreferences({
 export function configureAriadneExecutable(
 	storageDir: string,
 	readPreferences: () => ScannerPreferences,
-	readDebugModePreference?: () => boolean,
 ): void {
 	cacheDir = join(storageDir, 'scanner');
 	readPrefs = readPreferences;
-	if (readDebugModePreference) {
-		readDebugMode = readDebugModePreference;
-	}
 }
 
 /**
@@ -71,7 +66,7 @@ export function ensureAriadneExecutable(): Promise<string> {
 function selectionKey(): string {
 	const prefs = readPrefs();
 	const executable = vscode.workspace.getConfiguration('ariadne').get<string>('executable', DEFAULT_EXECUTABLE) ?? DEFAULT_EXECUTABLE;
-	return `${readDebugMode()}\n${prefs.auto}\n${prefs.os}\n${prefs.target}\n${executable}`;
+	return `${prefs.auto}\n${prefs.os}\n${prefs.target}\n${executable}`;
 }
 
 /** Saved Auto / OS / binary choice. Auto is on until the user turns it off. */
@@ -80,10 +75,6 @@ export function readScannerPreferencesFromConfig(): ScannerPreferences {
 }
 
 async function resolveExecutable(): Promise<string> {
-	if (readDebugMode()) {
-		console.log('[Ariadne] Debug mode: using `ariadne` from PATH');
-		return DEFAULT_EXECUTABLE;
-	}
 	const override = localExecutableOverride();
 	if (override) {
 		console.log(`[Ariadne] Scanner setting ignored; using ariadne.executable: ${override}`);
@@ -97,20 +88,33 @@ async function resolveExecutable(): Promise<string> {
 	const configured = prefs.auto ? SCANNER_AUTO : prefs.target;
 	const target = selectedScannerTarget(configured, process.platform, process.arch);
 	const cached = await cachedScannerPath(target);
-	if (cached) {
-		await markExecutable(cached);
-		console.log(`[Ariadne] Scanner setting "${configured}" -> ${cached}`);
-		return cached;
-	}
-	if (!prefs.auto) {
+	if (!prefs.auto && !cached) {
 		throw new Error('Download the selected scanner binary from the Core section.');
 	}
-	const outcome = await downloadReleaseAsset(target);
-	if (outcome === 'cancelled') {
-		throw new DownloadCancelled();
-	}
-	if (outcome === 'failed') {
-		throw new Error('Ariadne: download failed.');
+	try {
+		const outcome = await downloadReleaseAsset(target);
+		if (outcome === 'cancelled') {
+			if (cached) {
+				await markExecutable(cached);
+				return cached;
+			}
+			throw new DownloadCancelled();
+		}
+		if (outcome === 'failed') {
+			if (cached) {
+				console.warn('[Ariadne] Scanner download failed; using the cached binary.');
+				await markExecutable(cached);
+				return cached;
+			}
+			throw new Error('Ariadne: download failed.');
+		}
+	} catch (error: unknown) {
+		if (cached && !(error instanceof DownloadCancelled)) {
+			console.warn('[Ariadne] Could not check the latest scanner release; using the cached binary.');
+			await markExecutable(cached);
+			return cached;
+		}
+		throw error;
 	}
 	const ready = await cachedScannerPath(target);
 	if (!ready) {
@@ -148,16 +152,16 @@ export async function downloadReleaseAsset(
 	if (!cacheDir) {
 		throw new Error('Ariadne scanner cache is not configured.');
 	}
-	const existing = await cachedScannerPath(target);
-	if (existing) {
-		await markExecutable(existing);
-		return 'finished';
-	}
 	const asset = selectReleaseAsset(await fetchLatestAssets(), target);
 	if (!asset) {
 		throw new Error(
 			`The latest Ariadne release has no binary for ${target}. Check https://github.com/tallbreadstick/ariadne-binaries/releases`,
 		);
+	}
+	const existing = await cachedScannerPath(target);
+	if (existing && basename(existing) === asset.name) {
+		await markExecutable(existing);
+		return 'finished';
 	}
 	assertDownloadUrl(asset.browser_download_url);
 	const destination = join(cacheDir, asset.name);
@@ -170,6 +174,7 @@ export async function downloadReleaseAsset(
 			},
 			(progress, token) => downloadAsset(asset, destination, progress, token),
 		);
+		await deleteOlderScannerBuilds(target, asset.name);
 		void vscode.window.showInformationMessage('Ariadne: download finished.');
 		return 'finished';
 	} catch (error: unknown) {
@@ -337,6 +342,16 @@ async function cacheFileNames(): Promise<string[]> {
 		return [];
 	}
 	return readdir(cacheDir);
+}
+
+async function deleteOlderScannerBuilds(target: ScannerTarget, keepName: string): Promise<void> {
+	if (!cacheDir) {
+		return;
+	}
+	const names = await cacheFileNames();
+	await Promise.all(names.filter((name) => {
+		return name !== keepName && (targetFromAssetName(name) === target || name.startsWith(`${target}-`));
+	}).map((name) => unlink(join(cacheDir!, name))));
 }
 
 export async function deleteDownloadedScanner(target: ScannerTarget): Promise<void> {

@@ -10,8 +10,7 @@ import { CopilotClientManager } from './copilotClientManager.js';
 import type { CopilotRuntimeOptions } from './copilotRuntime.js';
 import type { AriadneLLMRequestBody } from './requestTypes.js';
 
-/** Temporary testing limit. Put this back to 15_000 when asked. */
-const LLM_TIMEOUT_MS = 180_000;
+const LLM_TIMEOUT_MS = 30_000;
 
 function extractMessageContent(
 	requestBody: AriadneLLMRequestBody,
