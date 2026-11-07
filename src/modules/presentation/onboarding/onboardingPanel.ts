@@ -846,7 +846,7 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 								access the help guide, and manage custom rule scripts across organized accordions.
 							</p>
 						</div>
-						<button class="btn btn-secondary" data-action="openSettings">
+						<button class="btn" data-action="openSettings">
 							Open Settings Panel
 						</button>
 					</div>
