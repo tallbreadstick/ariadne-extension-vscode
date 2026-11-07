@@ -63,8 +63,10 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /Step 2\.6/);
 		});
 
-		it('renders demonstration GIFs with captions for Steps 2.1, 2.3, 2.4, and 2.5', () => {
+		it('renders demonstration GIFs with captions for Steps 2.1, 2.2, 2.3, 2.4, and 2.5', () => {
 			assert.ok(html.includes('Step 2.1 Session Started (Optimized).gif'), 'Should include Step 2.1 GIF');
+			assert.ok(html.includes('Session 2.2 (variant 1, optimized).gif'), 'Should include Step 2.2 Variant 1 GIF');
+			assert.ok(html.includes('Session 2.2 variant 2, optimized).gif'), 'Should include Step 2.2 Variant 2 GIF');
 			assert.ok(html.includes('Session 2.3 (Optimized).gif'), 'Should include Step 2.3 GIF');
 			assert.ok(html.includes('Step 2.4 Session Started (Optimized).gif'), 'Should include Step 2.4 GIF');
 			assert.ok(html.includes('Step 2.45 Session Started (optimized).gif'), 'Should include Step 2.5 GIF');
@@ -72,10 +74,10 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(html.includes('class="demo-media-caption"'), 'Should render media captions');
 		});
 
-		it('renders placeholders or GIFs for Explain Vulnerability dual variants in Step 2.2', () => {
+		it('renders Explain Vulnerability dual variants in Step 2.2', () => {
 			assert.match(html, /explain-variants-grid/);
-			assert.match(html, /In-Editor Hover Popup/);
-			assert.match(html, /Active Vulnerabilities Card/);
+			assert.match(html, /Variant 1/);
+			assert.match(html, /Variant 2/);
 		});
 
 		it('removes configurable auto-scan from settings description', () => {
@@ -106,6 +108,7 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /Editor Pane/);
 			assert.match(html, /\[Ariadne\] SQL Injection/);
 			assert.ok(html.includes('#E24B4A80'), 'Should use 50% opacity critical highlight background for demo-box');
+			assert.ok(!html.includes('Inspect Current Findings'), 'Should not contain redundant Inspect Current Findings button');
 		});
 
 		it('contains Section 3: Friendly Exit closing message and Start Coding button', () => {

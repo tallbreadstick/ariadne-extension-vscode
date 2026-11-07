@@ -543,7 +543,7 @@ const CSS = /* css */ `
 		border-radius: 4px;
 		font-family: var(--vscode-editor-font-family, Consolas, monospace);
 		font-size: 11px;
-		margin-bottom: 12px;
+		margin-bottom: 0;
 		color: var(--fg);
 		overflow-x: auto;
 		display: flex;
@@ -625,8 +625,8 @@ const CSS = /* css */ `
 export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 	const cspSource = mediaUris?.cspSource;
 	const step21GifUri = mediaUris?.step21GifUri ?? 'media/Step 2.1 Session Started (Optimized).gif';
-	const step22HoverGifUri = mediaUris?.step22HoverGifUri;
-	const step22PanelGifUri = mediaUris?.step22PanelGifUri;
+	const step22HoverGifUri = mediaUris?.step22HoverGifUri ?? 'media/Session 2.2 (variant 1, optimized).gif';
+	const step22PanelGifUri = mediaUris?.step22PanelGifUri ?? 'media/Session 2.2 variant 2, optimized).gif';
 	const step23GifUri = mediaUris?.step23GifUri ?? 'media/Session 2.3 (Optimized).gif';
 	const step24GifUri = mediaUris?.step24GifUri ?? 'media/Step 2.4 Session Started (Optimized).gif';
 	const step25GifUri = mediaUris?.step25GifUri ?? 'media/Step 2.45 Session Started (optimized).gif';
@@ -912,9 +912,6 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 								<span class="demo-tag">${LIGHTBULB_SVG} [Ariadne] SQL Injection</span>
 							</div>
 						</div>
-						<button class="btn btn-secondary" data-action="openActiveVulnerabilities">
-							Inspect Current Findings
-						</button>
 					</div>
 				</div>
 			</section>
@@ -977,6 +974,14 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.1 Session Started (Optimized).gif'),
 	).toString();
 
+	const step22HoverGifUri = panel.webview.asWebviewUri(
+		vscode.Uri.joinPath(context.extensionUri, 'media', 'Session 2.2 (variant 1, optimized).gif'),
+	).toString();
+
+	const step22PanelGifUri = panel.webview.asWebviewUri(
+		vscode.Uri.joinPath(context.extensionUri, 'media', 'Session 2.2 variant 2, optimized).gif'),
+	).toString();
+
 	const step23GifUri = panel.webview.asWebviewUri(
 		vscode.Uri.joinPath(context.extensionUri, 'media', 'Session 2.3 (Optimized).gif'),
 	).toString();
@@ -991,6 +996,8 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 
 	panel.webview.html = buildOnboardingHtml({
 		step21GifUri,
+		step22HoverGifUri,
+		step22PanelGifUri,
 		step23GifUri,
 		step24GifUri,
 		step25GifUri,
