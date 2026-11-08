@@ -86,7 +86,37 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(!html.includes('configurable'), 'Should not mention configurable auto-scan');
 		});
 
-		it('contains Section 2: Core Features with location badges and interactive action buttons', () => {
+		it('contains Section 2: Advanced Tool — Data Audit Graph in a dual-column row layout', () => {
+			assert.match(html, /Advanced Tool — Data Audit Graph/);
+			assert.match(html, /For Advanced &amp; Security Auditing/);
+			assert.match(html, /inter-procedural taint flow canvas/);
+			assert.match(html, /explain-variants-grid/);
+			assert.match(html, /Access Point 1: Active Vulnerabilities Toolbar/);
+			assert.match(html, /Access Point 2: In-Editor Diagnostic Hover/);
+			assert.ok(html.includes('advanced-tool (access point 1, optimized).gif'), 'Should include Access Point 1 GIF');
+			assert.ok(html.includes('advanced-tool (access point 2. optimized).gif'), 'Should include Access Point 2 GIF');
+			assert.match(html, /Open in audit graph/);
+		});
+
+		it('renders placeholder wireframes when audit GIF URIs are empty', () => {
+			const placeholderHtml = buildOnboardingHtml({
+				auditActiveGifUri: '',
+				auditHoverGifUri: '',
+			});
+			assert.match(placeholderHtml, /GIF: Active Vulnerabilities Toolbar/);
+			assert.match(placeholderHtml, /GIF: In-Editor Hover Link/);
+		});
+
+		it('renders custom audit GIFs when audit media URIs are provided', () => {
+			const customHtml = buildOnboardingHtml({
+				auditActiveGifUri: 'media/test-active.gif',
+				auditHoverGifUri: 'media/test-hover.gif',
+			});
+			assert.ok(customHtml.includes('media/test-active.gif'), 'Should render custom audit active GIF');
+			assert.ok(customHtml.includes('media/test-hover.gif'), 'Should render custom audit hover GIF');
+		});
+
+		it('contains Section 3: Core Features with location badges and interactive action buttons', () => {
 			assert.match(html, /Core Features &amp; Where to Find Them/);
 
 			// Settings feature
@@ -112,7 +142,7 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(!html.includes('Inspect Current Findings'), 'Should not contain redundant Inspect Current Findings button');
 		});
 
-		it('contains Section 3: Friendly Exit closing message and Start Coding button', () => {
+		it('contains Section 4: Friendly Exit closing message and Start Coding button', () => {
 			assert.match(html, /You're Ready to Code!/);
 			assert.match(html, /Enjoy your experience with Ariadne/);
 			assert.match(html, /data-action="startCoding"/);
