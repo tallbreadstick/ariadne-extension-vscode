@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import type * as vscode from 'vscode';
 import {
 	buildOnboardingHtml,
+	checkAndShowOnboarding,
 	resetOnboardingState,
 } from '../modules/presentation/onboarding/onboardingPanel.js';
 
@@ -145,6 +146,17 @@ describe('Onboarding Guide Webview Panel', () => {
 
 			await resetOnboardingState(memento);
 			assert.strictEqual(store['ariadne.hasSeenOnboarding'], undefined);
+		});
+	});
+
+	describe('checkAndShowOnboarding', () => {
+		it('returns false and does not show panel if user has already seen onboarding', async () => {
+			const { memento, store } = createMockMemento();
+			await memento.update('ariadne.hasSeenOnboarding', true);
+			const mockContext = { globalState: memento } as unknown as vscode.ExtensionContext;
+			const result = await checkAndShowOnboarding(mockContext);
+			assert.strictEqual(result, false);
+			assert.strictEqual(store['ariadne.hasSeenOnboarding'], true);
 		});
 	});
 });
