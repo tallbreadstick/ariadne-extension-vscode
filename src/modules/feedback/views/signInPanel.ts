@@ -69,6 +69,25 @@ const CSS = /* css */ `
 		--input-border: var(--vscode-input-border, var(--vscode-panel-border));
 	}
 
+	@keyframes panelSpotlightPulse {
+		0% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--bg));
+		}
+		50% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--bg));
+		}
+		100% {
+			box-shadow: inset 0 0 0 0 transparent;
+			background-color: var(--bg);
+		}
+	}
+
+	body.panel-spotlight {
+		animation: panelSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
 	* { box-sizing: border-box; }
 
 	body {
@@ -1011,6 +1030,18 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
+
+			window.addEventListener('message', (event) => {
+				const msg = event.data;
+				if (msg && msg.type === 'highlight-panel') {
+					document.body.classList.remove('panel-spotlight');
+					void document.body.offsetWidth;
+					document.body.classList.add('panel-spotlight');
+					setTimeout(() => {
+						document.body.classList.remove('panel-spotlight');
+					}, 1500);
+				}
+			});
 			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-scripting', 'accordion-help'];
 
 			function restoreAccordion() {

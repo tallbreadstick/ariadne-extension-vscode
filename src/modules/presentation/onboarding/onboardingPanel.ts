@@ -145,6 +145,7 @@ const READY_CHECK_SVG = /* html */ `
 
 
 export interface OnboardingCallbacks {
+	onOpenSettings?: () => void;
 	onOpenActiveVulnerabilities?: () => void;
 	onOpenFullReport?: () => void;
 }
@@ -1179,6 +1180,7 @@ export function showOnboardingPanel(context: vscode.ExtensionContext, callbacks?
 			switch (message.action) {
 				case 'openSettings':
 					await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+					callbacks?.onOpenSettings?.();
 					break;
 				case 'openActiveVulnerabilities':
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');

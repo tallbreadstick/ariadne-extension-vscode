@@ -1148,6 +1148,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	
 	const onboardingCallbacks = {
+		onOpenSettings: () => {
+			setTimeout(() => {
+				settingsView?.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
 		onOpenActiveVulnerabilities: () => {
 			setTimeout(() => {
 				activeVulnsProvider.postMessage({ type: 'highlight-panel' });
