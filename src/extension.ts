@@ -47,6 +47,8 @@ import { buildSignInPanelHtml } from './modules/feedback/views/signInPanel.js';
 import { buildTermsOfUseHtml } from './modules/feedback/views/termsOfUsePanel.js';
 import { buildPrivacyPolicyHtml } from './modules/feedback/views/privacyPolicyPanel.js';
 import { GitHubAuthService } from './modules/feedback/auth/githubAuthService.js';
+import { AuthStorage } from './modules/feedback/auth/authStorage.js';
+import { MetricsIngestService } from './modules/tracker/ingest/metricsIngest.js';
 import type { AuthPanelState, ScannerSettingsViewModel, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
 import {
 	DEFAULT_COPILOT_MODEL,
@@ -82,7 +84,10 @@ import { serializePayload } from './modules/feedback/llm_request/serializePayloa
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
 import { parseExplanation } from './modules/feedback/llm_request/parseResponse.js';
 import { renderExplanation } from './modules/feedback/views/renderExplanation.js';
-import { sanitizeLlmError } from './modules/feedback/llm_request/sanitizeError.js';
+import {
+	buildStaticExplanation,
+	staticExplanationPreamble,
+} from './modules/feedback/llm_feedback/staticExplanationFallback.js';
 import type { VulnerabilityMetadata } from './modules/feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { FeedbackFinding } from './modules/feedback/llm_feedback/feedbackTypes.js';
 
@@ -99,7 +104,12 @@ import {
 } from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
-import type { FindingLifecycleRecord, ObservedFinding } from './modules/tracker/analysis/lifecycleTypes.js';
+import type {
+	FindingLifecycleRecord,
+	ObservedFinding,
+	SessionCheckpoint,
+	SessionRecord,
+} from './modules/tracker/analysis/lifecycleTypes.js';
 import { computeCommonVulnerabilities, COMMON_VULN_POLICY, type GraduationToastEvents } from './modules/tracker/analysis/commonVulnerabilities.js';
 import type {
 	Vulnerability,
@@ -365,7 +375,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	// ── Session persistence layer ──────────────────────────────────────
 	const store = new SessionStore(context);
 	const githubAuth = new GitHubAuthService(context);
+	const authStorage = new AuthStorage(context);
+	const metricsIngest = new MetricsIngestService(context, authStorage);
 	const copilotManager = new CopilotClientManager();
+
+	const queueSessionMetricsUpload = (session: SessionRecord): void => {
+		void metricsIngest.uploadSessionFinalized(session).catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			console.warn('[Ariadne] Session metrics upload failed:', message);
+		});
+	};
+
+	const queueHourlyCheckpointUpload = (
+		sessionId: string,
+		checkpoint: SessionCheckpoint,
+	): void => {
+		void metricsIngest.uploadHourlyCheckpoint(sessionId, checkpoint).catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			console.warn('[Ariadne] Hourly checkpoint upload failed:', message);
+		});
+	};
 	const session = runSession();
 	let rulesLanguageRegistered = false;
 	let featuresUnlocked = false;
@@ -492,6 +521,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// 1. Recover any cleanly finalized session persisted synchronously to disk during deactivation
 	const pendingFinalized = await store.recoverPendingFinalizedSession();
+	if (pendingFinalized) {
+		queueSessionMetricsUpload(pendingFinalized);
+	}
 
 	// 2. If no pending finalized session was recovered, check if an unfinalized session exists
 	// (e.g. VS Code crashed or closed abruptly before deactivation could run).
@@ -503,6 +535,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const diagnostics = buildAbruptSessionDiagnostics(staleSession, lifecycles, recoveryTime);
 			const recovered = finalizeSession(staleSession, lifecycles, recoveryTime, 'incomplete');
 			void store.appendCompletedSession(recovered);
+			queueSessionMetricsUpload(recovered);
 			void store.clearActiveSession();
 			console.log(`[Ariadne] Recovered unfinalized session ${staleSession.sessionId} as 'incomplete'.`);
 
@@ -1628,11 +1661,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (!activeSession.hourlyCheckpoints) {
 				activeSession.hourlyCheckpoints = [];
 			}
-			activeSession.hourlyCheckpoints.push({
+			const checkpoint = {
 				timestamp,
 				findings: observed,
-			});
+			};
+			activeSession.hourlyCheckpoints.push(checkpoint);
 			void store.saveActiveSession(activeSession);
+			queueHourlyCheckpointUpload(activeSession.sessionId, checkpoint);
 			console.log(`[Ariadne] Recorded hourly full scan checkpoint #${hourlySessionCount} for session ${activeSession.sessionId}.`);
 
 			const currentSnapshot = metadataToScanSnapshot(rolloverFindings, await store.nextScanId());
@@ -2173,9 +2208,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				}
 				const rawMessage =
 					error instanceof Error ? error.message : 'Unknown error';
-				console.error('[Ariadne] LLM pipeline error:', rawMessage);
+				console.warn(
+					'[Ariadne] LLM pipeline error; showing static explanation fallback:',
+					rawMessage,
+				);
+				const fallback = buildStaticExplanation(vulnMetadata);
+				const fallbackFinding: FeedbackFinding = {
+					type: vuln.title,
+					cwe: vuln.cwe,
+					owasp: vuln.owaspRef ?? '',
+					severity: vuln.severity,
+					path: vuln.filePath,
+					line: vuln.line,
+					...fallback,
+				};
 				panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId, {
-					error: sanitizeLlmError(rawMessage),
+					html: staticExplanationPreamble(vuln.line)
+						+ renderExplanation(fallbackFinding),
 				});
 			}
 		},
@@ -2231,6 +2280,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
 			store.saveFinalizedSessionSync(finalized);
 			void store.appendCompletedSession(finalized);
+			queueSessionMetricsUpload(finalized);
 			void store.clearActiveSession();
 			saveScanState.initialCheckpointDoneAt = null;
 			saveScanState.totalSaveScansThisSession = 0;
@@ -2281,6 +2331,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
 			store.saveFinalizedSessionSync(finalized);
 			void store.appendCompletedSession(finalized);
+			queueSessionMetricsUpload(finalized);
 			void store.clearActiveSession();
 			console.log(`[Ariadne] Final scan completed. Session ${activeSession.sessionId} finalized as 'completed'.`);
 		} catch (err) {
@@ -2292,6 +2343,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const incomplete = finalizeSession(activeSession, lifecycles, timestamp, 'incomplete');
 			store.saveFinalizedSessionSync(incomplete);
 			void store.appendCompletedSession(incomplete);
+			queueSessionMetricsUpload(incomplete);
 			void store.clearActiveSession();
 		} finally {
 			saveScanState.initialCheckpointDoneAt = null;

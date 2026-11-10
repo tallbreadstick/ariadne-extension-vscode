@@ -31,9 +31,16 @@ describe('copilot CLI platform selection', () => {
 		);
 	});
 
+	it('selects darwin arm64 before x64 fallback package naming', () => {
+		assert.deepStrictEqual(copilotPlatformIds('darwin', 'arm64'), ['darwin-arm64']);
+		assert.strictEqual(
+			copilotCliCandidates(root, 'darwin', 'arm64')[0],
+			join(root, 'node_modules', '@github', 'copilot-darwin-arm64', 'copilot'),
+		);
+	});
+
 	it('has no Copilot CLI for unsupported architectures', () => {
 		assert.deepStrictEqual(copilotPlatformIds('linux', 'ia32'), []);
-		assert.deepStrictEqual(copilotCliCandidates(root, 'darwin', 'arm64'), []);
 	});
 
 	it('strips Electron host variables from the CLI environment', () => {

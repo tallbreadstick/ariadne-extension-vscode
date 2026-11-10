@@ -46,8 +46,6 @@ test-project - Copy/**
 # Dependencies. The extension bundle is dist/extension.js. What remains
 # below is the Copilot SDK, which esbuild leaves external, plus the
 # native CLI for Linux x64, Windows x64, and Windows ARM64.
-# linuxmusl, darwin, and linux arm64 stay out: the resolver falls through
-# to them, and shipping them would add another full CLI.
 node_modules/**
 
 !node_modules/@github/copilot/**
@@ -55,6 +53,8 @@ node_modules/**
 !node_modules/@github/copilot-linux-x64/**
 !node_modules/@github/copilot-win32-x64/**
 !node_modules/@github/copilot-win32-arm64/**
+!node_modules/@github/copilot-darwin-arm64/**
+!node_modules/@github/copilot-darwin-x64/**
 !node_modules/koffi/**
 !node_modules/vscode-jsonrpc/**
 !node_modules/zod/**
@@ -64,7 +64,6 @@ node_modules/**
 
 node_modules/@github/copilot-linuxmusl-*/**
 node_modules/@github/copilot-linux-arm64/**
-node_modules/@github/copilot-darwin*/**
 node_modules/@github/copilot-win32-ia32/**
 
 # Docs, licenses, and native sources inside the packages we do ship.
@@ -87,6 +86,12 @@ node_modules/@github/copilot-win32-x64/**/clipboard.win32-arm64-*
 node_modules/@github/copilot-win32-arm64/**/clipboard.darwin-*
 node_modules/@github/copilot-win32-arm64/**/clipboard.linux-*
 node_modules/@github/copilot-win32-arm64/**/clipboard.win32-x64-*
+node_modules/@github/copilot-darwin-arm64/**/clipboard.darwin-x64-*
+node_modules/@github/copilot-darwin-arm64/**/clipboard.win32-*
+node_modules/@github/copilot-darwin-arm64/**/clipboard.linux-*
+node_modules/@github/copilot-darwin-x64/**/clipboard.darwin-arm64-*
+node_modules/@github/copilot-darwin-x64/**/clipboard.win32-*
+node_modules/@github/copilot-darwin-x64/**/clipboard.linux-*
 
 # Zod's published CJS entry loads v4 only.
 node_modules/zod/src/**

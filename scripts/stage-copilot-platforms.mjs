@@ -12,7 +12,16 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const platforms = ['linux-x64', 'win32-x64', 'win32-arm64'];
+const platforms = [
+	'linux-x64',
+	'linuxmusl-x64',
+	'linux-arm64',
+	'linuxmusl-arm64',
+	'win32-x64',
+	'win32-arm64',
+	'darwin-arm64',
+	'darwin-x64',
+];
 
 function binaryName(platform) {
 	return platform.startsWith('win32') ? 'copilot.exe' : 'copilot';

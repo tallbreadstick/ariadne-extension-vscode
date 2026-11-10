@@ -4,7 +4,7 @@ Ariadne checks Java code for common security problems while you work. It marks t
 
 It does not rewrite your file. The explanation is a short example to study, not a patch.
 
-You need VS Code 1.107 or newer, a folder with Java source, and a GitHub account.
+You need VS Code 1.100 or newer (including 1.100.2), a folder with Java source, and a GitHub account.
 
 ## Start
 

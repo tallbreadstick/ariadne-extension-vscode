@@ -306,6 +306,15 @@ export function buildFeedbackPanelHtml(
                 max-width: 100%;
             }
 
+            .fallback-note {
+                margin: 0 0 1rem;
+                padding: 0.75rem 1rem;
+                border-left: 3px solid var(--vscode-inputValidation-infoBorder, var(--section-blue));
+                background: color-mix(in srgb, var(--vscode-inputValidation-infoBackground, #264f78) 35%, transparent);
+                font-size: 13px;
+                line-height: 1.45;
+            }
+
             .lead {
                 margin: 0;
                 font-size: 16px;

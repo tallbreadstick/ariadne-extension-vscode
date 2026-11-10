@@ -12,13 +12,26 @@ Supported hosts are the builds published on that release (Linux, Windows, and ma
 
 For the data-collection release, install the packaged `.vsix` with **Extensions: Install from VSIX...**. Leave Core set to **Auto** unless you need a different build.
 
+### Session metrics ingest (local collection server)
+
+When the user has **analytics consent** and is signed in to GitHub, finalized sessions and hourly checkpoints POST to the ingest API.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `ariadne.metricsIngest.enabled` | `true` | Master switch |
+| `ariadne.metricsIngest.baseUrl` | `https://127.0.0.1:8443` | Collection server (change when deployed) |
+| `ariadne.metricsIngest.apiKey` | *(empty)* | Bearer token (≥32 chars); matches server `ARIADNE_INGEST_API_KEY` |
+| `ariadne.metricsIngest.trustLocalTls` | `true` | Accept self-signed TLS on localhost |
+
+Set the API key in **Settings → Ariadne** or in workspace/user `settings.json`. Uploads are fire-and-forget; failures are logged to the extension host console.
+
 ## Prerequisites
 
 | Requirement | Version / notes |
 |---|---|
 | [Node.js](https://nodejs.org/) | LTS or **22.x** (matches `@types/node` in `package.json`) |
 | npm | Bundled with Node.js |
-| [Visual Studio Code](https://code.visualstudio.com/) | **1.107+** |
+| [Visual Studio Code](https://code.visualstudio.com/) | **1.100+** (study respondents often use **1.100.2**) |
 | OS | A published Ariadne scanner build for this computer (downloaded on first scan) |
 
 ## Install dependencies

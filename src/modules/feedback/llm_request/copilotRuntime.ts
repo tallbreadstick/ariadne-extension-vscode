@@ -28,6 +28,9 @@ export function copilotPlatformIds(platform: string, arch: string): string[] {
 	if (platform === 'win32') {
 		return [`win32-${arch}`];
 	}
+	if (platform === 'darwin') {
+		return [`darwin-${arch}`];
+	}
 	return [];
 }
 

@@ -21,7 +21,7 @@
     "java"
   ],
   "engines": {
-    "vscode": "^1.107.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Programming Languages",
@@ -175,6 +175,26 @@
           "minimum": 2,
           "maximum": 180,
           "markdownDescription": "Duration in minutes between automatic full background scans (default: 60 minutes). Minimum: 2 minutes, Maximum: 180 minutes."
+        },
+        "ariadne.metricsIngest.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Send anonymized session metrics to the Ariadne collection server when signed in with analytics consent."
+        },
+        "ariadne.metricsIngest.baseUrl": {
+          "type": "string",
+          "default": "https://127.0.0.1:8443",
+          "markdownDescription": "HTTPS base URL of the metrics ingest server (no trailing slash). Change this when deploying the collection server."
+        },
+        "ariadne.metricsIngest.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Bearer token for metrics ingest (`Authorization` header). Must be at least 32 characters. Leave empty to use the value stored in Secret Storage under `ariadne.metricsIngestApiKey`."
+        },
+        "ariadne.metricsIngest.trustLocalTls": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Allow self-signed TLS certificates when connecting to `127.0.0.1` or `localhost` collection servers."
         }
       }
     },
@@ -206,7 +226,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.107.0",
+    "@types/vscode": "^1.100.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.3",
