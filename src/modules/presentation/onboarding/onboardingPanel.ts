@@ -1221,6 +1221,12 @@ export async function checkAndShowOnboarding(context: vscode.ExtensionContext, c
 		return false;
 	}
 
+	try {
+		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+	} catch {
+		// Ignore if sidebar command not yet ready or registered
+	}
+
 	showOnboardingPanel(context, callbacks);
 	await context.globalState.update('ariadne.hasSeenOnboarding', true);
 	return true;
