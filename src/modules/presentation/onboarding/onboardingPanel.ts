@@ -728,10 +728,102 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</p>
 			</header>
 
-			<!-- Section 1: Saving & Scanning Process -->
+			<!-- Section 1: Extension Features & Navigation -->
 			<section class="section">
 				<div class="section-header">
 					<span class="section-number">1</span>
+					<h2 class="section-title">Core Features &amp; Where to Find Them</h2>
+				</div>
+				<div class="features-grid">
+					<!-- Settings Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${SETTINGS_SVG}
+									<h3 class="feature-title">Sidebar Settings</h3>
+								</div>
+								<span class="location-badge">Activity Bar (Left)</span>
+							</div>
+							<p class="feature-desc">
+								Manage your GitHub authentication, toggle inline code highlight visibility, 
+								access the help guide, and manage custom rule scripts across organized accordions.
+							</p>
+						</div>
+						<button class="btn" data-action="openSettings">
+							Open Settings Panel
+						</button>
+					</div>
+
+					<!-- Active Vulnerabilities Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${VULN_SVG}
+									<h3 class="feature-title">Active Vulnerabilities</h3>
+								</div>
+								<span class="location-badge">Bottom Panel (Left)</span>
+							</div>
+							<p class="feature-desc">
+								View all active vulnerability findings from your scans. Features the <strong>Session Progress Bar</strong>, 
+								the <strong>Next Focus</strong> recommendation chip, collapsible filter drawer, click-to-navigate code links, 
+								and <strong>Explain Vulnerability</strong> learning actions.
+							</p>
+						</div>
+						<button class="btn" data-action="openActiveVulnerabilities">
+							Open Active Vulnerabilities
+						</button>
+					</div>
+
+					<!-- Full Report Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${REPORT_SVG}
+									<h3 class="feature-title">Full Report</h3>
+								</div>
+								<span class="location-badge">Bottom Panel (Right)</span>
+							</div>
+							<p class="feature-desc">
+								Inspect your comprehensive security dashboard. Displays finding counts by severity, qualitative trend badges 
+								(<em>Some progress</em>, <em>Clear progress</em>), recurring <strong>Common Vulnerability</strong> habit tracking, 
+								and interactive click-to-filter support.
+							</p>
+						</div>
+						<button class="btn" data-action="openFullReport">
+							Open Full Report
+						</button>
+					</div>
+
+					<!-- Inline Code Highlighting Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${HIGHLIGHT_SVG}
+									<h3 class="feature-title">Inline Highlighting</h3>
+								</div>
+								<span class="location-badge">Editor Pane</span>
+							</div>
+							<p class="feature-desc">
+								Affected code lines are highlighted with a soft background tint, an overview scrollbar tick, and an italic label. 
+								Hover over any highlight to inspect flaw details or click <strong>[💡 Explain Vulnerability]</strong>.
+							</p>
+							<div class="demo-box">
+								<code>String q = "SELECT * FROM users WHERE id=" + id;</code>
+								<span class="demo-tag">${LIGHTBULB_SVG} [Ariadne] SQL Injection</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- Section 2: Saving & Scanning Process -->
+			<section class="section">
+				<div class="section-header">
+					<span class="section-number">2</span>
 					<h2 class="section-title">The Saving &amp; Scanning Lifecycle</h2>
 				</div>
 				<div class="process-grid">
@@ -896,10 +988,10 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</div>
 			</section>
 
-			<!-- Section 2: Advanced Tool — Data Audit Graph -->
+			<!-- Section 3: Advanced Tool — Data Audit Graph -->
 			<section class="section">
 				<div class="section-header">
-					<span class="section-number">2</span>
+					<span class="section-number">3</span>
 					<h2 class="section-title">Advanced Tool — Data Audit Graph</h2>
 					<span class="section-badge">For Advanced &amp; Security Auditing</span>
 				</div>
@@ -960,98 +1052,6 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 							<div class="demo-media-caption">
 								<span class="caption-dot"></span>
 								<span><strong>Hover Access:</strong> Click <em>Open in audit graph →</em> above Explain Vulnerability.</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</section>
-
-			<!-- Section 3: Extension Features & Navigation -->
-			<section class="section">
-				<div class="section-header">
-					<span class="section-number">3</span>
-					<h2 class="section-title">Core Features &amp; Where to Find Them</h2>
-				</div>
-				<div class="features-grid">
-					<!-- Settings Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${SETTINGS_SVG}
-									<h3 class="feature-title">Sidebar Settings</h3>
-								</div>
-								<span class="location-badge">Activity Bar (Left)</span>
-							</div>
-							<p class="feature-desc">
-								Manage your GitHub authentication, toggle inline code highlight visibility, 
-								access the help guide, and manage custom rule scripts across organized accordions.
-							</p>
-						</div>
-						<button class="btn" data-action="openSettings">
-							Open Settings Panel
-						</button>
-					</div>
-
-					<!-- Active Vulnerabilities Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${VULN_SVG}
-									<h3 class="feature-title">Active Vulnerabilities</h3>
-								</div>
-								<span class="location-badge">Bottom Panel (Left)</span>
-							</div>
-							<p class="feature-desc">
-								View all active vulnerability findings from your scans. Features the <strong>Session Progress Bar</strong>, 
-								the <strong>Next Focus</strong> recommendation chip, collapsible filter drawer, click-to-navigate code links, 
-								and <strong>Explain Vulnerability</strong> learning actions.
-							</p>
-						</div>
-						<button class="btn" data-action="openActiveVulnerabilities">
-							Open Active Vulnerabilities
-						</button>
-					</div>
-
-					<!-- Full Report Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${REPORT_SVG}
-									<h3 class="feature-title">Full Report</h3>
-								</div>
-								<span class="location-badge">Bottom Panel (Right)</span>
-							</div>
-							<p class="feature-desc">
-								Inspect your comprehensive security dashboard. Displays finding counts by severity, qualitative trend badges 
-								(<em>Some progress</em>, <em>Clear progress</em>), recurring <strong>Common Vulnerability</strong> habit tracking, 
-								and interactive click-to-filter support.
-							</p>
-						</div>
-						<button class="btn" data-action="openFullReport">
-							Open Full Report
-						</button>
-					</div>
-
-					<!-- Inline Code Highlighting Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${HIGHLIGHT_SVG}
-									<h3 class="feature-title">Inline Highlighting</h3>
-								</div>
-								<span class="location-badge">Editor Pane</span>
-							</div>
-							<p class="feature-desc">
-								Affected code lines are highlighted with a soft background tint, an overview scrollbar tick, and an italic label. 
-								Hover over any highlight to inspect flaw details or click <strong>[💡 Explain Vulnerability]</strong>.
-							</p>
-							<div class="demo-box">
-								<code>String q = "SELECT * FROM users WHERE id=" + id;</code>
-								<span class="demo-tag">${LIGHTBULB_SVG} [Ariadne] SQL Injection</span>
 							</div>
 						</div>
 					</div>
