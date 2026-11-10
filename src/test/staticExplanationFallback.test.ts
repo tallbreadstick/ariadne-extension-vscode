@@ -35,9 +35,11 @@ describe('staticExplanationFallback', () => {
 		assert.ok(explanation.checks.some((c) => c.includes('line 42')));
 	});
 
-	it('includes an offline preamble with the finding line', () => {
+	it('includes a built-in fallback preamble with the finding line', () => {
 		const html = staticExplanationPreamble(42);
 		assert.ok(html.includes('fallback-note'));
+		assert.ok(html.includes('Built-in explanation'));
+		assert.ok(html.includes('LLM request failed'));
 		assert.ok(html.includes('line 42'));
 	});
 });

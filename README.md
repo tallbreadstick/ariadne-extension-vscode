@@ -33,7 +33,6 @@ Open the Command Palette and search for **Ariadne**:
 
 | Command | What it does |
 |---|---|
-| **Ariadne: Analyze** | Scan the project again |
 | **Ariadne: Explain Vulnerability** | Explain the finding you opened it from |
 | **Ariadne: Sign In to GitHub** | Sign in |
 | **Ariadne: Open Panel** | Show the Ariadne panel |
@@ -43,7 +42,7 @@ Open the Command Palette and search for **Ariadne**:
 
 ## If a scan looks empty
 
-Sign in from the sidebar, then run **Ariadne: Analyze**. If the marks are missing, turn **Highlights** on in the sidebar. After an update, run **Developer: Reload Window**.
+Sign in from the sidebar and wait for the automatic scan to finish. If the marks are missing, turn **Highlights** on in the sidebar. After an update, run **Developer: Reload Window**.
 
 ## License
 

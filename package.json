@@ -33,7 +33,6 @@
     "onLanguage:java",
     "onLanguage:ariadne",
     "workspaceContains:rules/main.ariadne",
-    "onCommand:ariadne-extension-vscode.analyze",
     "onCommand:ariadne-extension-vscode.openOnboarding",
     "onCommand:ariadne-extension-vscode.debugResetOnboarding",
     "onView:ariadne.panel.activeVulnerabilities",
@@ -69,10 +68,6 @@
       {
         "command": "ariadne-extension-vscode.openFeedbackPanel",
         "title": "Ariadne: Explain Vulnerability"
-      },
-      {
-        "command": "ariadne-extension-vscode.analyze",
-        "title": "Ariadne: Analyze"
       },
       {
         "command": "ariadne-extension-vscode.openSignInPanel",
