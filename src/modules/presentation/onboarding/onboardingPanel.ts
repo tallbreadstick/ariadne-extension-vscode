@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { SEVERITY_BG_TITLE, SEVERITY_COLORS_TITLE } from '../severityColors.js';
 
@@ -124,6 +125,18 @@ const STEP_COMMON_VULN_SVG = /* html */ `
 	<circle cx="8" cy="11.5" r="0.75" fill="currentColor"/>
 </svg>`;
 
+
+const AUDIT_TREE_SVG = /* html */ `
+<svg class="tree-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16" aria-hidden="true">
+	<path d="M8 1.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM3 6.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm10 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM8 11.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM4.15 7.35l2.9 1.65M8.95 8.9l2.9 1.65M8.95 7.1L6.05 5.45M4.15 8.65l2.9-1.65"/>
+</svg>`;
+
+const AUDIT_HOVER_ICON_SVG = /* html */ `
+<svg class="tree-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
+	<path d="M2.5 13.5l3.5-3.5m0 0l-1-4 7-3.5-3.5 7-4-1z"/>
+	<path d="M10 2.5l3.5 3.5"/>
+</svg>`;
+
 const READY_CHECK_SVG = /* html */ `
 <svg class="closing-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 	<circle cx="12" cy="12" r="10"/>
@@ -137,6 +150,8 @@ export interface OnboardingMediaUris {
 	step23GifUri?: string;
 	step24GifUri?: string;
 	step25GifUri?: string;
+	auditActiveGifUri?: string;
+	auditHoverGifUri?: string;
 	cspSource?: string;
 }
 
@@ -245,6 +260,61 @@ const CSS = /* css */ `
 		color: var(--btn-fg);
 		font-weight: 700;
 		font-size: 12px;
+	}
+
+
+	.section-badge {
+		font-size: 11px;
+		font-weight: 500;
+		padding: 2px 8px;
+		border-radius: 3px;
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
+		color: var(--accent);
+		border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+		margin-left: auto;
+		white-space: nowrap;
+	}
+
+	.audit-intro {
+		margin: 0 0 16px;
+		color: var(--muted);
+		font-size: 13px;
+		line-height: 1.5;
+	}
+
+	.audit-card {
+		background: var(--card-bg);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		transition: border-color 0.15s ease;
+	}
+
+	.audit-card:hover {
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+	}
+
+	.audit-card-header {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.audit-card-title {
+		margin: 0;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.audit-card-desc {
+		margin: 0;
+		font-size: 12px;
+		color: var(--muted);
+		line-height: 1.5;
+		flex-grow: 1;
 	}
 
 	.section-title {
@@ -630,6 +700,8 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 	const step23GifUri = mediaUris?.step23GifUri ?? 'media/Session 2.3 (Optimized).gif';
 	const step24GifUri = mediaUris?.step24GifUri ?? 'media/Step 2.4 Session Started (Optimized).gif';
 	const step25GifUri = mediaUris?.step25GifUri ?? 'media/Step 2.45 Session Started (optimized).gif';
+	const auditActiveGifUri = mediaUris?.auditActiveGifUri ?? 'media/advanced-tool (access point 1, optimized).gif';
+	const auditHoverGifUri = mediaUris?.auditHoverGifUri ?? 'media/advanced-tool (access point 2. optimized).gif';
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -824,10 +896,80 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</div>
 			</section>
 
-			<!-- Section 2: Extension Features & Navigation -->
+			<!-- Section 2: Advanced Tool — Data Audit Graph -->
 			<section class="section">
 				<div class="section-header">
 					<span class="section-number">2</span>
+					<h2 class="section-title">Advanced Tool — Data Audit Graph</h2>
+					<span class="section-badge">For Advanced &amp; Security Auditing</span>
+				</div>
+				<p class="audit-intro">
+					The <strong>Data Audit Graph</strong> provides an interactive inter-procedural taint flow canvas designed for security auditors, educators, and advanced developers. It maps Tree-sitter AST nodes to trace variable scopes, bindings, condition diamonds, taint sources, and sinks across your methods—revealing the exact data propagation pathways that cause vulnerabilities.
+				</p>
+				<div class="explain-variants-grid">
+					<!-- Access Point 1: Active Vulnerabilities Toolbar -->
+					<div class="audit-card">
+						<div class="audit-card-header">
+							<span class="process-icon-wrap">${AUDIT_TREE_SVG}</span>
+							<h4 class="audit-card-title">Access Point 1: Active Vulnerabilities Toolbar</h4>
+						</div>
+						<p class="audit-card-desc">
+							Open the data flow graph directly from the bottom panel by clicking the <strong>Tree Graph icon</strong> located immediately beside the <strong>Filter</strong> button in the Active Vulnerabilities toolbar.
+						</p>
+						<div class="demo-media-wrapper" style="margin-top: auto;">
+							${auditActiveGifUri ? /* html */ `
+							<img src="${auditActiveGifUri}" alt="Data Audit Graph via Active Vulnerabilities Toolbar" class="demo-media" loading="lazy" />
+							` : /* html */ `
+							<div class="demo-media-placeholder">
+								<svg class="demo-media-placeholder-icon" viewBox="0 0 16 16" fill="currentColor">
+									<path d="M8 1.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM3 6.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm10 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM8 11.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM4.15 7.35l2.9 1.65M8.95 8.9l2.9 1.65M8.95 7.1L6.05 5.45M4.15 8.65l2.9-1.65"/>
+								</svg>
+								<span class="demo-media-placeholder-label">GIF: Active Vulnerabilities Toolbar</span>
+								<span class="demo-media-placeholder-desc">Click the tree graph icon directly beside the Filter button in Active Vulnerabilities</span>
+							</div>
+							`}
+							<div class="demo-media-caption">
+								<span class="caption-dot"></span>
+								<span><strong>Toolbar Access:</strong> Click the tree icon beside the Filter button to launch Data Audit.</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Access Point 2: In-Editor Hover Popup -->
+					<div class="audit-card">
+						<div class="audit-card-header">
+							<span class="process-icon-wrap">${AUDIT_HOVER_ICON_SVG}</span>
+							<h4 class="audit-card-title">Access Point 2: In-Editor Diagnostic Hover</h4>
+						</div>
+						<p class="audit-card-desc">
+							Hover over any highlighted vulnerability line in the editor. Positioned directly above <strong>[💡 Explain Vulnerability]</strong>, click <strong>*[Open in audit graph →]*</strong> to inspect the specific finding's taint propagation path.
+						</p>
+						<div class="demo-media-wrapper" style="margin-top: auto;">
+							${auditHoverGifUri ? /* html */ `
+							<img src="${auditHoverGifUri}" alt="Data Audit Graph via In-Editor Hover Popup" class="demo-media" loading="lazy" />
+							` : /* html */ `
+							<div class="demo-media-placeholder">
+								<svg class="demo-media-placeholder-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M2.5 13.5l3.5-3.5m0 0l-1-4 7-3.5-3.5 7-4-1z"/>
+									<path d="M10 2.5l3.5 3.5"/>
+								</svg>
+								<span class="demo-media-placeholder-label">GIF: In-Editor Hover Link</span>
+								<span class="demo-media-placeholder-desc">Click [Open in audit graph →] located directly above Explain Vulnerability in the hover popup</span>
+							</div>
+							`}
+							<div class="demo-media-caption">
+								<span class="caption-dot"></span>
+								<span><strong>Hover Access:</strong> Click <em>Open in audit graph →</em> above Explain Vulnerability.</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- Section 3: Extension Features & Navigation -->
+			<section class="section">
+				<div class="section-header">
+					<span class="section-number">3</span>
 					<h2 class="section-title">Core Features &amp; Where to Find Them</h2>
 				</div>
 				<div class="features-grid">
@@ -916,7 +1058,7 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</div>
 			</section>
 
-			<!-- Section 3: Friendly Exit / Closing Message -->
+			<!-- Section 4: Friendly Exit / Closing Message -->
 			<section class="closing">
 				<div class="closing-badge">
 					${READY_CHECK_SVG}
@@ -994,6 +1136,26 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 		vscode.Uri.joinPath(context.extensionUri, 'media', 'Step 2.45 Session Started (optimized).gif'),
 	).toString();
 
+	const auditActiveCandidate = [
+		'advanced-tool (access point 1, optimized).gif',
+		'Session 2.Audit (Active Toolbar, optimized).gif',
+		'audit-graph-active.gif',
+	].find(name => fs.existsSync(vscode.Uri.joinPath(context.extensionUri, 'media', name).fsPath));
+
+	const auditActiveGifUri = auditActiveCandidate
+		? panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', auditActiveCandidate)).toString()
+		: undefined;
+
+	const auditHoverCandidate = [
+		'advanced-tool (access point 2. optimized).gif',
+		'Session 2.Audit (Hover, optimized).gif',
+		'audit-graph-hover.gif',
+	].find(name => fs.existsSync(vscode.Uri.joinPath(context.extensionUri, 'media', name).fsPath));
+
+	const auditHoverGifUri = auditHoverCandidate
+		? panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', auditHoverCandidate)).toString()
+		: undefined;
+
 	panel.webview.html = buildOnboardingHtml({
 		step21GifUri,
 		step22HoverGifUri,
@@ -1001,6 +1163,8 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 		step23GifUri,
 		step24GifUri,
 		step25GifUri,
+		auditActiveGifUri,
+		auditHoverGifUri,
 		cspSource: panel.webview.cspSource,
 	});
 

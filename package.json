@@ -29,10 +29,13 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onLanguage:java",
     "onLanguage:ariadne",
     "workspaceContains:rules/main.ariadne",
     "onCommand:ariadne-extension-vscode.analyze",
+    "onCommand:ariadne-extension-vscode.openOnboarding",
+    "onCommand:ariadne-extension-vscode.debugResetOnboarding",
     "onView:ariadne.panel.activeVulnerabilities",
     "onView:ariadne.panel.sessionMetrics",
     "onView:ariadne.sidebar.signIn"
