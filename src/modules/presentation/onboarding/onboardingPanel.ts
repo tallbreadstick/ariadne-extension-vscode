@@ -1182,6 +1182,7 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 					break;
 				case 'startCoding':
 					panel.dispose();
+					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
 					break;
 			}
 		},
