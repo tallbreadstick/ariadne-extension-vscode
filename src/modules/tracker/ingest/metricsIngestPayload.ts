@@ -118,6 +118,41 @@ export function buildSessionFinalizedPayload(
 	};
 }
 
+export interface FeatureUsageOptions {
+	count?: number;
+	/** Required for explain_vulnerability_fallback — stable reason code. */
+	reason?: string;
+	cweId?: string;
+}
+
+export function buildFeatureUsagePayload(
+	featureName: string,
+	githubAccountId: string,
+	extensionVersion: string,
+	vscodeVersion: string,
+	options: FeatureUsageOptions = {},
+): Record<string, unknown> {
+	const feature: Record<string, unknown> = {
+		name: featureName,
+		count: options.count ?? 1,
+	};
+	if (options.reason) {
+		feature.reason = options.reason;
+	}
+	if (options.cweId) {
+		feature.cweId = options.cweId;
+	}
+	return {
+		format: INGEST_FORMAT,
+		version: INGEST_VERSION,
+		githubAccountId,
+		event: 'feature_usage',
+		observedAt: new Date().toISOString(),
+		client: clientBlock(extensionVersion, vscodeVersion),
+		feature,
+	};
+}
+
 export function buildHourlyCheckpointPayload(
 	sessionId: string,
 	checkpoint: SessionCheckpoint,

@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import type { AuthStorage } from '../../feedback/auth/authStorage.js';
 import type { SessionCheckpoint, SessionRecord } from '../analysis/lifecycleTypes.js';
 import {
+	buildFeatureUsagePayload,
 	buildHourlyCheckpointPayload,
 	buildSessionFinalizedPayload,
 } from './metricsIngestPayload.js';
@@ -15,6 +16,7 @@ import {
 export { METRICS_INGEST_SECRET_KEY } from './metricsIngestConfig.js';
 export {
 	aggregateCweCounts,
+	buildFeatureUsagePayload,
 	buildHourlyCheckpointPayload,
 	buildSessionFinalizedPayload,
 	countSeverity,
@@ -26,6 +28,7 @@ export { loadMetricsIngestConfig } from './metricsIngestConfig.js';
 
 import type { MetricsIngestConfig } from './metricsIngestConfig.js';
 import { loadMetricsIngestConfig } from './metricsIngestConfig.js';
+import type { FeatureUsageOptions } from './metricsIngestPayload.js';
 
 function allowInsecureTls(hostname: string, trustLocalTls: boolean): boolean {
 	return trustLocalTls && (hostname === '127.0.0.1' || hostname === 'localhost');
@@ -101,6 +104,33 @@ export class MetricsIngestService {
 		);
 		await postMetricsIngest(config, body);
 		console.log(`[Ariadne] Uploaded session_finalized for ${session.sessionId}.`);
+	}
+
+	async uploadFeatureUsage(
+		featureName: string,
+		options: FeatureUsageOptions = {},
+	): Promise<void> {
+		const config = await this.resolveConfig();
+		if (!config) {
+			return;
+		}
+		const githubAccountId = await this.githubAccountId();
+		if (!githubAccountId) {
+			return;
+		}
+		const body = buildFeatureUsagePayload(
+			featureName,
+			githubAccountId,
+			this.context.extension.packageJSON.version ?? '0.0.0',
+			vscode.version,
+			options,
+		);
+		await postMetricsIngest(config, body);
+		console.log(
+			`[Ariadne] Uploaded feature_usage ${featureName}`
+				+ (options.reason ? ` (${options.reason})` : '')
+				+ '.',
+		);
 	}
 
 	async uploadHourlyCheckpoint(sessionId: string, checkpoint: SessionCheckpoint): Promise<void> {

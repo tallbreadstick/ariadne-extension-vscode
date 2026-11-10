@@ -35,11 +35,12 @@ describe('staticExplanationFallback', () => {
 		assert.ok(explanation.checks.some((c) => c.includes('line 42')));
 	});
 
-	it('includes a built-in fallback preamble with the finding line', () => {
-		const html = staticExplanationPreamble(42);
+	it('includes a built-in fallback preamble with reason and line', () => {
+		const html = staticExplanationPreamble(42, 'timeout');
 		assert.ok(html.includes('fallback-note'));
 		assert.ok(html.includes('Built-in explanation'));
-		assert.ok(html.includes('LLM request failed'));
+		assert.ok(html.includes('data-llm-failure-reason="timeout"'));
+		assert.ok(html.includes('Reason code'));
 		assert.ok(html.includes('line 42'));
 	});
 });

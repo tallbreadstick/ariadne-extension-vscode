@@ -82,6 +82,7 @@ import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js'
 import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
+import { classifyLlmFailure } from './modules/feedback/llm_request/llmFailureReason.js';
 import { parseExplanation } from './modules/feedback/llm_request/parseResponse.js';
 import { renderExplanation } from './modules/feedback/views/renderExplanation.js';
 import {
@@ -393,6 +394,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		void metricsIngest.uploadHourlyCheckpoint(sessionId, checkpoint).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn('[Ariadne] Hourly checkpoint upload failed:', message);
+		});
+	};
+
+	const queueExplainVulnerabilityMetrics = (
+		outcome: 'success' | 'fallback',
+		cweId: string,
+		failureReason?: string,
+	): void => {
+		const featureName = outcome === 'success'
+			? 'explain_vulnerability'
+			: 'explain_vulnerability_fallback';
+		const options = outcome === 'fallback' && failureReason
+			? { reason: failureReason, cweId }
+			: { cweId };
+		void metricsIngest.uploadFeatureUsage(featureName, options).catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			console.warn('[Ariadne] Feature usage upload failed:', message);
 		});
 	};
 	const session = runSession();
@@ -2202,16 +2220,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId, {
 					html: renderExplanation(finding),
 				});
+				queueExplainVulnerabilityMetrics('success', vuln.cwe);
 			} catch (error: unknown) {
 				if (!stillCurrent()) {
 					return;
 				}
 				const rawMessage =
 					error instanceof Error ? error.message : 'Unknown error';
+				const failureReason = classifyLlmFailure(rawMessage);
 				console.warn(
 					'[Ariadne] LLM pipeline error; showing static explanation fallback:',
+					failureReason,
 					rawMessage,
 				);
+				queueExplainVulnerabilityMetrics('fallback', vuln.cwe, failureReason);
 				const fallback = buildStaticExplanation(vulnMetadata);
 				const fallbackFinding: FeedbackFinding = {
 					type: vuln.title,
@@ -2223,7 +2245,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					...fallback,
 				};
 				panel.webview.html = buildFeedbackPanelHtml(vulnMetadata, requestId, {
-					html: staticExplanationPreamble(vuln.line)
+					html: staticExplanationPreamble(vuln.line, failureReason)
 						+ renderExplanation(fallbackFinding),
 				});
 			}

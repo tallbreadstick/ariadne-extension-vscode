@@ -315,6 +315,18 @@ export function buildFeedbackPanelHtml(
                 line-height: 1.45;
             }
 
+            .fallback-reason-code {
+                display: block;
+                margin-top: 0.35rem;
+                font-size: 12px;
+                color: var(--muted);
+            }
+
+            .fallback-reason-code code {
+                font-family: var(--vscode-editor-font-family, monospace);
+                font-size: 11px;
+            }
+
             .lead {
                 margin: 0;
                 font-size: 16px;

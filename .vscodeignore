@@ -61,6 +61,8 @@ node_modules/**
 !node_modules/@koromix/koffi-linux-x64/**
 !node_modules/@koromix/koffi-win32-x64/**
 !node_modules/@koromix/koffi-win32-arm64/**
+!node_modules/@koromix/koffi-darwin-arm64/**
+!node_modules/@koromix/koffi-darwin-x64/**
 
 node_modules/@github/copilot-linuxmusl-*/**
 node_modules/@github/copilot-linux-arm64/**
@@ -73,6 +75,9 @@ node_modules/**/CHANGELOG*
 node_modules/koffi/src/**
 node_modules/koffi/vendor/**
 node_modules/koffi/doc/**
+node_modules/koffi/cnoke.cjs
+node_modules/koffi/build/**
+node_modules/@koromix/koffi-*/README.md
 node_modules/@github/copilot-sdk/docs/**
 node_modules/@github/copilot-*/webview/**/docs/**
 

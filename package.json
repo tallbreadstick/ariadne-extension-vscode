@@ -4,7 +4,7 @@
   "icon": "media/ariadne.png",
   "publisher": "tallbreadstick",
   "description": "A student-first VS Code tool that reviews code for security flaws without compromising academic integrity.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
@@ -208,6 +208,7 @@
   },
   "scripts": {
     "vscode:prepublish": "node scripts/stage-copilot-platforms.mjs && npm run package",
+    "vsix": "npm run vscode:prepublish && vsce package",
     "compile": "npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
@@ -227,6 +228,7 @@
     "@types/vscode": "^1.100.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.3",
     "eslint": "^9.39.3",
     "npm-run-all": "^4.1.5",

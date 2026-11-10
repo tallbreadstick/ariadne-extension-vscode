@@ -31,6 +31,14 @@ async function main() {
 		bundle: true,
 		format: 'cjs',
 		minify: production,
+		...(production
+			? {
+				legalComments: 'none',
+				drop: ['debugger'],
+				treeShaking: true,
+				target: 'node18',
+			}
+			: {}),
 		sourcemap: !production,
 		sourcesContent: false,
 		platform: 'node',

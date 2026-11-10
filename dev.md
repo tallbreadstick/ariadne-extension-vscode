@@ -45,6 +45,19 @@ npm install
 
 This installs TypeScript, esbuild, ESLint, and other dev dependencies listed in `package.json`.
 
+## Package a VSIX
+
+From this folder (needs network for first-time native staging):
+
+```bash
+npm install
+npm run vsix
+```
+
+`vscode:prepublish` downloads any missing `@github/copilot-*` and `@koromix/koffi-*` slices for Linux, Windows, and macOS, then runs a minified production bundle. Install the artifact with **Extensions: Install from VSIX...**.
+
+The VSIX intentionally omits Linux musl/arm-only Copilot builds and dev/docs fixtures to keep size down; glibc Linux x64, Windows, and macOS are included.
+
 ## Compile the extension
 
 ```powershell
@@ -157,6 +170,7 @@ GitHub sign-in is required to use the extension (scanning, rule scripts, and AI 
 | `compile` | `npm run compile` | One-shot typecheck + lint + bundle |
 | `watch` | `npm run watch` | Watch mode for development |
 | `package` | `npm run package` | Production bundle (minified) |
+| `vsix` | `npm run vsix` | Stage native Copilot/Koffi runtimes, production bundle, emit `.vsix` |
 | `lint` | `npm run lint` | ESLint only |
 | `check-types` | `npm run check-types` | TypeScript check only |
 | `test` | `npm test` | Extension tests (`vscode-test`) |

@@ -3,6 +3,8 @@
  * Generic, educational content keyed by CWE — not tied to the student's code.
  */
 
+import type { LlmFailureReason } from '../llm_request/llmFailureReason.js';
+import { llmFailureReasonLabel } from '../llm_request/llmFailureReason.js';
 import type { LLMExplanation } from '../llm_request/requestTypes.js';
 import type { VulnerabilityMetadata } from '../vulnerability_results/vulnerabilityTypes.js';
 
@@ -352,11 +354,16 @@ export function buildStaticExplanation(meta: VulnerabilityMetadata): LLMExplanat
 	return builder ? builder(meta) : genericFallback(meta);
 }
 
-export function staticExplanationPreamble(lineNumber: number): string {
+export function staticExplanationPreamble(
+	lineNumber: number,
+	failureReason: LlmFailureReason,
+): string {
+	const why = llmFailureReasonLabel(failureReason);
 	return `
-		<p class="fallback-note">
-			<strong>Built-in explanation:</strong> Copilot did not return a usable explanation
-			(the LLM request failed or the response was invalid), so Ariadne is showing a built-in CWE guide instead.
+		<p class="fallback-note" data-llm-failure-reason="${failureReason}">
+			<strong>Built-in explanation:</strong> ${why}
+			Ariadne is showing a built-in CWE guide instead of a live Copilot answer.
+			<span class="fallback-reason-code">Reason code: <code>${failureReason}</code></span>
 			Compare the questions below with line ${lineNumber} in your file.
 		</p>`;
 }

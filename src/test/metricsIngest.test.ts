@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import {
 	aggregateCweCounts,
+	buildFeatureUsagePayload,
 	buildSessionFinalizedPayload,
 	countSeverity,
 	toPublicLifecycleSummaries,
@@ -84,6 +85,21 @@ describe('metricsIngest', () => {
 			},
 		]);
 		assert.deepStrictEqual(counts, [{ cweId: 'CWE-89', count: 3 }]);
+	});
+
+	it('builds explain_vulnerability_fallback feature_usage', () => {
+		const body = buildFeatureUsagePayload(
+			'explain_vulnerability_fallback',
+			'12345',
+			'0.1.1',
+			'1.100.0',
+			{ reason: 'timeout', cweId: 'CWE-89' },
+		);
+		assert.strictEqual(body.event, 'feature_usage');
+		const feature = body.feature as { name: string; reason: string; cweId: string };
+		assert.strictEqual(feature.name, 'explain_vulnerability_fallback');
+		assert.strictEqual(feature.reason, 'timeout');
+		assert.strictEqual(feature.cweId, 'CWE-89');
 	});
 
 	it('counts severities', () => {
