@@ -143,6 +143,12 @@ const READY_CHECK_SVG = /* html */ `
 	<path d="m8.5 12.5 2.5 2.5 5-5"/>
 </svg>`;
 
+
+export interface OnboardingCallbacks {
+	onOpenActiveVulnerabilities?: () => void;
+	onOpenFullReport?: () => void;
+}
+
 export interface OnboardingMediaUris {
 	step21GifUri?: string;
 	step22HoverGifUri?: string;
@@ -763,16 +769,16 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 									${VULN_SVG}
 									<h3 class="feature-title">Active Vulnerabilities</h3>
 								</div>
-								<span class="location-badge">Bottom Panel (Left)</span>
+								<span class="location-badge">Bottom Panel (Left Pane)</span>
 							</div>
 							<p class="feature-desc">
-								View all active vulnerability findings from your scans. Features the <strong>Session Progress Bar</strong>, 
+								View real-time vulnerability findings on the <strong>left pane</strong> of the bottom split dock. Features the <strong>Session Progress Bar</strong>, 
 								the <strong>Next Focus</strong> recommendation chip, collapsible filter drawer, click-to-navigate code links, 
 								and <strong>Explain Vulnerability</strong> learning actions.
 							</p>
 						</div>
 						<button class="btn" data-action="openActiveVulnerabilities">
-							Open Active Vulnerabilities
+							Focus Active Vulnerabilities (Left)
 						</button>
 					</div>
 
@@ -784,16 +790,16 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 									${REPORT_SVG}
 									<h3 class="feature-title">Full Report</h3>
 								</div>
-								<span class="location-badge">Bottom Panel (Right)</span>
+								<span class="location-badge">Bottom Panel (Right Pane)</span>
 							</div>
 							<p class="feature-desc">
-								Inspect your comprehensive security dashboard. Displays finding counts by severity, qualitative trend badges 
+								Inspect your comprehensive security dashboard on the <strong>right pane</strong> of the bottom split dock. Displays finding counts by severity, qualitative trend badges 
 								(<em>Some progress</em>, <em>Clear progress</em>), recurring <strong>Common Vulnerability</strong> habit tracking, 
 								and interactive click-to-filter support.
 							</p>
 						</div>
 						<button class="btn" data-action="openFullReport">
-							Open Full Report
+							Focus Full Report (Right)
 						</button>
 					</div>
 
@@ -1093,7 +1099,7 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
  */
 let currentOnboardingPanel: vscode.WebviewPanel | undefined;
 
-export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
+export function showOnboardingPanel(context: vscode.ExtensionContext, callbacks?: OnboardingCallbacks): vscode.WebviewPanel {
 	if (currentOnboardingPanel) {
 		currentOnboardingPanel.reveal(vscode.ViewColumn.One);
 		return currentOnboardingPanel;
@@ -1176,9 +1182,11 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 					break;
 				case 'openActiveVulnerabilities':
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+					callbacks?.onOpenActiveVulnerabilities?.();
 					break;
 				case 'openFullReport':
 					await vscode.commands.executeCommand('ariadne.panel.sessionMetrics.focus');
+					callbacks?.onOpenFullReport?.();
 					break;
 				case 'startCoding':
 					panel.dispose();
@@ -1205,13 +1213,13 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
  * @param context ExtensionContext
  * @returns true if onboarding panel was newly opened, false if already seen
  */
-export async function checkAndShowOnboarding(context: vscode.ExtensionContext): Promise<boolean> {
+export async function checkAndShowOnboarding(context: vscode.ExtensionContext, callbacks?: OnboardingCallbacks): Promise<boolean> {
 	const hasSeen = context.globalState.get<boolean>('ariadne.hasSeenOnboarding');
 	if (hasSeen) {
 		return false;
 	}
 
-	showOnboardingPanel(context);
+	showOnboardingPanel(context, callbacks);
 	await context.globalState.update('ariadne.hasSeenOnboarding', true);
 	return true;
 }

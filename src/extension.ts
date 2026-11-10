@@ -1146,6 +1146,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
+	
+	const onboardingCallbacks = {
+		onOpenActiveVulnerabilities: () => {
+			setTimeout(() => {
+				activeVulnsProvider.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
+		onOpenFullReport: () => {
+			setTimeout(() => {
+				sessionMetricsProvider.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
+	};
+
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
 		activeVulnsProvider,
@@ -1459,7 +1473,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 
 			if (msg.type === 'open-onboarding') {
-				showOnboardingPanel(context);
+				showOnboardingPanel(context, onboardingCallbacks);
 				return;
 			}
 
@@ -2305,7 +2319,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openOnboarding = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openOnboarding',
 		() => {
-			showOnboardingPanel(context);
+			showOnboardingPanel(context, onboardingCallbacks);
 		},
 	);
 
@@ -2500,7 +2514,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	// ── First-run Onboarding & Welcome Orientation ───────────────────────
-	void checkAndShowOnboarding(context);
+	void checkAndShowOnboarding(context, onboardingCallbacks);
 	void checkAndShowWelcomeToast(context.globalState, openBottomPanel);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────

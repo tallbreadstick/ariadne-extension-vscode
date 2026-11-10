@@ -139,13 +139,15 @@ describe('Onboarding Guide Webview Panel', () => {
 
 			// Active Vulnerabilities feature
 			assert.match(html, /Active Vulnerabilities/);
-			assert.match(html, /Bottom Panel \(Left\)/);
+			assert.match(html, /Bottom Panel \(Left Pane\)/);
 			assert.match(html, /data-action="openActiveVulnerabilities"/);
+			assert.match(html, /Focus Active Vulnerabilities \(Left\)/);
 
 			// Full Report feature
 			assert.match(html, /Full Report/);
-			assert.match(html, /Bottom Panel \(Right\)/);
+			assert.match(html, /Bottom Panel \(Right Pane\)/);
 			assert.match(html, /data-action="openFullReport"/);
+			assert.match(html, /Focus Full Report \(Right\)/);
 
 			// Inline Highlighting feature
 			assert.match(html, /Inline Highlighting/);
