@@ -207,7 +207,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "node scripts/stage-copilot-platforms.mjs && npm run package",
+    "vscode:prepublish": "npm run package",
     "vsix": "npm run vscode:prepublish && vsce package",
     "compile": "npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",

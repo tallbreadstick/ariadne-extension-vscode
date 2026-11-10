@@ -62,7 +62,10 @@ describe('Sidebar settings accordion', () => {
 		assert.match(html, /<summary[^>]*>\s*Help/);
 		assert.ok(html.indexOf('>Account<span') < html.indexOf('>Sessions<span'));
 		assert.ok(html.indexOf('>Sessions<span') < html.indexOf('>Core<span'));
-		assert.ok(html.indexOf('>Core<span') < html.indexOf('>Scripting<span'));
+		assert.ok(html.indexOf('>Core<span') < html.indexOf('>Copilot<span'));
+		assert.ok(html.indexOf('>Copilot<span') < html.indexOf('>Scripting<span'));
+		assert.ok(html.includes('id="accordion-copilot"'));
+		assert.match(html, /<summary[^>]*>\s*Copilot/);
 		assert.ok(html.indexOf('>Scripting<span') < html.indexOf('>Help<span'));
 		assert.ok(html.includes('id="open-onboarding-btn"'));
 		assert.match(html, /Onboarding Guide/i);
@@ -99,7 +102,7 @@ describe('Sidebar settings accordion', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
 		assert.ok(html.includes('name="ariadne-settings"'));
 		assert.match(html, /id="accordion-account"[^>]*\sopen/);
-		for (const id of ['accordion-scripting', 'accordion-session', 'accordion-scanner', 'accordion-help']) {
+		for (const id of ['accordion-scripting', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-help']) {
 			assert.ok(!new RegExp(`id="${id}"[^>]*\\sopen`).test(html), `${id} should start closed`);
 		}
 		assert.ok(html.includes('restoreAccordion'));

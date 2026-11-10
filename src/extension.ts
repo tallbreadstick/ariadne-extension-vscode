@@ -78,7 +78,30 @@ import {
 	targetsForOs,
 	type ScannerPreferences,
 } from './modules/core/scannerRelease.js';
+import type { CopilotSettingsViewModel } from './modules/feedback/auth/authTypes.js';
 import { fetchCopilotQuotaUsage } from './modules/feedback/auth/copilotQuota.js';
+import {
+	bundledCopilotCliVersion,
+	bundledCopilotCliVersions,
+	configureCopilotExecutable,
+	deleteDownloadedCopilot,
+	downloadCopilotPlatform,
+	listDownloadedCopilotPlatforms,
+	probeCopilotExecutable,
+	readCopilotPreferencesFromConfig,
+} from './modules/feedback/llm_request/copilotExecutable.js';
+import {
+	COPILOT_OS_OPTIONS,
+	COPILOT_PLATFORM_LABELS,
+	copilotOsForPlatform,
+	hostCopilotPlatformId,
+	isCopilotOs,
+	isCopilotPlatformId,
+	normalizeCopilotPreferences,
+	platformsForOs,
+	type CopilotPlatformId,
+	type CopilotPreferences,
+} from './modules/feedback/llm_request/copilotRelease.js';
 import { CopilotClientManager } from './modules/feedback/llm_request/copilotClientManager.js';
 import { serializePayload } from './modules/feedback/llm_request/serializePayload.js';
 import { callLLM } from './modules/feedback/llm_request/llmClient.js';
@@ -333,6 +356,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		readScannerChoice,
 	);
 
+	const readCopilotChoice = (): CopilotPreferences => {
+		const defaultVersion = bundledCopilotCliVersion(context.extensionPath);
+		const saved = context.globalState.get<{
+			auto?: boolean;
+			os?: string;
+			platform?: string;
+			version?: string;
+		}>('ariadne.copilotPreferences');
+		if (!saved || typeof saved.auto !== 'boolean') {
+			const initial = normalizeCopilotPreferences({
+				auto: true,
+				os: saved?.os,
+				platform: saved?.platform,
+				version: saved?.version,
+				platformHost: process.platform,
+				archHost: process.arch,
+				defaultVersion,
+			});
+			void context.globalState.update('ariadne.copilotPreferences', {
+				auto: true,
+				os: initial.os,
+				platform: initial.platform,
+				version: initial.version,
+			});
+			return initial;
+		}
+		return normalizeCopilotPreferences({
+			auto: saved.auto,
+			os: saved.os,
+			platform: saved.platform,
+			version: saved.version,
+			platformHost: process.platform,
+			archHost: process.arch,
+			defaultVersion,
+		});
+	};
+	configureCopilotExecutable(
+		context.globalStorageUri.fsPath,
+		context.extensionPath,
+		readCopilotChoice,
+	);
+
 	const explanationPanels = new Map<string, vscode.WebviewPanel>();
 	const explanationRuns = new Map<string, number>();
 	const explanationOptions = {
@@ -420,6 +485,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let scannerChecked = false;
 	let scannerBusy = false;
 	let scannerBusyAction: 'download' | 'delete' | 'status' = 'status';
+	let copilotCliWorking: boolean | undefined;
+	let copilotBusy = false;
+	let copilotBusyAction: 'download' | 'delete' | 'status' = 'status';
 	let highlightsVisible = context.globalState.get<boolean>('ariadne.highlightsVisible') !== false;
 	let openPanelOnStartup = context.globalState.get<boolean>('ariadne.openPanelOnStartup') !== false;
 	let latestTreeView: TreeViewPayload | null = null;
@@ -446,6 +514,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		status: 'loading',
 		settings: getSidebarSettings(),
 	});
+
+	const loadCopilotSettings = async (): Promise<CopilotSettingsViewModel> => {
+		const prefs = readCopilotPreferencesFromConfig();
+		const downloadedRows = await listDownloadedCopilotPlatforms();
+		const downloadedSet = new Set(
+			downloadedRows
+				.filter((row) => row.version === prefs.version)
+				.map((row) => row.platform),
+		);
+		const toOption = (id: CopilotPlatformId) => ({
+			id,
+			label: COPILOT_PLATFORM_LABELS[id],
+			downloaded: downloadedSet.has(id),
+			version: prefs.version,
+		});
+		const hostPlatform = hostCopilotPlatformId(process.platform, process.arch);
+		const versions = bundledCopilotCliVersions(context.extensionPath);
+		return {
+			auto: prefs.auto,
+			os: prefs.os,
+			osOptions: COPILOT_OS_OPTIONS,
+			platform: prefs.platform,
+			activePlatform: prefs.auto ? hostPlatform : prefs.platform,
+			hostPlatform,
+			version: prefs.version,
+			versionOptions: versions.map((v) => ({ id: v, label: v })),
+			binaries: platformsForOs(prefs.os).map(toOption),
+			downloaded: downloadedRows
+				.filter((row) => row.version === prefs.version)
+				.map((row) => toOption(row.platform)),
+			working: copilotCliWorking,
+			busy: copilotBusy,
+			busyAction: copilotBusyAction,
+		};
+	};
 
 	const loadScannerSettings = async (): Promise<ScannerSettingsViewModel> => {
 		const prefs = readScannerPreferencesFromConfig();
@@ -483,6 +586,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			...(override ?? await githubAuth.getPanelViewModel()),
 			settings,
 			scanner: await loadScannerSettings(),
+			copilot: await loadCopilotSettings(),
 		};
 
 		if (model.status !== 'signed-in') {
@@ -1086,6 +1190,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		await runScannerChange(() => applyScannerSelection());
 	};
 
+	const writeCopilotPreferences = async (next: CopilotPreferences): Promise<void> => {
+		await context.globalState.update('ariadne.copilotPreferences', {
+			auto: next.auto,
+			os: next.os,
+			platform: next.platform,
+			version: next.version,
+		});
+	};
+
+	const applyCopilotSelection = async (): Promise<void> => {
+		await copilotManager.dispose();
+		copilotCliWorking = undefined;
+		const token = await githubAuth.getAccessToken();
+		if (token) {
+			copilotManager.prewarm(copilotRuntimeOptions(context, token));
+		}
+	};
+
+	const runCopilotChange = async (
+		work: () => Promise<void>,
+		action: 'download' | 'delete' | 'status' = 'status',
+	): Promise<void> => {
+		copilotBusy = true;
+		copilotBusyAction = action;
+		await refreshSignInPanel(undefined, { skipQuota: true });
+		try {
+			await work();
+		} finally {
+			copilotBusy = false;
+			copilotBusyAction = 'status';
+			const prefs = readCopilotPreferencesFromConfig();
+			const platform = prefs.auto
+				? hostCopilotPlatformId(process.platform, process.arch)
+				: prefs.platform;
+			if (platform) {
+				const { cachedCopilotCliPath } = await import('./modules/feedback/llm_request/copilotExecutable.js');
+				const cli = cachedCopilotCliPath(platform, prefs.version);
+				copilotCliWorking = cli ? await probeCopilotExecutable(cli) : undefined;
+			} else {
+				copilotCliWorking = undefined;
+			}
+			await refreshSignInPanel(undefined, { skipQuota: true });
+		}
+	};
+
+	const saveCopilotPreferences = async (next: CopilotPreferences): Promise<void> => {
+		await writeCopilotPreferences(next);
+		await runCopilotChange(() => applyCopilotSelection());
+	};
+
 	const activeScannerTarget = (): string | undefined => {
 		if (localExecutableOverride()) {
 			return undefined;
@@ -1156,6 +1310,81 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						session.kill();
 						markScannerBroken();
 					}
+				}, 'delete');
+				return;
+			}
+
+			if (msg.type === 'copilot-set-auto') {
+				const prefs = readCopilotPreferencesFromConfig();
+				await saveCopilotPreferences({ ...prefs, auto: msg.auto === true });
+				return;
+			}
+
+			if (msg.type === 'copilot-set-os') {
+				const os = typeof msg.os === 'string' ? msg.os : '';
+				if (!isCopilotOs(os)) {
+					return;
+				}
+				const prefs = readCopilotPreferencesFromConfig();
+				const options = platformsForOs(os);
+				const platform = options.includes(prefs.platform) ? prefs.platform : options[0];
+				await saveCopilotPreferences({ auto: false, os, platform, version: prefs.version });
+				return;
+			}
+
+			if (msg.type === 'copilot-set-platform') {
+				const platform = typeof msg.platform === 'string' ? msg.platform : '';
+				if (!isCopilotPlatformId(platform)) {
+					return;
+				}
+				const os = copilotOsForPlatform(platform);
+				if (!os) {
+					return;
+				}
+				const prefs = readCopilotPreferencesFromConfig();
+				await saveCopilotPreferences({ auto: false, os, platform, version: prefs.version });
+				return;
+			}
+
+			if (msg.type === 'copilot-set-version') {
+				const version = typeof msg.version === 'string' ? msg.version : '';
+				if (!version.trim()) {
+					return;
+				}
+				const prefs = readCopilotPreferencesFromConfig();
+				await saveCopilotPreferences({ ...prefs, version: version.trim() });
+				return;
+			}
+
+			if (msg.type === 'copilot-download') {
+				const platform = typeof msg.platform === 'string' ? msg.platform : '';
+				if (!isCopilotPlatformId(platform)) {
+					return;
+				}
+				const os = copilotOsForPlatform(platform);
+				if (!os) {
+					return;
+				}
+				const prefs = readCopilotPreferencesFromConfig();
+				await writeCopilotPreferences({ auto: false, os, platform, version: prefs.version });
+				await runCopilotChange(async () => {
+					const outcome = await downloadCopilotPlatform(platform, prefs.version);
+					if (outcome === 'finished') {
+						await applyCopilotSelection();
+					}
+				}, 'download');
+				return;
+			}
+
+			if (msg.type === 'copilot-delete') {
+				const platform = typeof msg.platform === 'string' ? msg.platform : '';
+				if (!isCopilotPlatformId(platform)) {
+					return;
+				}
+				const prefs = readCopilotPreferencesFromConfig();
+				await runCopilotChange(async () => {
+					await deleteDownloadedCopilot(platform, prefs.version);
+					await applyCopilotSelection();
 				}, 'delete');
 				return;
 			}

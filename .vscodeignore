@@ -43,60 +43,26 @@ sample-project/**
 test-project/**
 test-project - Copy/**
 
-# Dependencies. The extension bundle is dist/extension.js. What remains
-# below is the Copilot SDK, which esbuild leaves external, plus the
-# native CLI for Linux x64, Windows x64, and Windows ARM64.
+# Dependencies. Bundle is dist/extension.js; Copilot native CLIs download at runtime.
 node_modules/**
 
 !node_modules/@github/copilot/**
 !node_modules/@github/copilot-sdk/**
-!node_modules/@github/copilot-linux-x64/**
-!node_modules/@github/copilot-win32-x64/**
-!node_modules/@github/copilot-win32-arm64/**
-!node_modules/@github/copilot-darwin-arm64/**
-!node_modules/@github/copilot-darwin-x64/**
 !node_modules/koffi/**
 !node_modules/vscode-jsonrpc/**
 !node_modules/zod/**
-!node_modules/@koromix/koffi-linux-x64/**
-!node_modules/@koromix/koffi-win32-x64/**
-!node_modules/@koromix/koffi-win32-arm64/**
-!node_modules/@koromix/koffi-darwin-arm64/**
-!node_modules/@koromix/koffi-darwin-x64/**
+!node_modules/@koromix/**
 
-node_modules/@github/copilot-linuxmusl-*/**
-node_modules/@github/copilot-linux-arm64/**
-node_modules/@github/copilot-win32-ia32/**
-
-# Docs, licenses, and native sources inside the packages we do ship.
-node_modules/**/*.md
-node_modules/**/LICENSE*
-node_modules/**/CHANGELOG*
 node_modules/koffi/src/**
 node_modules/koffi/vendor/**
 node_modules/koffi/doc/**
 node_modules/koffi/cnoke.cjs
 node_modules/koffi/build/**
-node_modules/@koromix/koffi-*/README.md
+node_modules/@koromix/**/README.md
 node_modules/@github/copilot-sdk/docs/**
-node_modules/@github/copilot-*/webview/**/docs/**
-
-# Each Copilot package vendors every OS clipboard binary. Keep its own slice.
-node_modules/@github/copilot-linux-x64/**/clipboard.darwin-*
-node_modules/@github/copilot-linux-x64/**/clipboard.win32-*
-node_modules/@github/copilot-linux-x64/**/clipboard.linux-arm64-*
-node_modules/@github/copilot-win32-x64/**/clipboard.darwin-*
-node_modules/@github/copilot-win32-x64/**/clipboard.linux-*
-node_modules/@github/copilot-win32-x64/**/clipboard.win32-arm64-*
-node_modules/@github/copilot-win32-arm64/**/clipboard.darwin-*
-node_modules/@github/copilot-win32-arm64/**/clipboard.linux-*
-node_modules/@github/copilot-win32-arm64/**/clipboard.win32-x64-*
-node_modules/@github/copilot-darwin-arm64/**/clipboard.darwin-x64-*
-node_modules/@github/copilot-darwin-arm64/**/clipboard.win32-*
-node_modules/@github/copilot-darwin-arm64/**/clipboard.linux-*
-node_modules/@github/copilot-darwin-x64/**/clipboard.darwin-arm64-*
-node_modules/@github/copilot-darwin-x64/**/clipboard.win32-*
-node_modules/@github/copilot-darwin-x64/**/clipboard.linux-*
+node_modules/**/*.md
+node_modules/**/LICENSE*
+node_modules/**/CHANGELOG*
 
 # Zod's published CJS entry loads v4 only.
 node_modules/zod/src/**

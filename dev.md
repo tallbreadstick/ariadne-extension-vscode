@@ -54,9 +54,9 @@ npm install
 npm run vsix
 ```
 
-`vscode:prepublish` downloads any missing `@github/copilot-*` and `@koromix/koffi-*` slices for Linux, Windows, and macOS, then runs a minified production bundle. Install the artifact with **Extensions: Install from VSIX...**.
+`vscode:prepublish` runs a minified production bundle only. Copilot native CLIs are **not** in the VSIX; they download on first use (sidebar **Copilot** section, **Auto** on by default) or when the user clicks **Download**.
 
-The VSIX intentionally omits Linux musl/arm-only Copilot builds and dev/docs fixtures to keep size down; glibc Linux x64, Windows, and macOS are included.
+Expect the `.vsix` to be on the order of **~10–15 MB** instead of hundreds of MB with vendored Copilot runtimes.
 
 ## Compile the extension
 

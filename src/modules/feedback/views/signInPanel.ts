@@ -2,13 +2,24 @@
  * View builder for the Ariadne sidebar (accordion settings).
  */
 
-import type { ScannerSettingsViewModel, SignInPanelViewModel } from '../auth/authTypes.js';
+import type {
+	CopilotSettingsViewModel,
+	ScannerSettingsViewModel,
+	SignInPanelViewModel,
+} from '../auth/authTypes.js';
 import {
 	SCANNER_TARGET_LABELS,
 	targetsForOs,
 	type ScannerOs,
 	type ScannerTarget,
 } from '../../core/scannerRelease.js';
+import {
+	COPILOT_OS_OPTIONS,
+	COPILOT_PLATFORM_LABELS,
+	platformsForOs,
+	type CopilotOs,
+	type CopilotPlatformId,
+} from '../llm_request/copilotRelease.js';
 import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js';
 
 function escapeHtml(value: string): string {
@@ -807,6 +818,113 @@ function buildScannerSection(model: SignInPanelViewModel): string {
 		<script type="application/json" id="scanner-catalog">${JSON.stringify(catalog)}</script>`;
 }
 
+function defaultCopilotSettings(): CopilotSettingsViewModel {
+	return {
+		auto: true,
+		os: 'linux',
+		osOptions: COPILOT_OS_OPTIONS.map((o) => ({ id: o.id, label: o.label })),
+		platform: 'linux-x64',
+		version: '0.0.0',
+		versionOptions: [{ id: '0.0.0', label: '0.0.0' }],
+		binaries: [],
+		downloaded: [],
+	};
+}
+
+function copilotCatalog(): Record<CopilotOs, { id: CopilotPlatformId; label: string }[]> {
+	return {
+		windows: platformsForOs('windows').map((id) => ({ id, label: COPILOT_PLATFORM_LABELS[id] })),
+		linux: platformsForOs('linux').map((id) => ({ id, label: COPILOT_PLATFORM_LABELS[id] })),
+		macos: platformsForOs('macos').map((id) => ({ id, label: COPILOT_PLATFORM_LABELS[id] })),
+	};
+}
+
+function buildCopilotSection(model: SignInPanelViewModel): string {
+	const copilot = model.copilot ?? defaultCopilotSettings();
+	const catalog = copilotCatalog();
+	const os = (copilot.os === 'windows' || copilot.os === 'linux' || copilot.os === 'macos')
+		? copilot.os
+		: 'linux';
+	const downloaded = new Set(
+		copilot.downloaded
+			.filter((row) => row.downloaded && row.version === copilot.version)
+			.map((row) => row.id),
+	);
+	const options = catalog[os];
+	const selectedId = options.some((row) => row.id === copilot.platform)
+		? copilot.platform
+		: options[0]?.id ?? copilot.platform;
+	const activeId = copilot.auto
+		? (copilot.activePlatform && COPILOT_PLATFORM_LABELS[copilot.activePlatform as CopilotPlatformId]
+			? copilot.activePlatform
+			: selectedId)
+		: selectedId;
+	const activeLabel = COPILOT_PLATFORM_LABELS[activeId as CopilotPlatformId] ?? activeId;
+	const isDownloaded = downloaded.has(activeId);
+	const osOptions = COPILOT_OS_OPTIONS.map((option) => {
+		const selected = option.id === os ? 'selected' : '';
+		return `<option value="${option.id}" ${selected}>${option.label}</option>`;
+	}).join('');
+	const platformOptions = options.map((row) => {
+		const selected = row.id === selectedId ? 'selected' : '';
+		return `<option value="${escapeHtml(row.id)}" ${selected}>${escapeHtml(row.label)}</option>`;
+	}).join('');
+	const versionOptions = (copilot.versionOptions.length > 0
+		? copilot.versionOptions
+		: [{ id: copilot.version, label: copilot.version }]
+	).map((row) => {
+		const selected = row.id === copilot.version ? 'selected' : '';
+		return `<option value="${escapeHtml(row.id)}" ${selected}>${escapeHtml(row.label)}</option>`;
+	}).join('');
+	const manualHidden = copilot.auto ? 'hidden' : '';
+	const busy = copilot.busy === true;
+	const disabled = busy ? 'disabled' : '';
+	const spinnerInTrash = busy && copilot.busyAction === 'delete';
+	const statusIcon = busy && !spinnerInTrash
+		? SPINNER_HTML
+		: !isDownloaded
+			? `<button class="icon-btn" type="button" data-copilot-download="${escapeHtml(activeId)}" title="Download" aria-label="Download">${DOWNLOAD_SVG}</button>`
+			: copilot.working === false
+				? '<span class="binary-bad" title="Incompatible" aria-label="Incompatible">✕</span>'
+				: '<span class="binary-check" title="Ready" aria-label="Ready">✓</span>';
+	const trash = spinnerInTrash
+		? SPINNER_HTML
+		: isDownloaded && !busy
+			? `<button class="icon-btn" type="button" data-copilot-delete="${escapeHtml(activeId)}" title="Delete" aria-label="Delete">${TRASH_SVG}</button>`
+			: `<button class="icon-btn" type="button" disabled>${TRASH_SVG}</button>`;
+
+	return /* html */ `
+		<p class="subtitle">Explain Vulnerability downloads the GitHub Copilot CLI on demand. Auto picks this computer's build.</p>
+		<div id="copilot-controls" class="scanner-controls${busy ? ' is-busy' : ''}" data-host-platform="${escapeHtml(copilot.hostPlatform ?? '')}" aria-busy="${busy ? 'true' : 'false'}">
+			<button class="switch" id="copilot-auto" type="button" role="switch" aria-checked="${copilot.auto ? 'true' : 'false'}" ${disabled}>
+				<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+				<span>Auto</span>
+			</button>
+			<div id="copilot-manual" ${manualHidden}>
+				<label class="field">
+					<span class="field-label">Operating system</span>
+					<select id="copilot-os" aria-label="Operating system" ${disabled}>${osOptions}</select>
+				</label>
+				<label class="field">
+					<span class="field-label">Build</span>
+					<select id="copilot-platform" aria-label="Copilot CLI build" ${disabled}>${platformOptions}</select>
+				</label>
+				<label class="field">
+					<span class="field-label">CLI version</span>
+					<select id="copilot-version" aria-label="Copilot CLI version" ${disabled}>${versionOptions}</select>
+				</label>
+			</div>
+			<div class="binary-row" id="copilot-current">
+				<span id="copilot-current-label">${escapeHtml(activeLabel)} · v${escapeHtml(copilot.version)}</span>
+				<span class="binary-meta" id="copilot-current-actions">
+					<span class="status-slot" id="copilot-status">${statusIcon}</span>
+					<span class="trash-slot" id="copilot-trash">${trash}</span>
+				</span>
+			</div>
+		</div>
+		<script type="application/json" id="copilot-catalog">${JSON.stringify(catalog)}</script>`;
+}
+
 function buildSessionSection(): string {
 	return /* html */ `
 		<p class="subtitle">Manage local scan history and metrics for this workspace.</p>
@@ -872,6 +990,12 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					${buildScannerSection(model)}
 				</div>
 			</details>
+			<details class="accordion-item" id="accordion-copilot" name="ariadne-settings">
+				<summary>Copilot<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildCopilotSection(model)}
+				</div>
+			</details>
 			<details class="accordion-item" id="accordion-scripting" name="ariadne-settings">
 				<summary>Scripting<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
@@ -887,7 +1011,7 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
-			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-scripting', 'accordion-help'];
+			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-scripting', 'accordion-help'];
 
 			function restoreAccordion() {
 				const saved = vscode.getState()?.openSection;
@@ -1141,6 +1265,159 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				button.setAttribute('aria-checked', enabled ? 'true' : 'false');
 				vscode.postMessage({ type: 'open-panel-on-startup', enabled });
 			});
+
+			function readCopilotCatalog() {
+				const node = document.getElementById('copilot-catalog');
+				try {
+					return JSON.parse(node && node.textContent ? node.textContent : '{}');
+				} catch {
+					return {};
+				}
+			}
+
+			function copilotLabelForPlatform(id) {
+				const catalog = readCopilotCatalog();
+				for (const items of Object.values(catalog)) {
+					if (!Array.isArray(items)) {
+						continue;
+					}
+					const match = items.find((item) => item && item.id === id);
+					if (match) {
+						return match.label;
+					}
+				}
+				return id;
+			}
+
+			function setCopilotBusy(icon) {
+				const controls = document.getElementById('copilot-controls');
+				if (!controls) {
+					return;
+				}
+				controls.classList.add('is-busy');
+				controls.setAttribute('aria-busy', 'true');
+				for (const el of controls.querySelectorAll('button, select')) {
+					el.disabled = true;
+				}
+				if (icon && icon.hasAttribute('data-copilot-delete')) {
+					icon.outerHTML = scannerSpinner;
+					return;
+				}
+				const status = document.getElementById('copilot-status');
+				if (status) {
+					status.innerHTML = scannerSpinner;
+				}
+			}
+
+			function showCopilotCurrent(id) {
+				const label = document.getElementById('copilot-current-label');
+				const version = document.getElementById('copilot-version');
+				const text = copilotLabelForPlatform(id);
+				if (label && text) {
+					const ver = version ? version.value : '';
+					label.textContent = ver ? text + ' · v' + ver : text;
+				}
+			}
+
+			function fillCopilotPlatformSelect(os) {
+				const select = document.getElementById('copilot-platform');
+				const items = readCopilotCatalog()[os] || [];
+				if (!select || items.length === 0) {
+					return select ? select.value : '';
+				}
+				const current = select.value;
+				const next = items.some((item) => item.id === current) ? current : items[0].id;
+				select.replaceChildren();
+				for (const item of items) {
+					const option = document.createElement('option');
+					option.value = item.id;
+					option.textContent = item.label;
+					if (item.id === next) {
+						option.selected = true;
+					}
+					select.appendChild(option);
+				}
+				showCopilotCurrent(next);
+				return next;
+			}
+
+			document.getElementById('copilot-auto')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				if (button.disabled) {
+					return;
+				}
+				const auto = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', auto ? 'true' : 'false');
+				const manual = document.getElementById('copilot-manual');
+				if (manual) {
+					if (auto) {
+						manual.setAttribute('hidden', '');
+					} else {
+						manual.removeAttribute('hidden');
+					}
+				}
+				const controls = document.getElementById('copilot-controls');
+				const host = controls ? controls.getAttribute('data-host-platform') : '';
+				const selected = document.getElementById('copilot-platform');
+				showCopilotCurrent(auto ? host : (selected ? selected.value : ''));
+				setCopilotBusy();
+				vscode.postMessage({ type: 'copilot-set-auto', auto });
+			});
+
+			document.getElementById('copilot-os')?.addEventListener('change', (event) => {
+				const select = event.currentTarget;
+				if (select.disabled) {
+					return;
+				}
+				fillCopilotPlatformSelect(select.value);
+				setCopilotBusy();
+				vscode.postMessage({ type: 'copilot-set-os', os: select.value });
+			});
+
+			document.getElementById('copilot-platform')?.addEventListener('change', (event) => {
+				const select = event.currentTarget;
+				if (select.disabled) {
+					return;
+				}
+				showCopilotCurrent(select.value);
+				setCopilotBusy();
+				vscode.postMessage({ type: 'copilot-set-platform', platform: select.value });
+			});
+
+			document.getElementById('copilot-version')?.addEventListener('change', (event) => {
+				const select = event.currentTarget;
+				if (select.disabled) {
+					return;
+				}
+				setCopilotBusy();
+				vscode.postMessage({ type: 'copilot-set-version', version: select.value });
+			});
+
+			for (const button of document.querySelectorAll('[data-copilot-download]')) {
+				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					setCopilotBusy(button);
+					vscode.postMessage({
+						type: 'copilot-download',
+						platform: button.getAttribute('data-copilot-download'),
+					});
+				});
+			}
+
+			for (const button of document.querySelectorAll('[data-copilot-delete]')) {
+				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					setCopilotBusy(button);
+					vscode.postMessage({
+						type: 'copilot-delete',
+						platform: button.getAttribute('data-copilot-delete'),
+					});
+				});
+			}
 
 			window.addEventListener('message', (event) => {
 				const msg = event.data;

@@ -12,7 +12,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Built-in CWE explanations when Copilot fails, with a clear built-in fallback banner.
 - Session metrics ingest settings (`ariadne.metricsIngest.*`).
 - macOS Copilot native runtime support in the VSIX.
-- `npm run vsix` packaging script (prepublish staging + minified bundle).
+- `npm run vsix` packaging script (minified bundle; Copilot CLIs download at runtime).
+- Sidebar **Copilot** section (Auto / OS / build / version) mirrors Core binary downloads; VSIX no longer bundles Copilot natives (~10–15 MB vs ~650 MB).
 
 ### Changed
 

@@ -46,6 +46,31 @@ export interface SignInPanelViewModel {
 	};
 	settings: SidebarSettingsViewModel;
 	scanner?: ScannerSettingsViewModel;
+	copilot?: CopilotSettingsViewModel;
+}
+
+export interface CopilotBinaryOption {
+	id: string;
+	label: string;
+	downloaded: boolean;
+	version: string;
+}
+
+/** Copilot CLI picker in the sidebar (below Core). */
+export interface CopilotSettingsViewModel {
+	auto: boolean;
+	os: string;
+	osOptions: readonly { id: string; label: string }[];
+	platform: string;
+	activePlatform?: string;
+	hostPlatform?: string;
+	version: string;
+	versionOptions: readonly { id: string; label: string }[];
+	binaries: readonly CopilotBinaryOption[];
+	downloaded: readonly CopilotBinaryOption[];
+	working?: boolean;
+	busy?: boolean;
+	busyAction?: 'download' | 'delete' | 'status';
 }
 
 export interface ScannerBinaryOption {

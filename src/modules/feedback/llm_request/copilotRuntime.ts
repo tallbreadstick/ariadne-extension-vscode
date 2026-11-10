@@ -10,6 +10,7 @@
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { delimiter, join } from 'node:path';
+import { cachedCopilotCliCandidates, ensureCopilotExecutable } from './copilotExecutable.js';
 
 const ELECTRON_ENV_KEYS = [
 	'ELECTRON_RUN_AS_NODE',
@@ -120,6 +121,7 @@ export function resolveCopilotCliBinary(
 	arch: string = process.arch,
 ): string {
 	const candidates = [
+		...cachedCopilotCliCandidates(platform, arch),
 		...copilotCliCandidates(extensionPath, platform, arch),
 		...pathCandidates(platform),
 	];
@@ -135,8 +137,25 @@ export function resolveCopilotCliBinary(
 		? ids.map((id) => `@github/copilot-${id}`).join(' or ')
 		: `${platform}/${arch}`;
 	throw new Error(
-		`Copilot CLI binary not found for ${platform}/${arch}. Expected ${expected} under the extension's node_modules, or copilot on PATH.`,
+		`Copilot CLI binary not found for ${platform}/${arch}. Download a build in Copilot settings, or install copilot on PATH. (${expected})`,
 	);
+}
+
+/** Resolves CLI via download cache, then legacy extension paths, then PATH. */
+export async function resolveCopilotCliBinaryAsync(
+	extensionPath: string,
+	platform: string = process.platform,
+	arch: string = process.arch,
+): Promise<string> {
+	try {
+		return await ensureCopilotExecutable();
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes('Download the selected Copilot CLI')) {
+			throw error;
+		}
+	}
+	return resolveCopilotCliBinary(extensionPath, platform, arch);
 }
 
 /**
@@ -177,7 +196,7 @@ export interface CopilotRuntimeOptions {
  */
 export async function createCopilotClient(options: CopilotRuntimeOptions) {
 	const { CopilotClient, RuntimeConnection } = await import('@github/copilot-sdk');
-	const cliPath = resolveCopilotCliBinary(options.extensionPath);
+	const cliPath = await resolveCopilotCliBinaryAsync(options.extensionPath);
 	const copilotHome = ensureCopilotHome(options.copilotHome);
 
 	return new CopilotClient({
