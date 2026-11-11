@@ -74,6 +74,7 @@ function stubLifecycle(): FindingLifecycleRecord {
 		firstConfirmedAt: 1000,
 		lastConfirmedAt: 2000,
 		missingSince: null,
+		postGraceAbsenceCount: 0,
 		provisionalResolutionAt: null,
 		durableResolutionAt: null,
 		baselineOccurrenceCount: 1,

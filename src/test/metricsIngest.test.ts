@@ -23,6 +23,7 @@ describe('metricsIngest', () => {
 			firstConfirmedAt: 1,
 			lastConfirmedAt: 2,
 			missingSince: null,
+			postGraceAbsenceCount: 0,
 			provisionalResolutionAt: null,
 			durableResolutionAt: null,
 			baselineOccurrenceCount: 1,

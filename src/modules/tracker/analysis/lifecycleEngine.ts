@@ -207,6 +207,7 @@ function updateActiveLifecycle(
 		lifecycle.durableResolutionAt = null;
 		lifecycle.provisionalResolutionAt = null;
 		lifecycle.missingSince = null;
+		lifecycle.postGraceAbsenceCount = 0;
 		lifecycle.isCommentedOut = false;
 		lifecycle.baselineOccurrenceCount = observed.occurrenceCount;
 		// Reset confirmations so the finding must re-prove persistence
@@ -219,6 +220,7 @@ function updateActiveLifecycle(
 		// ── Reappearance after absence / provisional resolution / commented out ─────
 		isRestored = checkIdenticalRestoration(lifecycle, observed);
 		lifecycle.missingSince = null;
+		lifecycle.postGraceAbsenceCount = 0;
 		lifecycle.provisionalResolutionAt = null;
 		lifecycle.isCommentedOut = false;
 	} else {
@@ -313,8 +315,14 @@ function updateAbsentLifecycle(
 		return;
 	}
 
-	// Grace period exceeded — mark provisional resolution
+	const postGrace = (lifecycle.postGraceAbsenceCount ?? 0) + 1;
+	lifecycle.postGraceAbsenceCount = postGrace;
+
+	// Require two settled absences after grace before provisional resolution.
 	if (lifecycle.provisionalResolutionAt === null) {
+		if (postGrace < 2) {
+			return;
+		}
 		lifecycle.provisionalResolutionAt = timestamp;
 		lifecycle.currentOccurrenceCount = 0;
 		console.log(
@@ -324,7 +332,10 @@ function updateAbsentLifecycle(
 		return;
 	}
 
-	// Already provisionally resolved — later observation still absent → durable
+	// Already provisionally resolved — another post-grace absence → durable
+	if (postGrace < 3) {
+		return;
+	}
 	lifecycle.durableResolutionAt = timestamp;
 	console.log(
 		`[Ariadne Lifecycle] Durable resolution confirmed: ` +
@@ -389,6 +400,7 @@ function createLifecycleRecord(
 		firstConfirmedAt: timestamp,
 		lastConfirmedAt: timestamp,
 		missingSince: null,
+		postGraceAbsenceCount: 0,
 		provisionalResolutionAt: null,
 		durableResolutionAt: null,
 		baselineOccurrenceCount: finding.occurrenceCount,

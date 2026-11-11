@@ -147,6 +147,12 @@ export interface FindingLifecycleRecord {
 	missingSince: number | null;
 
 	/**
+	 * Settled absence observations recorded after the grace period elapsed.
+	 * Provisional resolution requires at least two; durable requires a third.
+	 */
+	postGraceAbsenceCount?: number;
+
+	/**
 	 * Epoch ms when provisional resolution was recorded (absence beyond
 	 * the grace period). Null if never provisionally resolved.
 	 */

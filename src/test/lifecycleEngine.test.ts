@@ -190,8 +190,12 @@ describe('Lifecycle Engine Test Suite', () => {
 			const tAbsent1 = t0 + 15_000;
 			processObservation([], step2.lifecycles, tAbsent1, true);
 
-			// Now 6s after initial absence (> 5s grace period)
-			const tAbsentProvisional = tAbsent1 + 6_000;
+			// One post-grace absence is not enough for provisional resolution
+			const tAbsent2 = tAbsent1 + 6_000;
+			const stepEarly = processObservation([], step2.lifecycles, tAbsent2, true);
+			assert.strictEqual(stepEarly.lifecycles[0].provisionalResolutionAt, null);
+
+			const tAbsentProvisional = tAbsent2 + 5_000;
 			const stepProvisional = processObservation([], step2.lifecycles, tAbsentProvisional, true);
 
 			const lc = stepProvisional.lifecycles[0];
@@ -208,12 +212,13 @@ describe('Lifecycle Engine Test Suite', () => {
 			const tAbsent1 = t0 + 15_000;
 			processObservation([], step2.lifecycles, tAbsent1, true);
 
-			// Provisional resolution at tAbsent1 + 6s
 			const tAbsent2 = tAbsent1 + 6_000;
 			processObservation([], step2.lifecycles, tAbsent2, true);
 
-			// Subsequent settled observation at tAbsent2 + 5s -> durable resolution
-			const tDurable = tAbsent2 + 5_000;
+			const tAbsent3 = tAbsent2 + 5_000;
+			processObservation([], step2.lifecycles, tAbsent3, true);
+
+			const tDurable = tAbsent3 + 5_000;
 			const stepDurable = processObservation([], step2.lifecycles, tDurable, true);
 
 			const lc = stepDurable.lifecycles[0];

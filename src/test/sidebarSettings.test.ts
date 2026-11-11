@@ -73,9 +73,9 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(html.includes('id="open-panel-on-startup"'));
 		assert.ok(html.includes('Open on startup'));
 		assert.ok(html.indexOf('id="highlights-visible"') < html.indexOf('id="open-panel-on-startup"'));
-		assert.ok(html.indexOf('id="open-panel-on-startup"') < html.indexOf('id="scanner-auto"'));
-		assert.ok(!html.includes('id="debug-mode"'));
-		assert.ok(!html.includes('Debug mode'));
+		assert.ok(html.indexOf('id="open-panel-on-startup"') < html.indexOf('id="debug-mode"'));
+		assert.ok(html.indexOf('id="debug-mode"') < html.indexOf('id="scanner-auto"'));
+		assert.ok(html.includes('Debug core'));
 		assert.ok(!html.includes('Delete all binaries'));
 	});
 
