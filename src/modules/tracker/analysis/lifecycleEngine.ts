@@ -104,13 +104,16 @@ export function processObservation(
 	const restoredFingerprints = new Set<string>();
 	const newlyCreatedFingerprints = new Set<string>();
 	const newlyAbsentFingerprints = new Set<string>();
+	const newlyCommentedOutFingerprints = new Set<string>();
 
 	// Record previous state of existing lifecycles before mutation
 	const previousStateByFingerprint = new Map<string, FindingLifecycleState | undefined>();
 	const wasMissingMap = new Map<string, boolean>();
+	const wasCommentedOutMap = new Map<string, boolean>();
 	for (const lifecycle of existingLifecycles) {
 		previousStateByFingerprint.set(lifecycle.logicalFingerprint, lifecycle.lifecycleState);
 		wasMissingMap.set(lifecycle.logicalFingerprint, lifecycle.missingSince !== null);
+		wasCommentedOutMap.set(lifecycle.logicalFingerprint, lifecycle.isCommentedOut === true);
 	}
 
 	// ── Update existing lifecycles ──────────────────────────────────
@@ -125,8 +128,18 @@ export function processObservation(
 			}
 		} else {
 			const wasMissing = wasMissingMap.get(lifecycle.logicalFingerprint) ?? false;
+			const wasCommentedOut = wasCommentedOutMap.get(lifecycle.logicalFingerprint) ?? false;
 			updateAbsentLifecycle(lifecycle, timestamp, policy, isSettled, fileContentProvider);
-			if (isSettled && !wasMissing && lifecycle.missingSince !== null && lifecycle.durableResolutionAt === null) {
+			if (isSettled && !wasCommentedOut && lifecycle.isCommentedOut === true) {
+				newlyCommentedOutFingerprints.add(lifecycle.logicalFingerprint);
+			}
+			if (
+				isSettled
+				&& !wasMissing
+				&& !lifecycle.isCommentedOut
+				&& lifecycle.missingSince !== null
+				&& lifecycle.durableResolutionAt === null
+			) {
 				newlyAbsentFingerprints.add(lifecycle.logicalFingerprint);
 			}
 		}
@@ -150,6 +163,7 @@ export function processObservation(
 			previousStateByFingerprint.get(lifecycle.logicalFingerprint),
 			newlyCreatedFingerprints.has(lifecycle.logicalFingerprint),
 			newlyAbsentFingerprints.has(lifecycle.logicalFingerprint),
+			newlyCommentedOutFingerprints.has(lifecycle.logicalFingerprint),
 		),
 	);
 
@@ -440,6 +454,7 @@ function classifyLifecycle(
 	previousState?: FindingLifecycleState,
 	isNewCandidate: boolean = false,
 	isAbsentCandidate: boolean = false,
+	isNewlyCommentedOut: boolean = false,
 ): FindingClassification {
 	const status = classifyFinding(lifecycle, timestamp, policy);
 	const isNewPersisting = status === 'persisting' && previousState !== 'persisting';
@@ -457,6 +472,7 @@ function classifyLifecycle(
 		...(isAbsentCandidate ? { isAbsentCandidate: true } : {}),
 		...(isNewPersisting ? { isNewPersisting: true } : {}),
 		...(isNewResolved ? { isNewResolved: true } : {}),
+		...(isNewlyCommentedOut ? { isNewlyCommentedOut: true } : {}),
 	};
 }
 

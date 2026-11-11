@@ -35,6 +35,7 @@ import type { SessionAnalysis } from '../analysis/analysisTypes.js';
 import {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
+	formatCommentedOutMessage,
 	formatGraduatingSoonMessage,
 	formatGraduatedMessage,
 	determinePrioritizedToast,
@@ -48,6 +49,7 @@ import type { GraduationToastEvents } from '../analysis/commonVulnerabilities.js
 export {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
+	formatCommentedOutMessage,
 	formatGraduatingSoonMessage,
 	formatGraduatedMessage,
 	determinePrioritizedToast,
@@ -71,7 +73,8 @@ export type ToastCategory =
 	| 'resolved'
 	| 'recurring'
 	| 'newCandidate'
-	| 'absentCandidate';
+	| 'absentCandidate'
+	| 'commentedOut';
 
 const lastFiredAt: Record<ToastCategory, number> = {
 	persisting: 0,
@@ -80,6 +83,7 @@ const lastFiredAt: Record<ToastCategory, number> = {
 	recurring: 0,
 	newCandidate: 0,
 	absentCandidate: 0,
+	commentedOut: 0,
 };
 
 /**
@@ -88,7 +92,7 @@ const lastFiredAt: Record<ToastCategory, number> = {
  */
 export function tryAcquire(category: ToastCategory): boolean {
 	const now = Date.now();
-	const cooldown = (category === 'newCandidate' || category === 'absentCandidate')
+	const cooldown = (category === 'newCandidate' || category === 'absentCandidate' || category === 'commentedOut')
 		? CANDIDATE_COOLDOWN_MS
 		: COOLDOWN_MS;
 
@@ -207,6 +211,20 @@ export function showAbsentCandidateToast(analysis: SessionAnalysis): boolean {
 	return false;
 }
 
+/** Shows a warning toast when previously active vulnerabilities were commented out. */
+export function showCommentedOutToast(analysis: SessionAnalysis): boolean {
+	const findings = analysis.commentedOutFindings ?? [];
+	if (findings.length === 0) { return false; }
+	if (!tryAcquire('commentedOut')) { return false; }
+
+	const message = formatCommentedOutMessage(findings);
+	if (message) {
+		vscode.window.showWarningMessage(message);
+		return true;
+	}
+	return false;
+}
+
 /** Resets in-memory cooldown timestamps (primarily for unit tests). */
 export function resetToastCooldowns(): void {
 	for (const key of Object.keys(lastFiredAt) as ToastCategory[]) {
@@ -236,6 +254,7 @@ export function showSessionToasts(
 	try {
 		let anyFired = false;
 		if (showRecurringToast(analysis)) { anyFired = true; }
+		if (showCommentedOutToast(analysis)) { anyFired = true; }
 		if (showImprovingToast(analysis)) { anyFired = true; }
 		if (showResolvedToast(analysis, level)) { anyFired = true; }
 		if (showAbsentCandidateToast(analysis)) { anyFired = true; }

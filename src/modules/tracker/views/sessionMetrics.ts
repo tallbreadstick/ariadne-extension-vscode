@@ -125,15 +125,25 @@ function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: numbe
 	return items.map((item) => {
 		const reportCount = item.reportCount ?? 2;
 		const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
-		const subtitleText = item.subtitle ?? `Present since ${countStr}`;
+		const subtitleText = item.subtitle ?? `Across ${countStr}`;
+		const commentedOutCount = item.commentedOutCount ?? 0;
+		const commentedOutLabel = commentedOutCount > 0
+			? (commentedOutCount < item.instances ? `${commentedOutCount} commented out` : 'Commented out')
+			: '';
+		const commentedOutBadge = commentedOutLabel
+			? `<span class="commented-out-badge" title="Hidden from Live Scan because code is commented out — still tracked in Full Report until fixed or removed">${escapeHtml(commentedOutLabel)}</span>`
+			: '';
 		return /* html */ `
 			<div class="trend-sub-item filterable-type-item"
 			     data-vuln-type="${escapeHtml(item.type)}"
 			     role="button"
 			     tabindex="0"
 			     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
-				<span class="sub-label">${item.type}</span>
-				<span class="sub-subtitle persisting-subtitle">${subtitleText}</span>
+				<span class="sub-label-group">
+					<span class="sub-label">${escapeHtml(item.type)}</span>
+					<span class="sub-subtitle persisting-subtitle">${escapeHtml(subtitleText)}</span>
+					${commentedOutBadge}
+				</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
@@ -344,6 +354,26 @@ const CSS = /* css */ `
 		--radius: 8px;
 		--shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
 		          0 0 16px color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+
+
+	@keyframes panelSpotlightPulse {
+		0% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--bg));
+		}
+		50% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--bg));
+		}
+		100% {
+			box-shadow: inset 0 0 0 0 transparent;
+			background-color: var(--bg);
+		}
+	}
+
+	body.panel-spotlight {
+		animation: panelSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 
 	* { box-sizing: border-box; }
@@ -772,7 +802,18 @@ const CSS = /* css */ `
 
 	.trend-sub-item:last-child { padding-bottom: 10px; }
 
+	.sub-label-group {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
 	.sub-label { flex: 1; color: var(--text); }
+
+	.sub-label-group .sub-label { flex: 0 1 auto; }
 
 	.sub-progress {
 		font-size: 11px;
@@ -789,7 +830,23 @@ const CSS = /* css */ `
 	}
 
 	.persisting-subtitle {
+		font-size: 11px;
 		color: var(--muted);
+		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 25%, transparent);
+		border: 1px solid var(--border);
+		padding: 2px 8px;
+		border-radius: 10px;
+	}
+
+	.commented-out-badge {
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+		padding: 2px 8px;
+		border-radius: 10px;
+		color: var(--orange);
+		background: color-mix(in srgb, var(--orange) 14%, transparent);
+		border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
 	}
 
 	.progress-some     { color: var(--orange); background: color-mix(in srgb, var(--orange) 15%, transparent); }
@@ -803,6 +860,8 @@ const CSS = /* css */ `
 		color: var(--text);
 		min-width: 20px;
 		margin-right: 12px;
+		flex-shrink: 0;
+		text-align: right;
 	}
 
 	.trend-sub-placeholder { color: var(--muted); }
@@ -1158,6 +1217,19 @@ export function buildSessionMetricsHtml(
 		<script>
 			(function () {
 				const vscode = acquireVsCodeApi();
+
+				window.addEventListener('message', function (event) {
+					var msg = event.data;
+					if (msg && msg.type === 'highlight-panel') {
+						document.body.classList.remove('panel-spotlight');
+						void document.body.offsetWidth;
+						document.body.classList.add('panel-spotlight');
+						setTimeout(function () {
+							document.body.classList.remove('panel-spotlight');
+						}, 1500);
+					}
+				});
+
 
 				// ── Collapsible trend rows ──────────────────────────────
 				document.querySelectorAll('[data-trend-toggle]').forEach(function (btn) {
