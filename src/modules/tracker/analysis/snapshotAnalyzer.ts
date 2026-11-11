@@ -399,6 +399,10 @@ function createResolvedPlaceholder(
  * Instead of one row per FLC instance (e.g. "Path Traversal 1" × 8),
  * produces one row per vulnerability type (e.g. "Path Traversal 8").
  */
+function formatAcrossReports(count: number): string {
+	return count === 1 ? 'Across 1 report' : `Across ${count} reports`;
+}
+
 function groupByType(
 	deltas: VulnerabilityDelta[],
 	getCount: (d: VulnerabilityDelta) => number,
@@ -412,15 +416,13 @@ function groupByType(
 			existing.instances += getCount(d);
 			if (repCount !== undefined && repCount > (existing.reportCount ?? 0)) {
 				existing.reportCount = repCount;
-				const countStr = repCount === 1 ? '1 report' : `${repCount} reports`;
-				existing.subtitle = `Present since ${countStr}`;
+				existing.subtitle = formatAcrossReports(repCount);
 			}
 		} else {
 			const item: TrendSubItem = { type, instances: getCount(d) };
 			if (repCount !== undefined) {
 				item.reportCount = repCount;
-				const countStr = repCount === 1 ? '1 report' : `${repCount} reports`;
-				item.subtitle = `Present since ${countStr}`;
+				item.subtitle = formatAcrossReports(repCount);
 			}
 			map.set(type, item);
 		}

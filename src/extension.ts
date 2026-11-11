@@ -908,7 +908,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					type,
 					instances,
 					reportCount,
-					subtitle: `Present since ${countStr}`,
+					subtitle: `Across ${countStr}`,
 				};
 			})
 			: undefined;

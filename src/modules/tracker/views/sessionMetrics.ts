@@ -125,15 +125,17 @@ function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: numbe
 	return items.map((item) => {
 		const reportCount = item.reportCount ?? 2;
 		const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
-		const subtitleText = item.subtitle ?? `Present since ${countStr}`;
+		const subtitleText = item.subtitle ?? `Across ${countStr}`;
 		return /* html */ `
 			<div class="trend-sub-item filterable-type-item"
 			     data-vuln-type="${escapeHtml(item.type)}"
 			     role="button"
 			     tabindex="0"
 			     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
-				<span class="sub-label">${item.type}</span>
-				<span class="sub-subtitle persisting-subtitle">${subtitleText}</span>
+				<span class="sub-label-group">
+					<span class="sub-label">${escapeHtml(item.type)}</span>
+					<span class="sub-subtitle persisting-subtitle">${escapeHtml(subtitleText)}</span>
+				</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
 	}).join('');
@@ -792,7 +794,18 @@ const CSS = /* css */ `
 
 	.trend-sub-item:last-child { padding-bottom: 10px; }
 
+	.sub-label-group {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
 	.sub-label { flex: 1; color: var(--text); }
+
+	.sub-label-group .sub-label { flex: 0 1 auto; }
 
 	.sub-progress {
 		font-size: 11px;
@@ -809,7 +822,12 @@ const CSS = /* css */ `
 	}
 
 	.persisting-subtitle {
+		font-size: 11px;
 		color: var(--muted);
+		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 25%, transparent);
+		border: 1px solid var(--border);
+		padding: 2px 8px;
+		border-radius: 10px;
 	}
 
 	.progress-some     { color: var(--orange); background: color-mix(in srgb, var(--orange) 15%, transparent); }
@@ -823,6 +841,8 @@ const CSS = /* css */ `
 		color: var(--text);
 		min-width: 20px;
 		margin-right: 12px;
+		flex-shrink: 0;
+		text-align: right;
 	}
 
 	.trend-sub-placeholder { color: var(--muted); }
