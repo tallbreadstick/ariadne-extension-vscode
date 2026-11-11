@@ -9,5 +9,5 @@
 		"skipLibCheck": true,
 		"types": ["node", "mocha"]
 	},
-	"exclude": ["src/test"]
+	"exclude": ["src/test", "docs"]
 }

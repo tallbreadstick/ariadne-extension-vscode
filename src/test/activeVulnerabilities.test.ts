@@ -93,6 +93,17 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(html.includes('--vscode-textPreformat-foreground'));
 		assert.ok(html.includes('--vscode-textCodeBlock-background'));
 	});
+
+	it('filters silently on cross-filter messages without opening the filter drawer', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
+		assert.ok(html.includes("msg.type === 'set-filter-severity'"));
+		assert.ok(html.includes("msg.type === 'set-filter-type'"));
+
+		const listenerStart = html.indexOf("window.addEventListener('message'");
+		assert.ok(listenerStart !== -1);
+		const listenerBlock = html.substring(listenerStart, html.indexOf('</script>', listenerStart));
+		assert.ok(!listenerBlock.includes('setFilterVisibility(true)'), 'Should not open filter drawer on cross-filter');
+	});
 });
 
 describe('Next Focus Recommendation Engine', () => {

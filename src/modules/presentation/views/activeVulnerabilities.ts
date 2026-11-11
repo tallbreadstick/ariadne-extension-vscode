@@ -1997,7 +1997,6 @@ export function buildActiveVulnerabilitiesHtml(
 							chip.setAttribute('aria-pressed', matches ? 'true' : 'false');
 							chip.setAttribute('aria-checked', matches ? 'true' : 'false');
 						});
-						setFilterVisibility(true);
 						persistFilters();
 						applyFilters();
 					} else if (msg.type === 'set-filter-type') {
@@ -2029,7 +2028,6 @@ export function buildActiveVulnerabilitiesHtml(
 								typeFilter.value = '';
 							}
 						}
-						setFilterVisibility(true);
 						persistFilters();
 						applyFilters();
 					}
