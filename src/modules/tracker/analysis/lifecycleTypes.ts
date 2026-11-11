@@ -276,6 +276,12 @@ export interface FindingClassification {
 	 * (transitioning from Candidate or absent to durable resolution).
 	 */
 	isNewResolved?: boolean;
+
+	/**
+	 * True if this finding newly transitioned into commented-out status in this
+	 * settled observation.
+	 */
+	isNewlyCommentedOut?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════

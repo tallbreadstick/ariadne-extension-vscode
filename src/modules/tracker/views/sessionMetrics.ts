@@ -126,6 +126,13 @@ function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: numbe
 		const reportCount = item.reportCount ?? 2;
 		const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
 		const subtitleText = item.subtitle ?? `Across ${countStr}`;
+		const commentedOutCount = item.commentedOutCount ?? 0;
+		const commentedOutLabel = commentedOutCount > 0
+			? (commentedOutCount < item.instances ? `${commentedOutCount} commented out` : 'Commented out')
+			: '';
+		const commentedOutBadge = commentedOutLabel
+			? `<span class="commented-out-badge" title="Hidden from Live Scan because code is commented out — still tracked in Full Report until fixed or removed">${escapeHtml(commentedOutLabel)}</span>`
+			: '';
 		return /* html */ `
 			<div class="trend-sub-item filterable-type-item"
 			     data-vuln-type="${escapeHtml(item.type)}"
@@ -135,6 +142,7 @@ function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: numbe
 				<span class="sub-label-group">
 					<span class="sub-label">${escapeHtml(item.type)}</span>
 					<span class="sub-subtitle persisting-subtitle">${escapeHtml(subtitleText)}</span>
+					${commentedOutBadge}
 				</span>
 				<span class="sub-count">${item.instances}</span>
 			</div>`;
@@ -828,6 +836,17 @@ const CSS = /* css */ `
 		border: 1px solid var(--border);
 		padding: 2px 8px;
 		border-radius: 10px;
+	}
+
+	.commented-out-badge {
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+		padding: 2px 8px;
+		border-radius: 10px;
+		color: var(--orange);
+		background: color-mix(in srgb, var(--orange) 14%, transparent);
+		border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
 	}
 
 	.progress-some     { color: var(--orange); background: color-mix(in srgb, var(--orange) 15%, transparent); }

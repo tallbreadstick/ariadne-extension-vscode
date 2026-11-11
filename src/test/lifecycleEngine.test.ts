@@ -762,6 +762,13 @@ describe('Lifecycle Engine Test Suite', () => {
 
 			const classification = absentResult.classifications[0];
 			assert.strictEqual(classification.status, 'persisting', 'Commented-out vulnerability must be classified as persisting');
+			assert.strictEqual(classification.isNewlyCommentedOut, true, 'Initial commented-out transition must set isNewlyCommentedOut');
+			assert.strictEqual(classification.isAbsentCandidate, undefined, 'Commented-out finding must not emit isAbsentCandidate');
+
+			// Subsequent save while still commented out should keep persisting without re-emitting transition flag
+			const repeatResult = processObservation([], lifecycles, t0 + 45_000, true, mockProvider);
+			assert.strictEqual(repeatResult.classifications[0].status, 'persisting');
+			assert.strictEqual(repeatResult.classifications[0].isNewlyCommentedOut, undefined);
 		});
 
 		it('retains block-commented (/* ... */) vulnerability as persisting', () => {

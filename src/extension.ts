@@ -833,6 +833,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		const persistingMap = new Map<string, number>();
 		const typePersistingReportCount = new Map<string, number>();
+		const typePersistingCommentedOut = new Map<string, number>();
 		const recurringMap = new Map<string, number>();
 		const resolvedMap = new Map<string, number>();
 		const improvingMap = new Map<string, ImprovingSubItem>();
@@ -870,6 +871,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					flc.type,
 					Math.max(typePersistingReportCount.get(flc.type) ?? 0, repCount),
 				);
+				if (flc.isCommentedOut) {
+					typePersistingCommentedOut.set(
+						flc.type,
+						(typePersistingCommentedOut.get(flc.type) ?? 0) + 1,
+					);
+				}
 			} else if (flc.lifecycleState === 'improving') {
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
 			}
@@ -904,11 +911,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			? Array.from(persistingMap.entries()).map(([type, instances]) => {
 				const reportCount = typePersistingReportCount.get(type) ?? 2;
 				const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+				const commentedOutCount = typePersistingCommentedOut.get(type) ?? 0;
 				return {
 					type,
 					instances,
 					reportCount,
 					subtitle: `Across ${countStr}`,
+					...(commentedOutCount > 0 ? { commentedOutCount } : {}),
 				};
 			})
 			: undefined;

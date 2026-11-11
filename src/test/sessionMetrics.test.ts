@@ -201,7 +201,7 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 						return Promise.resolve();
 					},
 					keys: (): readonly string[] => Object.keys(storageState),
-					setKeysForSync: () => {},
+					setKeysForSync: () => { },
 				},
 			} as any;
 		});
@@ -1194,6 +1194,49 @@ describe('Session Metrics UI & Startup Recovery Test Suite', () => {
 			assert.ok(html.includes('Across 2 reports'), 'Default persisting subtitle should be rendered for items without custom subtitle');
 			assert.ok(html.includes('persisting-subtitle'), 'CSS class for persisting subtitle should be present');
 			assert.ok(html.includes('sub-label-group'), 'Persisting subtitle should be grouped alongside the vulnerability label');
+		});
+
+		it('propagates commentedOutCount into persistingItems via toSessionMetrics', () => {
+			const obs = processObservation(
+				[
+					{
+						logicalFingerprint: 'fp-sqli-commented',
+						contentFingerprint: 'c1',
+						scopeFingerprint: 's1',
+						ruleId: 'r1',
+						cweId: 'CWE-89',
+						type: 'SQL Injection',
+						severity: 'high',
+						instanceName: 'query',
+						filePath: 'src/db.ts',
+						occurrenceCount: 1,
+						lineNumber: 3,
+						endLine: 3,
+					},
+				],
+				[],
+				1000,
+				true,
+			);
+			const commented = processObservation(
+				[],
+				obs.lifecycles,
+				12_000,
+				true,
+				() => 'function f() {\n  // query(x)\n}',
+			);
+			const analysis = buildSessionAnalysis(
+				commented.classifications,
+				{ scan_id: 's-2', timestamp: 12_000, vulnerabilities: [] },
+				null,
+				commented.lifecycles,
+			);
+			const metrics = toSessionMetrics(analysis);
+			assert.strictEqual(metrics.trends.persistingItems?.length, 1);
+			assert.strictEqual(metrics.trends.persistingItems?.[0].commentedOutCount, 1);
+			const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+			assert.ok(html.includes('commented-out-badge'));
+			assert.ok(html.includes('>Commented out<'));
 		});
 	});
 

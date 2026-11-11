@@ -54,6 +54,8 @@ export interface TrendSubItem {
 	reportCount?: number;
 	/** Optional subtitle shown alongside the finding (e.g. "Across 2 reports"). */
 	subtitle?: string;
+	/** Number of instances in this group currently suppressed because code is commented out. */
+	commentedOutCount?: number;
 }
 
 /** A single sub-item entry for an improving trend row, with progress label. */

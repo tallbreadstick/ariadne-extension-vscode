@@ -66,6 +66,41 @@ describe('Session Metrics Terminology & Subtitles', () => {
 			/<span class="sub-label-group">[\s\S]*?<span class="sub-label">SQL Injection<\/span>[\s\S]*?<span class="sub-subtitle persisting-subtitle">Across 3 reports<\/span>[\s\S]*?<\/span>[\s\S]*?<span class="sub-count">2<\/span>/.test(html),
 			'Persisting pill should sit beside the vulnerability label before the instance count',
 		);
+		assert.ok(!html.includes('<span class="commented-out-badge"'), 'Commented out pill must not render when commentedOutCount is absent');
+	});
+
+	it('renders Commented out pill in Persisting Patterns when commentedOutCount > 0', () => {
+		const metrics: SessionMetrics = {
+			critical: 0,
+			high: 2,
+			medium: 0,
+			low: 0,
+			trends: {
+				persistingPatterns: 3,
+				improvingTrends: 0,
+				resolvedThisSession: 0,
+				recurringPatterns: 0,
+				persistingItems: [
+					{
+						type: 'SQL Injection',
+						instances: 1,
+						reportCount: 2,
+						commentedOutCount: 1,
+					},
+					{
+						type: 'Cross-Site Scripting',
+						instances: 2,
+						reportCount: 3,
+						commentedOutCount: 1,
+					},
+				],
+			},
+		};
+
+		const html = buildSessionMetricsHtml(metrics, { signedIn: true });
+		assert.ok(html.includes('commented-out-badge'), 'Should render commented-out-badge class');
+		assert.ok(html.includes('>Commented out<'), 'All-commented item should render "Commented out"');
+		assert.ok(html.includes('>1 commented out<'), 'Partially-commented item should render "1 commented out"');
 	});
 
 	it('updates sign-in prompt to mention reports instead of scans', () => {
