@@ -3,7 +3,9 @@ import type * as vscode from 'vscode';
 import {
 	buildOnboardingHtml,
 	checkAndShowOnboarding,
+	planOnboardingPanelFocus,
 	resetOnboardingState,
+	type OnboardingPanelAvailability,
 } from '../modules/presentation/onboarding/onboardingPanel.js';
 
 function createMockMemento(): {
@@ -202,6 +204,53 @@ describe('Onboarding Guide Webview Panel', () => {
 			const result = await checkAndShowOnboarding(mockContext);
 			assert.strictEqual(result, false);
 			assert.strictEqual(store['ariadne.hasSeenOnboarding'], true);
+		});
+	});
+
+	describe('planOnboardingPanelFocus', () => {
+		const ready: OnboardingPanelAvailability = {
+			featuresUnlocked: true,
+			startupLoading: false,
+			scannerBroken: false,
+			downloading: false,
+		};
+
+		it('focuses Active Vulnerabilities when the bottom panel is ready', () => {
+			assert.deepStrictEqual(
+				planOnboardingPanelFocus(ready, 'activeVulnerabilities'),
+				{ kind: 'focus-view', view: 'activeVulnerabilities' },
+			);
+		});
+
+		it('routes Start Coding and Focus to the gateway while signed out', () => {
+			assert.deepStrictEqual(
+				planOnboardingPanelFocus(
+					{ ...ready, featuresUnlocked: false, startupLoading: true },
+					'activeVulnerabilities',
+				),
+				{ kind: 'focus-gateway' },
+			);
+		});
+
+		it('stays on the gateway when the scanner is broken', () => {
+			assert.deepStrictEqual(
+				planOnboardingPanelFocus({ ...ready, scannerBroken: true }, 'sessionMetrics'),
+				{ kind: 'focus-gateway' },
+			);
+		});
+
+		it('shows the gateway during startup and waits for the requested view', () => {
+			assert.deepStrictEqual(
+				planOnboardingPanelFocus({ ...ready, startupLoading: true }, 'activeVulnerabilities'),
+				{ kind: 'focus-gateway-until-ready', view: 'activeVulnerabilities' },
+			);
+		});
+
+		it('shows the gateway during a scanner download and waits for the requested view', () => {
+			assert.deepStrictEqual(
+				planOnboardingPanelFocus({ ...ready, downloading: true }, 'activeVulnerabilities'),
+				{ kind: 'focus-gateway-until-ready', view: 'activeVulnerabilities' },
+			);
 		});
 	});
 });

@@ -401,6 +401,8 @@ const CSS = /* css */ `
 		height: 100%;
 		border-radius: 999px;
 		background: var(--accent);
+		/* impeccable-disable-next-line layout-transition: Copilot usage meter fill; settings UI left as shipped */
+		transition: width 0.2s ease-out;
 	}
 
 	.usage-meta {

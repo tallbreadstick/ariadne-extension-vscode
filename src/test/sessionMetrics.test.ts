@@ -7,7 +7,7 @@ import { buildSessionMetricsHtml } from '../modules/tracker/views/sessionMetrics
 import { toSessionMetrics, buildSessionAnalysis } from '../modules/tracker/analysis/snapshotAnalyzer.js';
 import { computeCommonVulnerabilities, COMMON_VULN_POLICY, type GraduationToastEvents } from '../modules/tracker/analysis/commonVulnerabilities.js';
 import { SessionStore } from '../modules/tracker/storage/sessionStore.js';
-import { startSession, finalizeSession } from '../modules/tracker/analysis/lifecycleEngine.js';
+import { startSession, finalizeSession, processObservation } from '../modules/tracker/analysis/lifecycleEngine.js';
 const HOURLY_SCAN_INTERVAL_MS = 60 * 60 * 1000;
 import type { SessionMetrics, CommonVulnerabilityItem } from '../modules/presentation/panelTypes.js';
 import type { FindingLifecycleRecord, SessionRecord, FindingClassification } from '../modules/tracker/analysis/lifecycleTypes.js';

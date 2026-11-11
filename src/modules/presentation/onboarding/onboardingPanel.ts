@@ -145,9 +145,58 @@ const READY_CHECK_SVG = /* html */ `
 
 
 export interface OnboardingCallbacks {
-	onOpenSettings?: () => void;
-	onOpenActiveVulnerabilities?: () => void;
-	onOpenFullReport?: () => void;
+	onOpenSettings?: () => void | Promise<void>;
+	onOpenActiveVulnerabilities?: () => void | Promise<void>;
+	onOpenFullReport?: () => void | Promise<void>;
+	onStartCoding?: () => void | Promise<void>;
+}
+
+export type OnboardingBottomPanel = 'activeVulnerabilities' | 'sessionMetrics';
+
+export interface OnboardingPanelAvailability {
+	featuresUnlocked: boolean;
+	startupLoading: boolean;
+	scannerBroken: boolean;
+	downloading: boolean;
+}
+
+export type OnboardingFocusPlan =
+	| { kind: 'focus-view'; view: OnboardingBottomPanel }
+	| { kind: 'focus-gateway' }
+	| { kind: 'focus-gateway-until-ready'; view: OnboardingBottomPanel };
+
+/**
+ * True when Active Vulnerabilities and Session Metrics are visible.
+ * Those views use `when: ariadne.panelReady`: signed in, scanner healthy,
+ * startup finished, and no scanner download in progress.
+ */
+export function isBottomPanelReady(availability: OnboardingPanelAvailability): boolean {
+	return availability.featuresUnlocked
+		&& !availability.startupLoading
+		&& !availability.scannerBroken
+		&& !availability.downloading;
+}
+
+/**
+ * Picks a bottom-panel target for an onboarding action.
+ *
+ * Focusing a view while `ariadne.panelReady` is false does nothing, because
+ * the gateway is the only bottom-panel view shown. Signed-out and broken
+ * states stay on the gateway. Signed-in startup and download are temporary,
+ * so the caller can show the gateway now and focus `view` once
+ * {@link isBottomPanelReady} becomes true.
+ */
+export function planOnboardingPanelFocus(
+	availability: OnboardingPanelAvailability,
+	view: OnboardingBottomPanel,
+): OnboardingFocusPlan {
+	if (isBottomPanelReady(availability)) {
+		return { kind: 'focus-view', view };
+	}
+	if (!availability.featuresUnlocked || availability.scannerBroken) {
+		return { kind: 'focus-gateway' };
+	}
+	return { kind: 'focus-gateway-until-ready', view };
 }
 
 export interface OnboardingMediaUris {
@@ -1183,15 +1232,25 @@ export function showOnboardingPanel(context: vscode.ExtensionContext, callbacks?
 					callbacks?.onOpenSettings?.();
 					break;
 				case 'openActiveVulnerabilities':
+					if (callbacks?.onOpenActiveVulnerabilities) {
+						await callbacks.onOpenActiveVulnerabilities();
+						break;
+					}
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
-					callbacks?.onOpenActiveVulnerabilities?.();
 					break;
 				case 'openFullReport':
+					if (callbacks?.onOpenFullReport) {
+						await callbacks.onOpenFullReport();
+						break;
+					}
 					await vscode.commands.executeCommand('ariadne.panel.sessionMetrics.focus');
-					callbacks?.onOpenFullReport?.();
 					break;
 				case 'startCoding':
 					panel.dispose();
+					if (callbacks?.onStartCoding) {
+						await callbacks.onStartCoding();
+						break;
+					}
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
 					break;
 			}

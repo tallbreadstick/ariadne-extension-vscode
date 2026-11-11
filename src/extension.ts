@@ -35,6 +35,10 @@ import { checkAndShowWelcomeToast } from './modules/presentation/onboarding/welc
 import {
 	showOnboardingPanel,
 	checkAndShowOnboarding,
+	isBottomPanelReady,
+	planOnboardingPanelFocus,
+	type OnboardingBottomPanel,
+	type OnboardingPanelAvailability,
 } from './modules/presentation/onboarding/onboardingPanel.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
@@ -1176,6 +1180,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
+	let pendingOnboardingFocus: { view: OnboardingBottomPanel; highlight: boolean } | undefined;
+
+	const readPanelAvailability = (): OnboardingPanelAvailability => ({
+		featuresUnlocked,
+		startupLoading,
+		scannerBroken,
+		downloading: scannerBusy && scannerBusyAction === 'download',
+	});
+
+	const spotlightPanel = (view: OnboardingBottomPanel): void => {
+		const provider = view === 'activeVulnerabilities' ? activeVulnsProvider : sessionMetricsProvider;
+		setTimeout(() => {
+			provider.postMessage({ type: 'highlight-panel' });
+		}, 50);
+	};
+
+	const focusRequestedPanel = async (view: OnboardingBottomPanel, highlight: boolean): Promise<void> => {
+		const plan = planOnboardingPanelFocus(readPanelAvailability(), view);
+		if (plan.kind === 'focus-view') {
+			pendingOnboardingFocus = undefined;
+			await vscode.commands.executeCommand(`ariadne.panel.${view}.focus`);
+			if (highlight) {
+				spotlightPanel(view);
+			}
+			return;
+		}
+		pendingOnboardingFocus = plan.kind === 'focus-gateway-until-ready'
+			? { view, highlight }
+			: undefined;
+		await vscode.commands.executeCommand('ariadne.panel.gateway.focus');
+		if (plan.kind !== 'focus-gateway-until-ready') {
+			return;
+		}
+		// The gateway focus command can resolve after the panel becomes ready
+		// and would otherwise leave the user on the gateway.
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		if (isBottomPanelReady(readPanelAvailability())) {
+			pendingOnboardingFocus = { view, highlight };
+			flushPendingOnboardingFocus();
+		}
+	};
+
+	const flushPendingOnboardingFocus = (): void => {
+		if (!pendingOnboardingFocus) {
+			return;
+		}
+		const pending = pendingOnboardingFocus;
+		const plan = planOnboardingPanelFocus(readPanelAvailability(), pending.view);
+		if (plan.kind === 'focus-gateway') {
+			pendingOnboardingFocus = undefined;
+			return;
+		}
+		if (plan.kind !== 'focus-view') {
+			return;
+		}
+		pendingOnboardingFocus = undefined;
+		void vscode.commands.executeCommand(`ariadne.panel.${pending.view}.focus`).then(() => {
+			if (pending.highlight) {
+				spotlightPanel(pending.view);
+			}
+		});
+	};
+
 	let currentGatewayState: GatewayState = { kind: 'signed-out' };
 
 	const gatewayProvider = new AriadneViewProvider(
@@ -1251,9 +1318,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				: { kind: 'initializing' };
 		}
 
-		const isDownloading = scannerBusy && scannerBusyAction === 'download';
-		const isPanelReady = featuresUnlocked && !startupLoading && !scannerBroken && !isDownloading;
-		void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', isPanelReady);
+		const isPanelReady = isBottomPanelReady(readPanelAvailability());
+		void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', isPanelReady).then(() => {
+			setTimeout(() => flushPendingOnboardingFocus(), 50);
+		});
 		gatewayProvider.updateHtml(buildGatewayHtml(currentGatewayState));
 	};
 
@@ -1270,16 +1338,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				settingsView?.postMessage({ type: 'highlight-panel' });
 			}, 50);
 		},
-		onOpenActiveVulnerabilities: () => {
-			setTimeout(() => {
-				activeVulnsProvider.postMessage({ type: 'highlight-panel' });
-			}, 50);
-		},
-		onOpenFullReport: () => {
-			setTimeout(() => {
-				sessionMetricsProvider.postMessage({ type: 'highlight-panel' });
-			}, 50);
-		},
+		onOpenActiveVulnerabilities: () => focusRequestedPanel('activeVulnerabilities', true),
+		onOpenFullReport: () => focusRequestedPanel('sessionMetrics', true),
+		onStartCoding: () => focusRequestedPanel('activeVulnerabilities', false),
 	};
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
