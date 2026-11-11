@@ -66,6 +66,10 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(html.indexOf('>Copilot<span') < html.indexOf('>Scripting<span'));
 		assert.ok(html.includes('id="accordion-copilot"'));
 		assert.match(html, /<summary[^>]*>\s*Copilot/);
+		assert.ok(html.includes('id="accordion-configuration"'), 'Configuration accordion missing');
+		assert.match(html, /<summary[^>]*>\s*Configuration/);
+		assert.ok(html.indexOf('>Copilot<span') < html.indexOf('>Configuration<span'));
+		assert.ok(html.indexOf('>Configuration<span') < html.indexOf('>Scripting<span'));
 		assert.ok(html.indexOf('>Scripting<span') < html.indexOf('>Help<span'));
 		assert.ok(html.includes('id="open-onboarding-btn"'));
 		assert.match(html, /Onboarding Guide/i);
@@ -102,7 +106,7 @@ describe('Sidebar settings accordion', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
 		assert.ok(html.includes('name="ariadne-settings"'));
 		assert.match(html, /id="accordion-account"[^>]*\sopen/);
-		for (const id of ['accordion-scripting', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-help']) {
+		for (const id of ['accordion-scripting', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-configuration', 'accordion-help']) {
 			assert.ok(!new RegExp(`id="${id}"[^>]*\\sopen`).test(html), `${id} should start closed`);
 		}
 		assert.ok(html.includes('restoreAccordion'));
@@ -267,6 +271,50 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(html.includes('id="clear-session-btn"'));
 		assert.ok(!/id="export-session-btn"[^>]*disabled/.test(html));
 		assert.ok(!/id="clear-session-btn"[^>]*disabled/.test(html));
+	});
+
+	it('renders configuration controls with default values', () => {
+		const html = buildSignInPanelHtml(signedOutModel());
+		assert.ok(html.includes('id="config-notification-level"'));
+		assert.ok(html.includes('id="config-autoscan-interval"'));
+		assert.ok(html.includes('id="config-executable-path"'));
+		assert.ok(html.includes('id="config-metrics-enabled"'));
+		assert.ok(html.includes('id="config-metrics-base-url"'));
+		assert.ok(html.includes('id="config-metrics-api-key"'));
+		assert.ok(html.includes('id="config-metrics-trust-local-tls"'));
+
+		// Default options and attributes
+		assert.ok(html.includes('value="milestones" selected'));
+		assert.ok(html.includes('value="60"'));
+		assert.ok(html.includes('value="ariadne"'));
+		assert.ok(html.includes('https://127.0.0.1:8443'));
+		assert.match(html, /id="config-metrics-enabled"[^>]*aria-checked="true"/);
+		assert.match(html, /id="config-metrics-trust-local-tls"[^>]*aria-checked="true"/);
+	});
+
+	it('renders custom configuration model values when provided', () => {
+		const html = buildSignInPanelHtml(
+			signedInModel({
+				config: {
+					notificationLevel: 'quiet',
+					autoScanIntervalMinutes: 15,
+					executablePath: '/custom/bin/ariadne',
+					metricsEnabled: false,
+					metricsBaseUrl: 'https://metrics.internal.corp:9443',
+					metricsApiKey: 'secret-token-123456789012345678901234567890',
+					metricsTrustLocalTls: false,
+				},
+			}),
+		);
+
+		assert.ok(html.includes('value="quiet" selected'));
+		assert.ok(html.includes('value="15"'));
+		assert.ok(html.includes('value="/custom/bin/ariadne"'));
+		assert.match(html, /id="config-metrics-enabled"[^>]*aria-checked="false"/);
+		assert.ok(html.includes('id="config-metrics-details" hidden'));
+		assert.ok(html.includes('value="https://metrics.internal.corp:9443"'));
+		assert.ok(html.includes('value="secret-token-123456789012345678901234567890"'));
+		assert.match(html, /id="config-metrics-trust-local-tls"[^>]*aria-checked="false"/);
 	});
 });
 

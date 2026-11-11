@@ -1620,7 +1620,7 @@ export function buildActiveVulnerabilitiesHtml(
 			<div class="empty-subtitle">
 				Ariadne could not run the selected scanner, so this panel is not a clean scan.
 			</div>
-			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Ariadne Settings</a>
+			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Core Settings</a>
 		</section>
 	</body>
 </html>`;
@@ -2027,7 +2027,6 @@ export function buildActiveVulnerabilitiesHtml(
 							chip.setAttribute('aria-pressed', matches ? 'true' : 'false');
 							chip.setAttribute('aria-checked', matches ? 'true' : 'false');
 						});
-						setFilterVisibility(true);
 						persistFilters();
 						applyFilters();
 					} else if (msg.type === 'set-filter-type') {
@@ -2059,7 +2058,6 @@ export function buildActiveVulnerabilitiesHtml(
 								typeFilter.value = '';
 							}
 						}
-						setFilterVisibility(true);
 						persistFilters();
 						applyFilters();
 					}

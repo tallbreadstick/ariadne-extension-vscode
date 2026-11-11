@@ -36,6 +36,7 @@
     "onCommand:ariadne-extension-vscode.openOnboarding",
     "onCommand:ariadne-extension-vscode.openDebugLogFolder",
     "onCommand:ariadne-extension-vscode.debugResetOnboarding",
+    "onView:ariadne.panel.gateway",
     "onView:ariadne.panel.activeVulnerabilities",
     "onView:ariadne.panel.sessionMetrics",
     "onView:ariadne.sidebar.signIn"
@@ -135,17 +136,26 @@
       "ariadne-panel": [
         {
           "type": "webview",
+          "id": "ariadne.panel.gateway",
+          "name": "ARIADNE",
+          "icon": "$(shield)",
+          "when": "!ariadne.panelReady"
+        },
+        {
+          "type": "webview",
           "id": "ariadne.panel.activeVulnerabilities",
           "name": "ACTIVE VULNERABILITIES",
           "group": "left",
-          "icon": "$(shield)"
+          "icon": "$(shield)",
+          "when": "ariadne.panelReady"
         },
         {
           "type": "webview",
           "id": "ariadne.panel.sessionMetrics",
           "name": "SESSION METRICS",
           "group": "right",
-          "icon": "$(graph)"
+          "icon": "$(graph)",
+          "when": "ariadne.panelReady"
         }
       ]
     },
