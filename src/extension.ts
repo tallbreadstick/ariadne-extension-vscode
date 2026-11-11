@@ -22,6 +22,7 @@ import { DiagnosticManager } from './modules/presentation/diagnostics/Diagnostic
 import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
 import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
+import { buildGatewayHtml, type GatewayState } from './modules/presentation/views/gatewayPanel.js';
 import {
 	buildTreeViewHtml,
 	retainActiveAudit,
@@ -203,7 +204,7 @@ function getWorkspaceFileContent(filePath: string): string | undefined {
 	return undefined;
 }
 
-let openAriadneSettings: () => Promise<void> = async () => undefined;
+let openAriadneSettings: (section?: 'account' | 'core') => Promise<void> = async () => undefined;
 
 async function focusSignInSidebar(): Promise<void> {
 	await openAriadneSettings();
@@ -511,10 +512,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let initialFindingsReceived = false;
 	let acceptFindings = true;
 	let settingsView: AriadneViewProvider | undefined;
+	let currentTermsAccepted = false;
+	let currentPrivacyAccepted = false;
 	let startScanner: () => void = () => undefined;
 	let stopScanner: () => void = () => undefined;
 	let markScannerBroken: () => void = () => undefined;
 	let applyScannerSelection: () => Promise<void> = async () => undefined;
+	let updatePanelReadyContext: (explicitState?: GatewayState) => void = () => undefined;
 	let reportUpdateStatus: FullReportUpdateStatus = 'idle';
 	let cachedCopilotUsage: SignInPanelViewModel['copilotUsage'] | undefined;
 
@@ -594,8 +598,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		options?: { skipQuota?: boolean },
 	): Promise<void> => {
 		const settings = getSidebarSettings();
+		const baseModel = override ?? await githubAuth.getPanelViewModel();
 		let model: SignInPanelViewModel = {
-			...(override ?? await githubAuth.getPanelViewModel()),
+			...baseModel,
+			hasConsent: baseModel.status === 'signed-out' ? (override ? baseModel.hasConsent : currentTermsAccepted) : baseModel.hasConsent,
+			analyticsConsent: baseModel.status === 'signed-out' ? (override ? baseModel.analyticsConsent : currentPrivacyAccepted) : baseModel.analyticsConsent,
 			settings,
 			scanner: await loadScannerSettings(),
 			copilot: await loadCopilotSettings(),
@@ -1158,6 +1165,93 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
+	let currentGatewayState: GatewayState = { kind: 'signed-out' };
+
+	const gatewayProvider = new AriadneViewProvider(
+		buildGatewayHtml(currentGatewayState),
+		async (msg) => {
+			if (msg.type === 'consent-change') {
+				currentTermsAccepted = msg.termsAccepted === true;
+				currentPrivacyAccepted = msg.privacyAccepted === true;
+				if (currentGatewayState.kind === 'signed-out') {
+					currentGatewayState.termsAccepted = currentTermsAccepted;
+					currentGatewayState.privacyAccepted = currentPrivacyAccepted;
+				}
+				settingsView?.postMessage({
+					type: 'consent-sync',
+					termsAccepted: currentTermsAccepted,
+					privacyAccepted: currentPrivacyAccepted,
+				});
+				return;
+			}
+			if (msg.type === 'gateway-sign-in') {
+				updatePanelReadyContext({ kind: 'initializing' });
+				try {
+					await githubAuth.signIn({
+						termsAccepted: msg.termsAccepted === true,
+						analyticsConsent: msg.privacyAccepted === true,
+					});
+					await refreshSignInPanel();
+					const token = await githubAuth.getAccessToken();
+					if (token) {
+						copilotManager.prewarm(copilotRuntimeOptions(context, token));
+					}
+					vscode.window.showInformationMessage(
+						'Ariadne: Signed in to GitHub. Scanning and AI feedback are enabled.',
+					);
+					startScanner();
+				} catch (error: unknown) {
+					const message =
+						error instanceof Error ? error.message : 'GitHub sign-in failed.';
+					vscode.window.showErrorMessage(`Ariadne: ${message}`);
+					updatePanelReadyContext({ kind: 'signed-out' });
+				}
+				return;
+			}
+			if (msg.type === 'gateway-action') {
+				if (msg.action === 'sign-in') {
+					void openAriadneSettings('account');
+				} else if (msg.action === 'open-settings' || msg.action === 'open-core-settings') {
+					void openAriadneSettings('core');
+				} else if (msg.action === 'open-folder') {
+					void vscode.commands.executeCommand('vscode.openFolder');
+				}
+			}
+		},
+	);
+	gatewayProvider.setResolveHtml(() => buildGatewayHtml(currentGatewayState));
+
+	updatePanelReadyContext = (explicitState?: GatewayState): void => {
+		if (explicitState) {
+			currentGatewayState = explicitState;
+		} else if (!featuresUnlocked) {
+			currentGatewayState = {
+				kind: 'signed-out',
+				termsAccepted: currentTermsAccepted,
+				privacyAccepted: currentPrivacyAccepted,
+			};
+		} else if (scannerBroken) {
+			currentGatewayState = { kind: 'error' };
+		} else if (scannerBusy && scannerBusyAction === 'download') {
+			currentGatewayState = { kind: 'downloading' };
+		} else if (startupLoading) {
+			currentGatewayState = initialFindingsReceived
+				? { kind: 'scanning' }
+				: { kind: 'initializing' };
+		}
+
+		const isDownloading = scannerBusy && scannerBusyAction === 'download';
+		const isPanelReady = featuresUnlocked && !startupLoading && !scannerBroken && !isDownloading;
+		void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', isPanelReady);
+		gatewayProvider.updateHtml(buildGatewayHtml(currentGatewayState));
+	};
+
+	void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', false);
+
+	const gatewayDisposable = vscode.window.registerWebviewViewProvider(
+		'ariadne.panel.gateway',
+		gatewayProvider,
+	);
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
 		activeVulnsProvider,
@@ -1187,6 +1281,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	): Promise<void> => {
 		scannerBusy = true;
 		scannerBusyAction = action;
+		if (action === 'download') {
+			updatePanelReadyContext({ kind: 'downloading' });
+		}
 		await refreshSignInPanel(undefined, { skipQuota: true });
 		try {
 			await work();
@@ -1194,6 +1291,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			scannerBusy = false;
 			scannerBusyAction = 'status';
 			await refreshSignInPanel(undefined, { skipQuota: true });
+			updatePanelReadyContext();
 		}
 	};
 
@@ -1423,7 +1521,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
+			if (msg.type === 'consent-change') {
+				currentTermsAccepted = msg.termsAccepted === true;
+				currentPrivacyAccepted = msg.privacyAccepted === true;
+				if (currentGatewayState.kind === 'signed-out') {
+					currentGatewayState.termsAccepted = currentTermsAccepted;
+					currentGatewayState.privacyAccepted = currentPrivacyAccepted;
+				}
+				gatewayProvider.postMessage({
+					type: 'consent-sync',
+					termsAccepted: currentTermsAccepted,
+					privacyAccepted: currentPrivacyAccepted,
+				});
+				return;
+			}
+
 			if (msg.type === 'github-sign-in') {
+				updatePanelReadyContext({ kind: 'initializing' });
 				await refreshSignInPanel({ status: 'signing-in' });
 				try {
 					await githubAuth.signIn({
@@ -1446,11 +1560,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						status: 'error',
 						errorMessage: message,
 					});
+					updatePanelReadyContext({ kind: 'signed-out' });
 				}
 				return;
 			}
 
 			if (msg.type === 'github-sign-out') {
+				currentTermsAccepted = false;
+				currentPrivacyAccepted = false;
 				await refreshSignInPanel({
 					status: 'signed-out',
 					hasConsent: false,
@@ -1630,8 +1747,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 	settingsView.setResolveHtml(() => latestSignInHtml);
 
-	openAriadneSettings = async () => {
+	openAriadneSettings = async (section?: 'account' | 'core') => {
 		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+		settingsView?.postMessage({
+			type: 'pulse-section',
+			section: section ?? 'core',
+		});
 	};
 
 	const openBottomPanel = async (): Promise<void> => {
@@ -1715,6 +1836,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, featuresUnlocked, true, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshTreeViewPanel();
+		updatePanelReadyContext({ kind: 'error' });
 	};
 
 	const confirmScannerProcess = async (): Promise<void> => {
@@ -1734,6 +1856,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					buildVulnsHtml([], store, true, false, true),
 				);
 			}
+			updatePanelReadyContext();
 			return;
 		}
 		markScannerBroken();
@@ -1990,6 +2113,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	startScanner = () => {
 		featuresUnlocked = true;
 		acceptFindings = true;
+		startupLoading = true;
+		initialFindingsReceived = false;
+		updatePanelReadyContext({ kind: 'initializing' });
 		if (!rulesLanguageRegistered) {
 			registerRuleLanguage(context);
 			rulesLanguageRegistered = true;
@@ -2017,6 +2143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 				refreshSessionMetricsPanel();
 				await refreshSignInPanel();
+				updatePanelReadyContext();
 			}
 			if (activeSession && !scannerBroken) {
 				startHourlyScanTimer();
@@ -2026,6 +2153,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	stopScanner = () => {
 		featuresUnlocked = false;
+		startupLoading = true;
+		initialFindingsReceived = false;
 		stopHourlyScanTimer();
 		session.kill();
 		diagnosticManager.clearAll();
@@ -2035,9 +2164,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerChecked = false;
 		acceptFindings = false;
 		reportUpdateStatus = 'idle';
-		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false));
+		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, true));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshSessionMetricsPanel();
+		updatePanelReadyContext({ kind: 'signed-out' });
 		console.log('[Ariadne] Scanner stopped (signed out).');
 	};
 
@@ -2051,9 +2181,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	void githubAuth.isAuthenticated().then(async (signedIn) => {
 		if (!signedIn) {
-			startupLoading = false;
-			activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, false));
+			startupLoading = true;
+			activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, true));
 			refreshSessionMetricsPanel();
+			updatePanelReadyContext({ kind: 'signed-out' });
 			return;
 		}
 		startScanner();
@@ -2085,8 +2216,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		initialFindingsReceived = true;
 		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(vulns.length);
+		updatePanelReadyContext();
 
-		requestTreeView();
+		if (treeViewOpen) {
+			requestTreeView();
+		}
 
 		// ── 2. Session Metrics panel (always updated on live scan) ──────
 		refreshSessionMetricsPanel();
@@ -2284,14 +2418,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openSignInPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSignInPanel',
 		async () => {
-			await openAriadneSettings();
+			await openAriadneSettings('account');
 		},
 	);
 
 	const openSettingsCommand = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSettings',
 		async () => {
-			await openAriadneSettings();
+			await openAriadneSettings('core');
 		},
 	);
 
@@ -2518,6 +2652,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(createAriadneStatusBarItem());
 
 	context.subscriptions.push(
+		gatewayDisposable,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
 		signInDisposable,

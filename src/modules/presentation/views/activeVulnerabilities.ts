@@ -1600,7 +1600,7 @@ export function buildActiveVulnerabilitiesHtml(
 			<div class="empty-subtitle">
 				Ariadne could not run the selected scanner, so this panel is not a clean scan.
 			</div>
-			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Ariadne Settings</a>
+			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Core Settings</a>
 		</section>
 	</body>
 </html>`;

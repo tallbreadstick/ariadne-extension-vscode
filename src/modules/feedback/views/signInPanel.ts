@@ -96,6 +96,30 @@ const CSS = /* css */ `
 
 	.accordion-item {
 		border-bottom: 1px solid var(--border);
+		transition: background 0.2s ease, outline-color 0.2s ease;
+	}
+
+	.accordion-item.pulse-attention {
+		animation: accordion-pulse 1.3s ease-out;
+		border-radius: 4px;
+	}
+
+	@keyframes accordion-pulse {
+		0% {
+			background: color-mix(in srgb, #38bdf8 28%, transparent);
+			outline: 2px solid #38bdf8;
+			outline-offset: -1px;
+		}
+		50% {
+			background: color-mix(in srgb, #38bdf8 15%, transparent);
+			outline: 2px solid #38bdf8;
+			outline-offset: -1px;
+		}
+		100% {
+			background: transparent;
+			outline: 2px solid transparent;
+			outline-offset: -1px;
+		}
 	}
 
 	.accordion-item > summary {
@@ -1065,9 +1089,51 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				signInBtn.disabled = !(termsCheckbox.checked && privacyCheckbox.checked);
 			}
 
-			termsCheckbox?.addEventListener('change', updateSignInEnabled);
-			privacyCheckbox?.addEventListener('change', updateSignInEnabled);
+			function onSidebarConsentChange() {
+				updateSignInEnabled();
+				vscode.postMessage({
+					type: 'consent-change',
+					termsAccepted: Boolean(termsCheckbox && termsCheckbox.checked),
+					privacyAccepted: Boolean(privacyCheckbox && privacyCheckbox.checked),
+				});
+			}
+
+			termsCheckbox?.addEventListener('change', onSidebarConsentChange);
+			privacyCheckbox?.addEventListener('change', onSidebarConsentChange);
 			updateSignInEnabled();
+
+			window.addEventListener('message', (event) => {
+				const msg = event.data;
+				if (msg && msg.type === 'pulse-section') {
+					const targetId = msg.section === 'core' ? 'accordion-scanner' : 'accordion-account';
+					for (const id of accordionIds) {
+						const el = document.getElementById(id);
+						if (el) {
+							el.open = (id === targetId);
+						}
+					}
+					vscode.setState({ ...(vscode.getState() ?? {}), openSection: targetId });
+					const targetEl = document.getElementById(targetId);
+					if (targetEl) {
+						targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+						targetEl.classList.remove('pulse-attention');
+						void targetEl.offsetWidth;
+						targetEl.classList.add('pulse-attention');
+						setTimeout(() => {
+							targetEl.classList.remove('pulse-attention');
+						}, 1400);
+					}
+				}
+				if (msg && msg.type === 'consent-sync') {
+					if (termsCheckbox && typeof msg.termsAccepted === 'boolean') {
+						termsCheckbox.checked = msg.termsAccepted;
+					}
+					if (privacyCheckbox && typeof msg.privacyAccepted === 'boolean') {
+						privacyCheckbox.checked = msg.privacyAccepted;
+					}
+					updateSignInEnabled();
+				}
+			});
 
 			signInBtn?.addEventListener('click', () => {
 				if (!termsCheckbox?.checked || !privacyCheckbox?.checked) {
