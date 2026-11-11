@@ -30,7 +30,12 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 	 */
 	postMessage(message: unknown): void {
 		if (this.webviewView) {
-			this.webviewView.webview.postMessage(message);
+			try {
+				this.webviewView.webview.postMessage(message);
+			} catch {
+				this.webviewView = undefined;
+				this.pendingMessages.push(message);
+			}
 		} else {
 			this.pendingMessages.push(message);
 		}
@@ -38,6 +43,12 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {
 		this.webviewView = webviewView;
+
+		webviewView.onDidDispose(() => {
+			if (this.webviewView === webviewView) {
+				this.webviewView = undefined;
+			}
+		});
 
 		webviewView.webview.options = {
 			enableScripts: true,
@@ -49,7 +60,12 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 			this.resolveHtmlApplied = true;
 		}
 
-		webviewView.webview.html = this.currentHtml;
+		try {
+			webviewView.webview.html = this.currentHtml;
+		} catch {
+			this.webviewView = undefined;
+			return;
+		}
 
 		// Handle messages posted from the webview (e.g. click-to-navigate).
 		webviewView.webview.onDidReceiveMessage(async (msg) => {
@@ -79,7 +95,12 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 			this.pendingMessages = [];
 			setTimeout(() => {
 				for (const msg of queued) {
-					this.webviewView?.webview.postMessage(msg);
+					try {
+						this.webviewView?.webview.postMessage(msg);
+					} catch {
+						this.webviewView = undefined;
+						break;
+					}
 				}
 			}, 100);
 		}
@@ -96,14 +117,22 @@ export class AriadneViewProvider implements vscode.WebviewViewProvider {
 		}
 		this.currentHtml = html;
 		if (this.webviewView) {
-			this.webviewView.webview.html = html;
+			try {
+				this.webviewView.webview.html = html;
+			} catch {
+				this.webviewView = undefined;
+			}
 		}
 	}
 
 	setBadgeCount(count: number): void {
 		if (this.webviewView) {
-			this.applyBadgeCount(count);
-			return;
+			try {
+				this.applyBadgeCount(count);
+				return;
+			} catch {
+				this.webviewView = undefined;
+			}
 		}
 		this.pendingBadgeCount = count;
 	}

@@ -347,6 +347,26 @@ const CSS = /* css */ `
         --radius: 10px;
     }
 
+
+    @keyframes panelSpotlightPulse {
+        0% {
+            box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+            background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--list-bg));
+        }
+        50% {
+            box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+            background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--list-bg));
+        }
+        100% {
+            box-shadow: inset 0 0 0 0 transparent;
+            background-color: var(--list-bg);
+        }
+    }
+
+    body.panel-spotlight {
+        animation: panelSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
     * { box-sizing: border-box; }
 
     body {
@@ -1600,7 +1620,7 @@ export function buildActiveVulnerabilitiesHtml(
 			<div class="empty-subtitle">
 				Ariadne could not run the selected scanner, so this panel is not a clean scan.
 			</div>
-			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Ariadne Settings</a>
+			<a class="signin-cta" href="command:${OPEN_SETTINGS_COMMAND}">Open Core Settings</a>
 		</section>
 	</body>
 </html>`;
@@ -1976,6 +1996,16 @@ export function buildActiveVulnerabilitiesHtml(
 				window.addEventListener('message', (event) => {
 					const msg = event.data;
 					if (!msg || typeof msg !== 'object') return;
+					if (msg.type === 'highlight-panel') {
+						document.body.classList.remove('panel-spotlight');
+						void document.body.offsetWidth;
+						document.body.classList.add('panel-spotlight');
+						setTimeout(() => {
+							document.body.classList.remove('panel-spotlight');
+						}, 1500);
+						return;
+					}
+
 					if (msg.type === 'set-filter-severity') {
 						const targetSeverity = String(msg.severity || '').toLowerCase();
 						const currentSelected = selectedSeverities();
@@ -1997,7 +2027,6 @@ export function buildActiveVulnerabilitiesHtml(
 							chip.setAttribute('aria-pressed', matches ? 'true' : 'false');
 							chip.setAttribute('aria-checked', matches ? 'true' : 'false');
 						});
-						setFilterVisibility(true);
 						persistFilters();
 						applyFilters();
 					} else if (msg.type === 'set-filter-type') {
@@ -2029,7 +2058,6 @@ export function buildActiveVulnerabilitiesHtml(
 								typeFilter.value = '';
 							}
 						}
-						setFilterVisibility(true);
 						persistFilters();
 						applyFilters();
 					}

@@ -8,6 +8,7 @@ import {
 import {
 	formatNewCandidateMessage,
 	formatAbsentCandidateMessage,
+	formatCommentedOutMessage,
 	formatGraduatingSoonMessage,
 	formatGraduatedMessage,
 	determinePrioritizedToast,
@@ -742,6 +743,92 @@ describe('Candidate State Toast — Commit 1: New Vulnerability → Candidate', 
 				msg,
 				'Ariadne: SQL Injection has graduated and was removed from Common Vulnerabilities.',
 			);
+		});
+	});
+
+	describe('Commented-Out Vulnerability Warning Toasts', () => {
+		it('formats single commented-out finding message with exact user wording', () => {
+			const c1: FindingClassification = {
+				...processObservation([createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'persisting',
+				isNewlyCommentedOut: true,
+			};
+
+			assert.strictEqual(
+				formatCommentedOutMessage([c1]),
+				'Ariadne: SQL Injection is commented out—hidden from Live Scan, but tracked in Full Report until fixed or removed.',
+			);
+		});
+
+		it('formats multiple commented-out findings message with deduplicated type list', () => {
+			const c1: FindingClassification = {
+				...processObservation([createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'persisting',
+				isNewlyCommentedOut: true,
+			};
+			const c2: FindingClassification = {
+				...processObservation([createMockObserved('XSS', 'CWE-79', 'View.java', 20)], [], 1000, true).classifications[0],
+				status: 'persisting',
+				isNewlyCommentedOut: true,
+			};
+
+			assert.strictEqual(
+				formatCommentedOutMessage([c1, c2]),
+				'Ariadne: 2 vulnerabilities (SQL Injection, XSS) are commented out—hidden from Live Scan, but tracked in Full Report until fixed or removed.',
+			);
+		});
+
+		it('emits commentedOut warning toast once on transition and suppresses absentCandidate toast', () => {
+			const t0 = 1_700_000_000_000;
+			const finding = createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 3);
+			const commentedFile = 'function run() {\n  // testVar\n}';
+
+			const obs1 = processObservation([finding], [], t0, true);
+			const obs2 = processObservation([], obs1.lifecycles, t0 + 10_000, true, () => commentedFile);
+
+			assert.strictEqual(obs2.classifications[0].isNewlyCommentedOut, true);
+			assert.strictEqual(obs2.classifications[0].isAbsentCandidate, undefined, 'Must suppress absentCandidate when commented out');
+
+			const analysis2 = buildSessionAnalysis(obs2.classifications, createEmptySnapshot(), null, obs2.lifecycles, undefined, t0);
+			assert.strictEqual(analysis2.commentedOutFindings?.length, 1);
+			assert.strictEqual(analysis2.absentCandidateFindings?.length ?? 0, 0);
+			assert.strictEqual(analysis2.newPersistingFindings?.length ?? 0, 0, 'Must not double-toast newPersisting on commented-out transition');
+
+			const plan2 = determinePrioritizedToast(analysis2, 'milestones');
+			assert.ok(plan2);
+			assert.strictEqual(plan2.type, 'commentedOut');
+			assert.strictEqual(plan2.severity, 'warning');
+			assert.strictEqual(
+				plan2.message,
+				'Ariadne: SQL Injection is commented out—hidden from Live Scan, but tracked in Full Report until fixed or removed.',
+			);
+
+			// Subsequent save while still commented out must NOT repeat commentedOut warning
+			const obs3 = processObservation([], obs2.lifecycles, t0 + 20_000, true, () => commentedFile);
+			const analysis3 = buildSessionAnalysis(obs3.classifications, createEmptySnapshot(), null, obs3.lifecycles, undefined, t0);
+			assert.strictEqual(obs3.classifications[0].isNewlyCommentedOut, undefined);
+			assert.strictEqual(analysis3.commentedOutFindings?.length ?? 0, 0);
+			assert.strictEqual(determinePrioritizedToast(analysis3, 'milestones'), null);
+		});
+
+		it('includes commentedOut warning in stacked mode and respects quiet level', () => {
+			const c1: FindingClassification = {
+				...processObservation([createMockObserved('SQL Injection', 'CWE-89', 'Db.java', 10)], [], 1000, true).classifications[0],
+				status: 'persisting',
+				isNewlyCommentedOut: true,
+			};
+			const analysis = {
+				...buildSessionAnalysis([], createEmptySnapshot(), null, []),
+				commentedOutFindings: [c1],
+			};
+
+			const stacked = determineStackedToasts(analysis, 'milestones');
+			assert.strictEqual(stacked.length, 1);
+			assert.strictEqual(stacked[0].type, 'commentedOut');
+			assert.strictEqual(stacked[0].severity, 'warning');
+
+			assert.deepStrictEqual(determineStackedToasts(analysis, 'quiet'), []);
+			assert.strictEqual(determinePrioritizedToast(analysis, 'quiet'), null);
 		});
 	});
 });

@@ -73,6 +73,8 @@ export interface VulnerabilityDelta {
 	currentInstanceCount: number;
 	/** Number of successful full reports across which this finding has persisted */
 	reportCount?: number;
+	/** True when the underlying finding is currently detected as commented out */
+	isCommentedOut?: boolean;
 }
 
 // ── Severity counts ───────────────────────────────────────────────────
@@ -159,4 +161,8 @@ export interface SessionAnalysis {
 	 * Findings newly transitioned into Resolved status in this observation.
 	 */
 	newResolvedFindings?: FindingClassification[];
+	/**
+	 * Findings that newly transitioned into commented-out status in this observation.
+	 */
+	commentedOutFindings?: FindingClassification[];
 }

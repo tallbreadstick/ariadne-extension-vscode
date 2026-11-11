@@ -143,6 +143,62 @@ const READY_CHECK_SVG = /* html */ `
 	<path d="m8.5 12.5 2.5 2.5 5-5"/>
 </svg>`;
 
+
+export interface OnboardingCallbacks {
+	onOpenSettings?: () => void | Promise<void>;
+	onOpenActiveVulnerabilities?: () => void | Promise<void>;
+	onOpenFullReport?: () => void | Promise<void>;
+	onStartCoding?: () => void | Promise<void>;
+}
+
+export type OnboardingBottomPanel = 'activeVulnerabilities' | 'sessionMetrics';
+
+export interface OnboardingPanelAvailability {
+	featuresUnlocked: boolean;
+	startupLoading: boolean;
+	scannerBroken: boolean;
+	downloading: boolean;
+}
+
+export type OnboardingFocusPlan =
+	| { kind: 'focus-view'; view: OnboardingBottomPanel }
+	| { kind: 'focus-gateway' }
+	| { kind: 'focus-gateway-until-ready'; view: OnboardingBottomPanel };
+
+/**
+ * True when Active Vulnerabilities and Session Metrics are visible.
+ * Those views use `when: ariadne.panelReady`: signed in, scanner healthy,
+ * startup finished, and no scanner download in progress.
+ */
+export function isBottomPanelReady(availability: OnboardingPanelAvailability): boolean {
+	return availability.featuresUnlocked
+		&& !availability.startupLoading
+		&& !availability.scannerBroken
+		&& !availability.downloading;
+}
+
+/**
+ * Picks a bottom-panel target for an onboarding action.
+ *
+ * Focusing a view while `ariadne.panelReady` is false does nothing, because
+ * the gateway is the only bottom-panel view shown. Signed-out and broken
+ * states stay on the gateway. Signed-in startup and download are temporary,
+ * so the caller can show the gateway now and focus `view` once
+ * {@link isBottomPanelReady} becomes true.
+ */
+export function planOnboardingPanelFocus(
+	availability: OnboardingPanelAvailability,
+	view: OnboardingBottomPanel,
+): OnboardingFocusPlan {
+	if (isBottomPanelReady(availability)) {
+		return { kind: 'focus-view', view };
+	}
+	if (!availability.featuresUnlocked || availability.scannerBroken) {
+		return { kind: 'focus-gateway' };
+	}
+	return { kind: 'focus-gateway-until-ready', view };
+}
+
 export interface OnboardingMediaUris {
 	step21GifUri?: string;
 	step22HoverGifUri?: string;
@@ -728,10 +784,102 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</p>
 			</header>
 
-			<!-- Section 1: Saving & Scanning Process -->
+			<!-- Section 1: Extension Features & Navigation -->
 			<section class="section">
 				<div class="section-header">
 					<span class="section-number">1</span>
+					<h2 class="section-title">Core Features &amp; Where to Find Them</h2>
+				</div>
+				<div class="features-grid">
+					<!-- Settings Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${SETTINGS_SVG}
+									<h3 class="feature-title">Sidebar Settings</h3>
+								</div>
+								<span class="location-badge">Activity Bar (Left)</span>
+							</div>
+							<p class="feature-desc">
+								Manage your GitHub authentication, toggle inline code highlight visibility, 
+								access the help guide, and manage custom rule scripts across organized accordions.
+							</p>
+						</div>
+						<button class="btn" data-action="openSettings">
+							Open Settings Panel
+						</button>
+					</div>
+
+					<!-- Active Vulnerabilities Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${VULN_SVG}
+									<h3 class="feature-title">Active Vulnerabilities</h3>
+								</div>
+								<span class="location-badge">Bottom Panel (Left Pane)</span>
+							</div>
+							<p class="feature-desc">
+								View real-time vulnerability findings on the <strong>left pane</strong> of the bottom split dock. Features the <strong>Session Progress Bar</strong>, 
+								the <strong>Next Focus</strong> recommendation chip, collapsible filter drawer, click-to-navigate code links, 
+								and <strong>Explain Vulnerability</strong> learning actions.
+							</p>
+						</div>
+						<button class="btn" data-action="openActiveVulnerabilities">
+							Focus Active Vulnerabilities (Left)
+						</button>
+					</div>
+
+					<!-- Full Report Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${REPORT_SVG}
+									<h3 class="feature-title">Full Report</h3>
+								</div>
+								<span class="location-badge">Bottom Panel (Right Pane)</span>
+							</div>
+							<p class="feature-desc">
+								Inspect your comprehensive security dashboard on the <strong>right pane</strong> of the bottom split dock. Displays finding counts by severity, qualitative trend badges 
+								(<em>Some progress</em>, <em>Clear progress</em>), recurring <strong>Common Vulnerability</strong> habit tracking, 
+								and interactive click-to-filter support.
+							</p>
+						</div>
+						<button class="btn" data-action="openFullReport">
+							Focus Full Report (Right)
+						</button>
+					</div>
+
+					<!-- Inline Code Highlighting Feature -->
+					<div class="feature-card">
+						<div>
+							<div class="feature-header">
+								<div class="feature-title-group">
+									${HIGHLIGHT_SVG}
+									<h3 class="feature-title">Inline Highlighting</h3>
+								</div>
+								<span class="location-badge">Editor Pane</span>
+							</div>
+							<p class="feature-desc">
+								Affected code lines are highlighted with a soft background tint, an overview scrollbar tick, and an italic label. 
+								Hover over any highlight to inspect flaw details or click <strong>[💡 Explain Vulnerability]</strong>.
+							</p>
+							<div class="demo-box">
+								<code>String q = "SELECT * FROM users WHERE id=" + id;</code>
+								<span class="demo-tag">${LIGHTBULB_SVG} [Ariadne] SQL Injection</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- Section 2: Saving & Scanning Process -->
+			<section class="section">
+				<div class="section-header">
+					<span class="section-number">2</span>
 					<h2 class="section-title">The Saving &amp; Scanning Lifecycle</h2>
 				</div>
 				<div class="process-grid">
@@ -896,10 +1044,10 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</div>
 			</section>
 
-			<!-- Section 2: Advanced Tool — Data Audit Graph -->
+			<!-- Section 3: Advanced Tool — Data Audit Graph -->
 			<section class="section">
 				<div class="section-header">
-					<span class="section-number">2</span>
+					<span class="section-number">3</span>
 					<h2 class="section-title">Advanced Tool — Data Audit Graph</h2>
 					<span class="section-badge">For Advanced &amp; Security Auditing</span>
 				</div>
@@ -966,98 +1114,6 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 				</div>
 			</section>
 
-			<!-- Section 3: Extension Features & Navigation -->
-			<section class="section">
-				<div class="section-header">
-					<span class="section-number">3</span>
-					<h2 class="section-title">Core Features &amp; Where to Find Them</h2>
-				</div>
-				<div class="features-grid">
-					<!-- Settings Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${SETTINGS_SVG}
-									<h3 class="feature-title">Sidebar Settings</h3>
-								</div>
-								<span class="location-badge">Activity Bar (Left)</span>
-							</div>
-							<p class="feature-desc">
-								Manage your GitHub authentication, toggle inline code highlight visibility, 
-								access the help guide, and manage custom rule scripts across organized accordions.
-							</p>
-						</div>
-						<button class="btn" data-action="openSettings">
-							Open Settings Panel
-						</button>
-					</div>
-
-					<!-- Active Vulnerabilities Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${VULN_SVG}
-									<h3 class="feature-title">Active Vulnerabilities</h3>
-								</div>
-								<span class="location-badge">Bottom Panel (Left)</span>
-							</div>
-							<p class="feature-desc">
-								View all active vulnerability findings from your scans. Features the <strong>Session Progress Bar</strong>, 
-								the <strong>Next Focus</strong> recommendation chip, collapsible filter drawer, click-to-navigate code links, 
-								and <strong>Explain Vulnerability</strong> learning actions.
-							</p>
-						</div>
-						<button class="btn" data-action="openActiveVulnerabilities">
-							Open Active Vulnerabilities
-						</button>
-					</div>
-
-					<!-- Full Report Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${REPORT_SVG}
-									<h3 class="feature-title">Full Report</h3>
-								</div>
-								<span class="location-badge">Bottom Panel (Right)</span>
-							</div>
-							<p class="feature-desc">
-								Inspect your comprehensive security dashboard. Displays finding counts by severity, qualitative trend badges 
-								(<em>Some progress</em>, <em>Clear progress</em>), recurring <strong>Common Vulnerability</strong> habit tracking, 
-								and interactive click-to-filter support.
-							</p>
-						</div>
-						<button class="btn" data-action="openFullReport">
-							Open Full Report
-						</button>
-					</div>
-
-					<!-- Inline Code Highlighting Feature -->
-					<div class="feature-card">
-						<div>
-							<div class="feature-header">
-								<div class="feature-title-group">
-									${HIGHLIGHT_SVG}
-									<h3 class="feature-title">Inline Highlighting</h3>
-								</div>
-								<span class="location-badge">Editor Pane</span>
-							</div>
-							<p class="feature-desc">
-								Affected code lines are highlighted with a soft background tint, an overview scrollbar tick, and an italic label. 
-								Hover over any highlight to inspect flaw details or click <strong>[💡 Explain Vulnerability]</strong>.
-							</p>
-							<div class="demo-box">
-								<code>String q = "SELECT * FROM users WHERE id=" + id;</code>
-								<span class="demo-tag">${LIGHTBULB_SVG} [Ariadne] SQL Injection</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</section>
-
 			<!-- Section 4: Friendly Exit / Closing Message -->
 			<section class="closing">
 				<div class="closing-badge">
@@ -1093,7 +1149,7 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
  */
 let currentOnboardingPanel: vscode.WebviewPanel | undefined;
 
-export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
+export function showOnboardingPanel(context: vscode.ExtensionContext, callbacks?: OnboardingCallbacks): vscode.WebviewPanel {
 	if (currentOnboardingPanel) {
 		currentOnboardingPanel.reveal(vscode.ViewColumn.One);
 		return currentOnboardingPanel;
@@ -1173,15 +1229,29 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
 			switch (message.action) {
 				case 'openSettings':
 					await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+					callbacks?.onOpenSettings?.();
 					break;
 				case 'openActiveVulnerabilities':
+					if (callbacks?.onOpenActiveVulnerabilities) {
+						await callbacks.onOpenActiveVulnerabilities();
+						break;
+					}
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
 					break;
 				case 'openFullReport':
+					if (callbacks?.onOpenFullReport) {
+						await callbacks.onOpenFullReport();
+						break;
+					}
 					await vscode.commands.executeCommand('ariadne.panel.sessionMetrics.focus');
 					break;
 				case 'startCoding':
 					panel.dispose();
+					if (callbacks?.onStartCoding) {
+						await callbacks.onStartCoding();
+						break;
+					}
+					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
 					break;
 			}
 		},
@@ -1204,13 +1274,19 @@ export function showOnboardingPanel(context: vscode.ExtensionContext): vscode.We
  * @param context ExtensionContext
  * @returns true if onboarding panel was newly opened, false if already seen
  */
-export async function checkAndShowOnboarding(context: vscode.ExtensionContext): Promise<boolean> {
+export async function checkAndShowOnboarding(context: vscode.ExtensionContext, callbacks?: OnboardingCallbacks): Promise<boolean> {
 	const hasSeen = context.globalState.get<boolean>('ariadne.hasSeenOnboarding');
 	if (hasSeen) {
 		return false;
 	}
 
-	showOnboardingPanel(context);
+	try {
+		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+	} catch {
+		// Ignore if sidebar command not yet ready or registered
+	}
+
+	showOnboardingPanel(context, callbacks);
 	await context.globalState.update('ariadne.hasSeenOnboarding', true);
 	return true;
 }

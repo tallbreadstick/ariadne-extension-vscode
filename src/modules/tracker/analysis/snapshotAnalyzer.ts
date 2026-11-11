@@ -129,7 +129,12 @@ export function buildSessionAnalysis(
 		);
 	});
 
+	const commentedOutFindings = classifications.filter((c) => c.isNewlyCommentedOut === true);
+
 	const newPersistingFindings = classifications.filter((c) => {
+		if (c.isNewlyCommentedOut) {
+			return false;
+		}
 		if (c.isNewPersisting !== undefined) {
 			return c.isNewPersisting;
 		}
@@ -216,6 +221,7 @@ export function buildSessionAnalysis(
 			previousInstanceCount: classification.previousOccurrenceCount,
 			currentInstanceCount: classification.currentOccurrenceCount,
 			reportCount: status === 'persisting' ? reportCount : undefined,
+			...(classification.lifecycle.isCommentedOut ? { isCommentedOut: true } : {}),
 		});
 
 		// Track per-type counts for improving detection
@@ -344,6 +350,7 @@ export function buildSessionAnalysis(
 		absentCandidateFindings,
 		newPersistingFindings,
 		newResolvedFindings,
+		commentedOutFindings,
 	};
 }
 
@@ -399,6 +406,10 @@ function createResolvedPlaceholder(
  * Instead of one row per FLC instance (e.g. "Path Traversal 1" × 8),
  * produces one row per vulnerability type (e.g. "Path Traversal 8").
  */
+function formatAcrossReports(count: number): string {
+	return count === 1 ? 'Across 1 report' : `Across ${count} reports`;
+}
+
 function groupByType(
 	deltas: VulnerabilityDelta[],
 	getCount: (d: VulnerabilityDelta) => number,
@@ -408,19 +419,25 @@ function groupByType(
 		const type = d.vulnerability.type;
 		const existing = map.get(type);
 		const repCount = d.reportCount;
+		const count = getCount(d);
+		const commentedAdd = d.isCommentedOut ? count : 0;
 		if (existing) {
-			existing.instances += getCount(d);
+			existing.instances += count;
+			if (commentedAdd > 0) {
+				existing.commentedOutCount = (existing.commentedOutCount ?? 0) + commentedAdd;
+			}
 			if (repCount !== undefined && repCount > (existing.reportCount ?? 0)) {
 				existing.reportCount = repCount;
-				const countStr = repCount === 1 ? '1 report' : `${repCount} reports`;
-				existing.subtitle = `Present since ${countStr}`;
+				existing.subtitle = formatAcrossReports(repCount);
 			}
 		} else {
-			const item: TrendSubItem = { type, instances: getCount(d) };
+			const item: TrendSubItem = { type, instances: count };
+			if (commentedAdd > 0) {
+				item.commentedOutCount = commentedAdd;
+			}
 			if (repCount !== undefined) {
 				item.reportCount = repCount;
-				const countStr = repCount === 1 ? '1 report' : `${repCount} reports`;
-				item.subtitle = `Present since ${countStr}`;
+				item.subtitle = formatAcrossReports(repCount);
 			}
 			map.set(type, item);
 		}

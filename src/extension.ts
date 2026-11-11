@@ -22,6 +22,7 @@ import { DiagnosticManager } from './modules/presentation/diagnostics/Diagnostic
 import { registerHoverProvider } from './modules/presentation/diagnostics/HoverProvider';
 import { buildActiveVulnerabilitiesHtml, buildVulnKey } from './modules/presentation/views/activeVulnerabilities';
 import { buildSessionMetricsHtml } from './modules/tracker/views/sessionMetrics';
+import { buildGatewayHtml, type GatewayState } from './modules/presentation/views/gatewayPanel.js';
 import {
 	buildTreeViewHtml,
 	retainActiveAudit,
@@ -34,6 +35,10 @@ import { checkAndShowWelcomeToast } from './modules/presentation/onboarding/welc
 import {
 	showOnboardingPanel,
 	checkAndShowOnboarding,
+	isBottomPanelReady,
+	planOnboardingPanelFocus,
+	type OnboardingBottomPanel,
+	type OnboardingPanelAvailability,
 } from './modules/presentation/onboarding/onboardingPanel.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
@@ -52,6 +57,7 @@ import { MetricsIngestService } from './modules/tracker/ingest/metricsIngest.js'
 import type { AuthPanelState, ScannerSettingsViewModel, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
 import {
 	DEFAULT_COPILOT_MODEL,
+	loadConfigurationSettings,
 	type SidebarSettingsViewModel,
 } from './modules/feedback/settings/extensionSettings.js';
 import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
@@ -203,7 +209,7 @@ function getWorkspaceFileContent(filePath: string): string | undefined {
 	return undefined;
 }
 
-let openAriadneSettings: () => Promise<void> = async () => undefined;
+let openAriadneSettings: (section?: 'account' | 'core') => Promise<void> = async () => undefined;
 
 async function focusSignInSidebar(): Promise<void> {
 	await openAriadneSettings();
@@ -511,10 +517,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let initialFindingsReceived = false;
 	let acceptFindings = true;
 	let settingsView: AriadneViewProvider | undefined;
+	let currentTermsAccepted = false;
+	let currentPrivacyAccepted = false;
 	let startScanner: () => void = () => undefined;
 	let stopScanner: () => void = () => undefined;
 	let markScannerBroken: () => void = () => undefined;
 	let applyScannerSelection: () => Promise<void> = async () => undefined;
+	let updatePanelReadyContext: (explicitState?: GatewayState) => void = () => undefined;
 	let reportUpdateStatus: FullReportUpdateStatus = 'idle';
 	let cachedCopilotUsage: SignInPanelViewModel['copilotUsage'] | undefined;
 
@@ -594,11 +603,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		options?: { skipQuota?: boolean },
 	): Promise<void> => {
 		const settings = getSidebarSettings();
+		const baseModel = override ?? await githubAuth.getPanelViewModel();
 		let model: SignInPanelViewModel = {
-			...(override ?? await githubAuth.getPanelViewModel()),
+			...baseModel,
+			hasConsent: baseModel.status === 'signed-out' ? (override ? baseModel.hasConsent : currentTermsAccepted) : baseModel.hasConsent,
+			analyticsConsent: baseModel.status === 'signed-out' ? (override ? baseModel.analyticsConsent : currentPrivacyAccepted) : baseModel.analyticsConsent,
 			settings,
 			scanner: await loadScannerSettings(),
 			copilot: await loadCopilotSettings(),
+			config: loadConfigurationSettings(),
 		};
 
 		if (model.status !== 'signed-in') {
@@ -845,6 +858,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		const persistingMap = new Map<string, number>();
 		const typePersistingReportCount = new Map<string, number>();
+		const typePersistingCommentedOut = new Map<string, number>();
 		const recurringMap = new Map<string, number>();
 		const resolvedMap = new Map<string, number>();
 		const improvingMap = new Map<string, ImprovingSubItem>();
@@ -882,6 +896,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					flc.type,
 					Math.max(typePersistingReportCount.get(flc.type) ?? 0, repCount),
 				);
+				if (flc.isCommentedOut) {
+					typePersistingCommentedOut.set(
+						flc.type,
+						(typePersistingCommentedOut.get(flc.type) ?? 0) + 1,
+					);
+				}
 			} else if (flc.lifecycleState === 'improving') {
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
 			}
@@ -916,11 +936,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			? Array.from(persistingMap.entries()).map(([type, instances]) => {
 				const reportCount = typePersistingReportCount.get(type) ?? 2;
 				const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+				const commentedOutCount = typePersistingCommentedOut.get(type) ?? 0;
 				return {
 					type,
 					instances,
 					reportCount,
-					subtitle: `Present since ${countStr}`,
+					subtitle: `Across ${countStr}`,
+					...(commentedOutCount > 0 ? { commentedOutCount } : {}),
 				};
 			})
 			: undefined;
@@ -1158,6 +1180,169 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
+	let pendingOnboardingFocus: { view: OnboardingBottomPanel; highlight: boolean } | undefined;
+
+	const readPanelAvailability = (): OnboardingPanelAvailability => ({
+		featuresUnlocked,
+		startupLoading,
+		scannerBroken,
+		downloading: scannerBusy && scannerBusyAction === 'download',
+	});
+
+	const spotlightPanel = (view: OnboardingBottomPanel): void => {
+		const provider = view === 'activeVulnerabilities' ? activeVulnsProvider : sessionMetricsProvider;
+		setTimeout(() => {
+			provider.postMessage({ type: 'highlight-panel' });
+		}, 50);
+	};
+
+	const focusRequestedPanel = async (view: OnboardingBottomPanel, highlight: boolean): Promise<void> => {
+		const plan = planOnboardingPanelFocus(readPanelAvailability(), view);
+		if (plan.kind === 'focus-view') {
+			pendingOnboardingFocus = undefined;
+			await vscode.commands.executeCommand(`ariadne.panel.${view}.focus`);
+			if (highlight) {
+				spotlightPanel(view);
+			}
+			return;
+		}
+		pendingOnboardingFocus = plan.kind === 'focus-gateway-until-ready'
+			? { view, highlight }
+			: undefined;
+		await vscode.commands.executeCommand('ariadne.panel.gateway.focus');
+		if (plan.kind !== 'focus-gateway-until-ready') {
+			return;
+		}
+		// The gateway focus command can resolve after the panel becomes ready
+		// and would otherwise leave the user on the gateway.
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		if (isBottomPanelReady(readPanelAvailability())) {
+			pendingOnboardingFocus = { view, highlight };
+			flushPendingOnboardingFocus();
+		}
+	};
+
+	const flushPendingOnboardingFocus = (): void => {
+		if (!pendingOnboardingFocus) {
+			return;
+		}
+		const pending = pendingOnboardingFocus;
+		const plan = planOnboardingPanelFocus(readPanelAvailability(), pending.view);
+		if (plan.kind === 'focus-gateway') {
+			pendingOnboardingFocus = undefined;
+			return;
+		}
+		if (plan.kind !== 'focus-view') {
+			return;
+		}
+		pendingOnboardingFocus = undefined;
+		void vscode.commands.executeCommand(`ariadne.panel.${pending.view}.focus`).then(() => {
+			if (pending.highlight) {
+				spotlightPanel(pending.view);
+			}
+		});
+	};
+
+	let currentGatewayState: GatewayState = { kind: 'signed-out' };
+
+	const gatewayProvider = new AriadneViewProvider(
+		buildGatewayHtml(currentGatewayState),
+		async (msg) => {
+			if (msg.type === 'consent-change') {
+				currentTermsAccepted = msg.termsAccepted === true;
+				currentPrivacyAccepted = msg.privacyAccepted === true;
+				if (currentGatewayState.kind === 'signed-out') {
+					currentGatewayState.termsAccepted = currentTermsAccepted;
+					currentGatewayState.privacyAccepted = currentPrivacyAccepted;
+				}
+				settingsView?.postMessage({
+					type: 'consent-sync',
+					termsAccepted: currentTermsAccepted,
+					privacyAccepted: currentPrivacyAccepted,
+				});
+				return;
+			}
+			if (msg.type === 'gateway-sign-in') {
+				updatePanelReadyContext({ kind: 'initializing' });
+				try {
+					await githubAuth.signIn({
+						termsAccepted: msg.termsAccepted === true,
+						analyticsConsent: msg.privacyAccepted === true,
+					});
+					await refreshSignInPanel();
+					const token = await githubAuth.getAccessToken();
+					if (token) {
+						copilotManager.prewarm(copilotRuntimeOptions(context, token));
+					}
+					vscode.window.showInformationMessage(
+						'Ariadne: Signed in to GitHub. Scanning and AI feedback are enabled.',
+					);
+					startScanner();
+				} catch (error: unknown) {
+					const message =
+						error instanceof Error ? error.message : 'GitHub sign-in failed.';
+					vscode.window.showErrorMessage(`Ariadne: ${message}`);
+					updatePanelReadyContext({ kind: 'signed-out' });
+				}
+				return;
+			}
+			if (msg.type === 'gateway-action') {
+				if (msg.action === 'sign-in') {
+					void openAriadneSettings('account');
+				} else if (msg.action === 'open-settings' || msg.action === 'open-core-settings') {
+					void openAriadneSettings('core');
+				} else if (msg.action === 'open-folder') {
+					void vscode.commands.executeCommand('vscode.openFolder');
+				}
+			}
+		},
+	);
+	gatewayProvider.setResolveHtml(() => buildGatewayHtml(currentGatewayState));
+
+	updatePanelReadyContext = (explicitState?: GatewayState): void => {
+		if (explicitState) {
+			currentGatewayState = explicitState;
+		} else if (!featuresUnlocked) {
+			currentGatewayState = {
+				kind: 'signed-out',
+				termsAccepted: currentTermsAccepted,
+				privacyAccepted: currentPrivacyAccepted,
+			};
+		} else if (scannerBroken) {
+			currentGatewayState = { kind: 'error' };
+		} else if (scannerBusy && scannerBusyAction === 'download') {
+			currentGatewayState = { kind: 'downloading' };
+		} else if (startupLoading) {
+			currentGatewayState = initialFindingsReceived
+				? { kind: 'scanning' }
+				: { kind: 'initializing' };
+		}
+
+		const isPanelReady = isBottomPanelReady(readPanelAvailability());
+		void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', isPanelReady).then(() => {
+			setTimeout(() => flushPendingOnboardingFocus(), 50);
+		});
+		gatewayProvider.updateHtml(buildGatewayHtml(currentGatewayState));
+	};
+
+	void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', false);
+
+	const gatewayDisposable = vscode.window.registerWebviewViewProvider(
+		'ariadne.panel.gateway',
+		gatewayProvider,
+	);
+
+	const onboardingCallbacks = {
+		onOpenSettings: () => {
+			setTimeout(() => {
+				settingsView?.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
+		onOpenActiveVulnerabilities: () => focusRequestedPanel('activeVulnerabilities', true),
+		onOpenFullReport: () => focusRequestedPanel('sessionMetrics', true),
+		onStartCoding: () => focusRequestedPanel('activeVulnerabilities', false),
+	};
+
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
 		activeVulnsProvider,
@@ -1187,6 +1372,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	): Promise<void> => {
 		scannerBusy = true;
 		scannerBusyAction = action;
+		if (action === 'download') {
+			updatePanelReadyContext({ kind: 'downloading' });
+		}
 		await refreshSignInPanel(undefined, { skipQuota: true });
 		try {
 			await work();
@@ -1194,6 +1382,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			scannerBusy = false;
 			scannerBusyAction = 'status';
 			await refreshSignInPanel(undefined, { skipQuota: true });
+			updatePanelReadyContext();
 		}
 	};
 
@@ -1423,7 +1612,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
+			if (msg.type === 'config-update') {
+				const key = typeof msg.key === 'string' ? msg.key : '';
+				const value = msg.value;
+				if (key === 'notifications.level') {
+					if (value === 'milestones' || value === 'all' || value === 'quiet') {
+						await vscode.workspace.getConfiguration('ariadne.notifications').update('level', value, vscode.ConfigurationTarget.Global);
+					}
+				} else if (key === 'autoScan.intervalMinutes') {
+					const num = typeof value === 'number' ? Math.max(2, Math.min(180, Math.round(value))) : 60;
+					await vscode.workspace.getConfiguration('ariadne.autoScan').update('intervalMinutes', num, vscode.ConfigurationTarget.Global);
+				} else if (key === 'executable') {
+					const val = typeof value === 'string' ? value.trim() : '';
+					await vscode.workspace.getConfiguration('ariadne').update('executable', val || 'ariadne', vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.enabled') {
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('enabled', value === true, vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.baseUrl') {
+					const val = typeof value === 'string' ? value.trim() : '';
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('baseUrl', val || 'https://127.0.0.1:8443', vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.apiKey') {
+					const val = typeof value === 'string' ? value.trim() : '';
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('apiKey', val, vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.trustLocalTls') {
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('trustLocalTls', value === true, vscode.ConfigurationTarget.Global);
+				}
+				await refreshSignInPanel(undefined, { skipQuota: true });
+				return;
+			}
+
+			if (msg.type === 'consent-change') {
+				currentTermsAccepted = msg.termsAccepted === true;
+				currentPrivacyAccepted = msg.privacyAccepted === true;
+				if (currentGatewayState.kind === 'signed-out') {
+					currentGatewayState.termsAccepted = currentTermsAccepted;
+					currentGatewayState.privacyAccepted = currentPrivacyAccepted;
+				}
+				gatewayProvider.postMessage({
+					type: 'consent-sync',
+					termsAccepted: currentTermsAccepted,
+					privacyAccepted: currentPrivacyAccepted,
+				});
+				return;
+			}
+
 			if (msg.type === 'github-sign-in') {
+				updatePanelReadyContext({ kind: 'initializing' });
 				await refreshSignInPanel({ status: 'signing-in' });
 				try {
 					await githubAuth.signIn({
@@ -1446,11 +1679,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						status: 'error',
 						errorMessage: message,
 					});
+					updatePanelReadyContext({ kind: 'signed-out' });
 				}
 				return;
 			}
 
 			if (msg.type === 'github-sign-out') {
+				currentTermsAccepted = false;
+				currentPrivacyAccepted = false;
 				await refreshSignInPanel({
 					status: 'signed-out',
 					hasConsent: false,
@@ -1478,7 +1714,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 
 			if (msg.type === 'open-onboarding') {
-				showOnboardingPanel(context);
+				showOnboardingPanel(context, onboardingCallbacks);
 				return;
 			}
 
@@ -1630,8 +1866,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 	settingsView.setResolveHtml(() => latestSignInHtml);
 
-	openAriadneSettings = async () => {
+	openAriadneSettings = async (section?: 'account' | 'core') => {
 		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+		settingsView?.postMessage({
+			type: 'pulse-section',
+			section: section ?? 'core',
+		});
 	};
 
 	const openBottomPanel = async (): Promise<void> => {
@@ -1715,6 +1955,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, featuresUnlocked, true, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshTreeViewPanel();
+		updatePanelReadyContext({ kind: 'error' });
 	};
 
 	const confirmScannerProcess = async (): Promise<void> => {
@@ -1734,6 +1975,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					buildVulnsHtml([], store, true, false, true),
 				);
 			}
+			updatePanelReadyContext();
 			return;
 		}
 		markScannerBroken();
@@ -1866,6 +2108,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const newLevel = getNotificationLevel();
 				console.log(`[Ariadne] Notification level updated to: '${newLevel}'.`);
 			}
+			if (e.affectsConfiguration('ariadne')) {
+				void refreshSignInPanel(undefined, { skipQuota: true });
+			}
 		}),
 	);
 
@@ -1990,6 +2235,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	startScanner = () => {
 		featuresUnlocked = true;
 		acceptFindings = true;
+		startupLoading = true;
+		initialFindingsReceived = false;
+		updatePanelReadyContext({ kind: 'initializing' });
 		if (!rulesLanguageRegistered) {
 			registerRuleLanguage(context);
 			rulesLanguageRegistered = true;
@@ -2017,6 +2265,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 				refreshSessionMetricsPanel();
 				await refreshSignInPanel();
+				updatePanelReadyContext();
 			}
 			if (activeSession && !scannerBroken) {
 				startHourlyScanTimer();
@@ -2026,6 +2275,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	stopScanner = () => {
 		featuresUnlocked = false;
+		startupLoading = true;
+		initialFindingsReceived = false;
 		stopHourlyScanTimer();
 		session.kill();
 		diagnosticManager.clearAll();
@@ -2035,9 +2286,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerChecked = false;
 		acceptFindings = false;
 		reportUpdateStatus = 'idle';
-		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false));
+		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, true));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshSessionMetricsPanel();
+		updatePanelReadyContext({ kind: 'signed-out' });
 		console.log('[Ariadne] Scanner stopped (signed out).');
 	};
 
@@ -2051,9 +2303,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	void githubAuth.isAuthenticated().then(async (signedIn) => {
 		if (!signedIn) {
-			startupLoading = false;
-			activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, false));
+			startupLoading = true;
+			activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, true));
 			refreshSessionMetricsPanel();
+			updatePanelReadyContext({ kind: 'signed-out' });
 			return;
 		}
 		startScanner();
@@ -2085,8 +2338,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		initialFindingsReceived = true;
 		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(vulns.length);
+		updatePanelReadyContext();
 
-		requestTreeView();
+		if (treeViewOpen) {
+			requestTreeView();
+		}
 
 		// ── 2. Session Metrics panel (always updated on live scan) ──────
 		refreshSessionMetricsPanel();
@@ -2284,14 +2540,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openSignInPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSignInPanel',
 		async () => {
-			await openAriadneSettings();
+			await openAriadneSettings('account');
 		},
 	);
 
 	const openSettingsCommand = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openSettings',
 		async () => {
-			await openAriadneSettings();
+			await openAriadneSettings('core');
 		},
 	);
 
@@ -2324,7 +2580,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openOnboarding = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openOnboarding',
 		() => {
-			showOnboardingPanel(context);
+			showOnboardingPanel(context, onboardingCallbacks);
 		},
 	);
 
@@ -2518,6 +2774,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(createAriadneStatusBarItem());
 
 	context.subscriptions.push(
+		gatewayDisposable,
 		activeVulnsDisposable,
 		sessionMetricsDisposable,
 		signInDisposable,
@@ -2534,7 +2791,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	// ── First-run Onboarding & Welcome Orientation ───────────────────────
-	void checkAndShowOnboarding(context);
+	void checkAndShowOnboarding(context, onboardingCallbacks);
 	void checkAndShowWelcomeToast(context.globalState, openBottomPanel);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────

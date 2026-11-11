@@ -20,7 +20,10 @@ import {
 	type CopilotOs,
 	type CopilotPlatformId,
 } from '../llm_request/copilotRelease.js';
-import type { SidebarSettingsViewModel } from '../settings/extensionSettings.js';
+import {
+	defaultConfigurationSettings,
+	type SidebarSettingsViewModel,
+} from '../settings/extensionSettings.js';
 
 function escapeHtml(value: string): string {
 	return value
@@ -69,6 +72,25 @@ const CSS = /* css */ `
 		--input-border: var(--vscode-input-border, var(--vscode-panel-border));
 	}
 
+	@keyframes panelSpotlightPulse {
+		0% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--bg));
+		}
+		50% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--bg));
+		}
+		100% {
+			box-shadow: inset 0 0 0 0 transparent;
+			background-color: var(--bg);
+		}
+	}
+
+	body.panel-spotlight {
+		animation: panelSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
 	* { box-sizing: border-box; }
 
 	body {
@@ -96,6 +118,30 @@ const CSS = /* css */ `
 
 	.accordion-item {
 		border-bottom: 1px solid var(--border);
+		transition: background 0.2s ease, outline-color 0.2s ease;
+	}
+
+	.accordion-item.pulse-attention {
+		animation: accordion-pulse 1.3s ease-out;
+		border-radius: 4px;
+	}
+
+	@keyframes accordion-pulse {
+		0% {
+			background: color-mix(in srgb, #38bdf8 28%, transparent);
+			outline: 2px solid #38bdf8;
+			outline-offset: -1px;
+		}
+		50% {
+			background: color-mix(in srgb, #38bdf8 15%, transparent);
+			outline: 2px solid #38bdf8;
+			outline-offset: -1px;
+		}
+		100% {
+			background: transparent;
+			outline: 2px solid transparent;
+			outline-offset: -1px;
+		}
 	}
 
 	.accordion-item > summary {
@@ -355,6 +401,7 @@ const CSS = /* css */ `
 		height: 100%;
 		border-radius: 999px;
 		background: var(--accent);
+		/* impeccable-disable-next-line layout-transition: Copilot usage meter fill; settings UI left as shipped */
 		transition: width 0.2s ease-out;
 	}
 
@@ -454,13 +501,46 @@ const CSS = /* css */ `
 		color: var(--muted);
 	}
 
-	.field select {
+	.field select,
+	.field input[type="text"],
+	.field input[type="number"],
+	.field input[type="password"] {
 		width: 100%;
+		box-sizing: border-box;
 		background: var(--input-bg);
 		color: var(--input-fg);
 		border: 1px solid var(--input-border);
 		padding: 4px 6px;
 		font: inherit;
+		border-radius: 2px;
+	}
+
+	.field select:focus-visible,
+	.field input:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: -1px;
+	}
+
+	.config-subhead {
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+		margin-top: 6px;
+	}
+
+	.config-divider {
+		border: 0;
+		border-top: 1px solid var(--border);
+		margin: 6px 0;
+	}
+
+	.config-hint {
+		margin: -2px 0 4px;
+		font-size: 11px;
+		color: var(--muted);
+		line-height: 1.35;
 	}
 
 	.binary-list {
@@ -931,6 +1011,67 @@ function buildCopilotSection(model: SignInPanelViewModel): string {
 		<script type="application/json" id="copilot-catalog">${JSON.stringify(catalog)}</script>`;
 }
 
+function buildConfigurationSection(model: SignInPanelViewModel): string {
+	const config = model.config ?? defaultConfigurationSettings();
+	const level = config.notificationLevel;
+	const isMilestones = level === 'milestones';
+	const isAll = level === 'all';
+	const isQuiet = level === 'quiet';
+
+	return /* html */ `
+		<p class="subtitle">Customize scan intervals, notifications, scanner binary path, and metrics telemetry.</p>
+
+		<label class="field">
+			<span class="field-label">Notification level</span>
+			<select id="config-notification-level" aria-label="Notification level">
+				<option value="milestones" ${isMilestones ? 'selected' : ''}>Milestones (recommended)</option>
+				<option value="all" ${isAll ? 'selected' : ''}>All notifications</option>
+				<option value="quiet" ${isQuiet ? 'selected' : ''}>Quiet (suppress toasts)</option>
+			</select>
+		</label>
+		<p class="config-hint">Controls popup toasts for new vulnerabilities and lifecycle updates.</p>
+
+		<label class="field">
+			<span class="field-label">Auto-scan interval (minutes)</span>
+			<input type="number" id="config-autoscan-interval" min="2" max="180" step="1" value="${config.autoScanIntervalMinutes}" aria-label="Auto-scan interval in minutes" />
+		</label>
+		<p class="config-hint">Full background scan interval (2–180 minutes, default 60).</p>
+
+		<label class="field">
+			<span class="field-label">Executable path</span>
+			<input type="text" id="config-executable-path" value="${escapeHtml(config.executablePath)}" placeholder="ariadne" aria-label="Executable path" />
+		</label>
+		<p class="config-hint">Optional path to a local binary. Leave as <code>ariadne</code> to use the managed build.</p>
+
+		<hr class="config-divider" />
+		<div class="config-subhead">Metrics telemetry</div>
+
+		<button class="switch" id="config-metrics-enabled" type="button" role="switch" aria-checked="${config.metricsEnabled ? 'true' : 'false'}">
+			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+			<span>Send session metrics</span>
+		</button>
+		<p class="config-hint">Send anonymized metrics when signed in with analytics consent.</p>
+
+		<div id="config-metrics-details" ${config.metricsEnabled ? '' : 'hidden'}>
+			<label class="field">
+				<span class="field-label">Collection server URL</span>
+				<input type="text" id="config-metrics-base-url" value="${escapeHtml(config.metricsBaseUrl)}" placeholder="https://127.0.0.1:8443" aria-label="Collection server base URL" />
+			</label>
+
+			<label class="field" style="margin-top: 8px;">
+				<span class="field-label">API key (bearer token)</span>
+				<input type="password" id="config-metrics-api-key" value="${escapeHtml(config.metricsApiKey)}" placeholder="Token (32+ characters)" aria-label="Metrics ingest API key" />
+			</label>
+			<p class="config-hint">Leave empty to use secret storage token.</p>
+
+			<button class="switch" id="config-metrics-trust-local-tls" type="button" role="switch" aria-checked="${config.metricsTrustLocalTls ? 'true' : 'false'}" style="margin-top: 6px;">
+				<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+				<span>Trust local TLS certificates</span>
+			</button>
+			<p class="config-hint">Allow self-signed certificates for 127.0.0.1 or localhost.</p>
+		</div>`;
+}
+
 function buildSessionSection(): string {
 	return /* html */ `
 		<p class="subtitle">Manage local scan history and metrics for this workspace.</p>
@@ -1002,6 +1143,12 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					${buildCopilotSection(model)}
 				</div>
 			</details>
+			<details class="accordion-item" id="accordion-configuration" name="ariadne-settings">
+				<summary>Configuration<span class="chevron" aria-hidden="true"></span></summary>
+				<div class="accordion-body">
+					${buildConfigurationSection(model)}
+				</div>
+			</details>
 			<details class="accordion-item" id="accordion-scripting" name="ariadne-settings">
 				<summary>Scripting<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
@@ -1017,7 +1164,19 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
-			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-scripting', 'accordion-help'];
+
+			window.addEventListener('message', (event) => {
+				const msg = event.data;
+				if (msg && msg.type === 'highlight-panel') {
+					document.body.classList.remove('panel-spotlight');
+					void document.body.offsetWidth;
+					document.body.classList.add('panel-spotlight');
+					setTimeout(() => {
+						document.body.classList.remove('panel-spotlight');
+					}, 1500);
+				}
+			});
+			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-configuration', 'accordion-scripting', 'accordion-help'];
 
 			function restoreAccordion() {
 				const saved = vscode.getState()?.openSection;
@@ -1065,9 +1224,60 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				signInBtn.disabled = !(termsCheckbox.checked && privacyCheckbox.checked);
 			}
 
-			termsCheckbox?.addEventListener('change', updateSignInEnabled);
-			privacyCheckbox?.addEventListener('change', updateSignInEnabled);
+			function onSidebarConsentChange() {
+				updateSignInEnabled();
+				vscode.postMessage({
+					type: 'consent-change',
+					termsAccepted: Boolean(termsCheckbox && termsCheckbox.checked),
+					privacyAccepted: Boolean(privacyCheckbox && privacyCheckbox.checked),
+				});
+			}
+
+			termsCheckbox?.addEventListener('change', onSidebarConsentChange);
+			privacyCheckbox?.addEventListener('change', onSidebarConsentChange);
 			updateSignInEnabled();
+
+			window.addEventListener('message', (event) => {
+				const msg = event.data;
+				if (msg && msg.type === 'pulse-section') {
+					const targetMap = {
+						core: 'accordion-scanner',
+						account: 'accordion-account',
+						configuration: 'accordion-configuration',
+						copilot: 'accordion-copilot',
+						session: 'accordion-session',
+						scripting: 'accordion-scripting',
+						help: 'accordion-help',
+					};
+					const targetId = targetMap[msg.section] || (msg.section === 'core' ? 'accordion-scanner' : 'accordion-account');
+					for (const id of accordionIds) {
+						const el = document.getElementById(id);
+						if (el) {
+							el.open = (id === targetId);
+						}
+					}
+					vscode.setState({ ...(vscode.getState() ?? {}), openSection: targetId });
+					const targetEl = document.getElementById(targetId);
+					if (targetEl) {
+						targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+						targetEl.classList.remove('pulse-attention');
+						void targetEl.offsetWidth;
+						targetEl.classList.add('pulse-attention');
+						setTimeout(() => {
+							targetEl.classList.remove('pulse-attention');
+						}, 1400);
+					}
+				}
+				if (msg && msg.type === 'consent-sync') {
+					if (termsCheckbox && typeof msg.termsAccepted === 'boolean') {
+						termsCheckbox.checked = msg.termsAccepted;
+					}
+					if (privacyCheckbox && typeof msg.privacyAccepted === 'boolean') {
+						privacyCheckbox.checked = msg.privacyAccepted;
+					}
+					updateSignInEnabled();
+				}
+			});
 
 			signInBtn?.addEventListener('click', () => {
 				if (!termsCheckbox?.checked || !privacyCheckbox?.checked) {
@@ -1431,6 +1641,84 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					});
 				});
 			}
+
+			document.getElementById('config-notification-level')?.addEventListener('change', (event) => {
+				const select = event.currentTarget;
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'notifications.level',
+					value: select.value,
+				});
+			});
+
+			document.getElementById('config-autoscan-interval')?.addEventListener('change', (event) => {
+				const input = event.currentTarget;
+				const raw = parseInt(input.value, 10);
+				const clamped = isNaN(raw) ? 60 : Math.max(2, Math.min(180, raw));
+				input.value = clamped;
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'autoScan.intervalMinutes',
+					value: clamped,
+				});
+			});
+
+			document.getElementById('config-executable-path')?.addEventListener('change', (event) => {
+				const input = event.currentTarget;
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'executable',
+					value: input.value.trim(),
+				});
+			});
+
+			document.getElementById('config-metrics-enabled')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				const enabled = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', enabled ? 'true' : 'false');
+				const details = document.getElementById('config-metrics-details');
+				if (details) {
+					if (enabled) {
+						details.removeAttribute('hidden');
+					} else {
+						details.setAttribute('hidden', '');
+					}
+				}
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'metricsIngest.enabled',
+					value: enabled,
+				});
+			});
+
+			document.getElementById('config-metrics-base-url')?.addEventListener('change', (event) => {
+				const input = event.currentTarget;
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'metricsIngest.baseUrl',
+					value: input.value.trim(),
+				});
+			});
+
+			document.getElementById('config-metrics-api-key')?.addEventListener('change', (event) => {
+				const input = event.currentTarget;
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'metricsIngest.apiKey',
+					value: input.value.trim(),
+				});
+			});
+
+			document.getElementById('config-metrics-trust-local-tls')?.addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				const trusted = button.getAttribute('aria-checked') !== 'true';
+				button.setAttribute('aria-checked', trusted ? 'true' : 'false');
+				vscode.postMessage({
+					type: 'config-update',
+					key: 'metricsIngest.trustLocalTls',
+					value: trusted,
+				});
+			});
 
 			window.addEventListener('message', (event) => {
 				const msg = event.data;
