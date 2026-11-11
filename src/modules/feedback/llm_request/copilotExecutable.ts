@@ -4,6 +4,7 @@ import { chmod, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import * as vscode from 'vscode';
+import { logAriadneError } from '../../core/debugLog.js';
 import {
 	hostCopilotPlatformIds,
 	normalizeCopilotPreferences,
@@ -239,6 +240,7 @@ export async function downloadCopilotPlatform(
 			return 'cancelled';
 		}
 		console.error('[Ariadne] Copilot download failed:', error);
+		logAriadneError('copilot-download', error);
 		void vscode.window.showErrorMessage('Ariadne: Copilot download failed.');
 		return 'failed';
 	}

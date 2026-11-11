@@ -34,6 +34,7 @@
     "onLanguage:ariadne",
     "workspaceContains:rules/main.ariadne",
     "onCommand:ariadne-extension-vscode.openOnboarding",
+    "onCommand:ariadne-extension-vscode.openDebugLogFolder",
     "onCommand:ariadne-extension-vscode.debugResetOnboarding",
     "onView:ariadne.panel.activeVulnerabilities",
     "onView:ariadne.panel.sessionMetrics",
@@ -101,6 +102,10 @@
       {
         "command": "ariadne-extension-vscode.openPrivacyPolicy",
         "title": "Ariadne: Privacy Policy"
+      },
+      {
+        "command": "ariadne-extension-vscode.openDebugLogFolder",
+        "title": "Ariadne: Open Debug Log Folder"
       }
     ],
     "viewsContainers": {

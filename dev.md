@@ -176,6 +176,18 @@ GitHub sign-in is required to use the extension (scanning, rule scripts, and AI 
 | `test` | `npm test` | Extension tests (`vscode-test`) |
 | `workflow` | `npm run workflow` | Agentic workflow CLI |
 
+## Debug error logs
+
+Errors from LLM feedback, Copilot prewarm/download, scanner download, and metrics ingest append to daily files under the extension's global storage: `debug-logs/ariadne-YYYY-MM-DD.log`.
+
+Open the folder from the Command Palette: **Ariadne: Open Debug Log Folder**.
+
+## Debug error logs
+
+Errors from LLM feedback, Copilot prewarm/download, scanner download, and metrics ingest append to daily files under the extension's global storage: `debug-logs/ariadne-YYYY-MM-DD.log`.
+
+Open the folder from the Command Palette: **Ariadne: Open Debug Log Folder**.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |

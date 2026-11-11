@@ -3,6 +3,7 @@ import { createWriteStream, existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import * as vscode from 'vscode';
+import { logAriadneError } from './debugLog.js';
 import {
 	LATEST_RELEASE_URL,
 	normalizeScannerPreferences,
@@ -183,6 +184,7 @@ export async function downloadReleaseAsset(
 			return 'cancelled';
 		}
 		console.error('[Ariadne] Scanner download failed:', error);
+		logAriadneError('scanner-download', error);
 		void vscode.window.showErrorMessage('Ariadne: download failed.');
 		return 'failed';
 	}

@@ -56,6 +56,11 @@ import {
 } from './modules/feedback/settings/extensionSettings.js';
 import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
 import {
+	configureDebugLog,
+	debugLogDirectory,
+	logAriadneError,
+} from './modules/core/debugLog.js';
+import {
 	cachedScannerPath,
 	configureAriadneExecutable,
 	deleteDownloadedScanner,
@@ -323,6 +328,7 @@ function buildVulnsHtml(
 // ACTIVATE
 // ─────────────────────────────────────────────────────────────────────
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+	configureDebugLog(context.globalStorageUri.fsPath);
 
 	const readScannerChoice = (): ScannerPreferences => {
 		const saved = context.globalState.get<{ auto?: boolean; os?: string; target?: string }>('ariadne.scannerPreferences');
@@ -449,6 +455,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		void metricsIngest.uploadSessionFinalized(session).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn('[Ariadne] Session metrics upload failed:', message);
+			logAriadneError('metrics-ingest', error, 'session_finalized');
 		});
 	};
 
@@ -459,6 +466,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		void metricsIngest.uploadHourlyCheckpoint(sessionId, checkpoint).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn('[Ariadne] Hourly checkpoint upload failed:', message);
+			logAriadneError('metrics-ingest', error, 'hourly_checkpoint');
 		});
 	};
 
@@ -476,6 +484,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		void metricsIngest.uploadFeatureUsage(featureName, options).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn('[Ariadne] Feature usage upload failed:', message);
+			logAriadneError('metrics-ingest', error, featureName);
 		});
 	};
 	const session = runSession();
@@ -2322,6 +2331,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 
+	const openDebugLogFolder = vscode.commands.registerCommand(
+		'ariadne-extension-vscode.openDebugLogFolder',
+		async () => {
+			const { mkdir } = await import('node:fs/promises');
+			const dir = debugLogDirectory();
+			await mkdir(dir, { recursive: true });
+			const opened = await vscode.env.openExternal(vscode.Uri.file(dir));
+			if (!opened) {
+				vscode.window.showInformationMessage(`Ariadne debug logs: ${dir}`);
+			}
+		},
+	);
+
 	const openPrivacyPolicy = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openPrivacyPolicy',
 		() => {
@@ -2462,6 +2484,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					failureReason,
 					rawMessage,
 				);
+				logAriadneError('llm-feedback', error, `reason=${failureReason}`);
 				queueExplainVulnerabilityMetrics('fallback', vuln.cwe, failureReason);
 				const fallback = buildStaticExplanation(vulnMetadata);
 				const fallbackFinding: FeedbackFinding = {
@@ -2496,6 +2519,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		openOnboarding,
 		openTermsOfUse,
 		openPrivacyPolicy,
+		openDebugLogFolder,
 		openFeedbackPanel,
 	);
 

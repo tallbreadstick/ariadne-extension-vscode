@@ -3,6 +3,7 @@
  * every AI feedback request (~5–10 s saved per call).
  */
 
+import { logAriadneError } from '../../core/debugLog.js';
 import type { CopilotRuntimeOptions } from './copilotRuntime.js';
 import { createCopilotClient } from './copilotRuntime.js';
 
@@ -50,6 +51,7 @@ export class CopilotClientManager {
 		void this.getClient(options).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn('[Ariadne] Copilot prewarm failed:', message);
+			logAriadneError('copilot-prewarm', error);
 		});
 	}
 
