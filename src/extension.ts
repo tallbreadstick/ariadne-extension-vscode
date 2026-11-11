@@ -53,6 +53,7 @@ import { MetricsIngestService } from './modules/tracker/ingest/metricsIngest.js'
 import type { AuthPanelState, ScannerSettingsViewModel, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
 import {
 	DEFAULT_COPILOT_MODEL,
+	loadConfigurationSettings,
 	type SidebarSettingsViewModel,
 } from './modules/feedback/settings/extensionSettings.js';
 import { initRuleScripts, resetRuleScripts } from './modules/core/ariadneCli.js';
@@ -606,6 +607,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			settings,
 			scanner: await loadScannerSettings(),
 			copilot: await loadCopilotSettings(),
+			config: loadConfigurationSettings(),
 		};
 
 		if (model.status !== 'signed-in') {
@@ -1521,6 +1523,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
+			if (msg.type === 'config-update') {
+				const key = typeof msg.key === 'string' ? msg.key : '';
+				const value = msg.value;
+				if (key === 'notifications.level') {
+					if (value === 'milestones' || value === 'all' || value === 'quiet') {
+						await vscode.workspace.getConfiguration('ariadne.notifications').update('level', value, vscode.ConfigurationTarget.Global);
+					}
+				} else if (key === 'autoScan.intervalMinutes') {
+					const num = typeof value === 'number' ? Math.max(2, Math.min(180, Math.round(value))) : 60;
+					await vscode.workspace.getConfiguration('ariadne.autoScan').update('intervalMinutes', num, vscode.ConfigurationTarget.Global);
+				} else if (key === 'executable') {
+					const val = typeof value === 'string' ? value.trim() : '';
+					await vscode.workspace.getConfiguration('ariadne').update('executable', val || 'ariadne', vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.enabled') {
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('enabled', value === true, vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.baseUrl') {
+					const val = typeof value === 'string' ? value.trim() : '';
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('baseUrl', val || 'https://127.0.0.1:8443', vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.apiKey') {
+					const val = typeof value === 'string' ? value.trim() : '';
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('apiKey', val, vscode.ConfigurationTarget.Global);
+				} else if (key === 'metricsIngest.trustLocalTls') {
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('trustLocalTls', value === true, vscode.ConfigurationTarget.Global);
+				}
+				await refreshSignInPanel(undefined, { skipQuota: true });
+				return;
+			}
+
 			if (msg.type === 'consent-change') {
 				currentTermsAccepted = msg.termsAccepted === true;
 				currentPrivacyAccepted = msg.privacyAccepted === true;
@@ -1988,6 +2018,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (e.affectsConfiguration('ariadne.notifications.level')) {
 				const newLevel = getNotificationLevel();
 				console.log(`[Ariadne] Notification level updated to: '${newLevel}'.`);
+			}
+			if (e.affectsConfiguration('ariadne')) {
+				void refreshSignInPanel(undefined, { skipQuota: true });
 			}
 		}),
 	);

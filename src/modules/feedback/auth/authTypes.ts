@@ -29,6 +29,18 @@ export interface StoredAuthSession {
 /** Auth state for the sidebar (settings are attached when rendering). */
 export type AuthPanelState = Omit<SignInPanelViewModel, 'settings'>;
 
+export type NotificationLevel = 'milestones' | 'all' | 'quiet';
+
+export interface ConfigurationSettingsViewModel {
+	notificationLevel: NotificationLevel;
+	autoScanIntervalMinutes: number;
+	executablePath: string;
+	metricsEnabled: boolean;
+	metricsBaseUrl: string;
+	metricsApiKey: string;
+	metricsTrustLocalTls: boolean;
+}
+
 /** View-model passed into the sign-in panel HTML builder. */
 export interface SignInPanelViewModel {
 	status: 'loading' | 'signed-out' | 'signed-in' | 'signing-in' | 'error';
@@ -47,6 +59,7 @@ export interface SignInPanelViewModel {
 	settings: SidebarSettingsViewModel;
 	scanner?: ScannerSettingsViewModel;
 	copilot?: CopilotSettingsViewModel;
+	config?: ConfigurationSettingsViewModel;
 }
 
 export interface CopilotBinaryOption {
