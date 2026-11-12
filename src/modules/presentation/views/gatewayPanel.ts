@@ -170,11 +170,10 @@ const CSS = /* css */ `
 		text-align: center;
 		max-width: 480px;
 		width: 100%;
-		padding: 28px 24px;
-		border-radius: 12px;
-		background: var(--card-bg);
-		border: 1px solid var(--border);
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+		padding: 24px 16px;
+		background: transparent;
+		border: none;
+		box-shadow: none;
 		z-index: 2;
 	}
 

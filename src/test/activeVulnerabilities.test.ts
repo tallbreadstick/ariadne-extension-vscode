@@ -75,11 +75,24 @@ describe('Active Vulnerabilities filter menu', () => {
 		assert.ok(html.includes('lightbulb-icon'), 'Lightbulb icon missing');
 		assert.ok(!html.includes('Ask Ariadne</span>'), 'Ask Ariadne label should be replaced');
 		const titleIdx = html.indexOf('class="issue-title"');
-		const explainIdx = html.indexOf('class="action-button btn-explain"');
-		const fileIdx = html.indexOf('class="summary-file"');
-		const detailsPanelIdx = html.indexOf('class="details-panel"');
-		assert.ok(titleIdx < explainIdx && explainIdx < fileIdx, 'Explain Vulnerability button should sit between issue-title and summary-file');
-		assert.ok(explainIdx < detailsPanelIdx, 'Explain Vulnerability button should be visible inside summary outside details-panel');
+		const descIdx = html.indexOf('class="issue-description"');
+		const actionsIdx = html.indexOf('class="card-actions"');
+		assert.ok(titleIdx < descIdx && descIdx < actionsIdx, 'Issue title should precede description, followed by actions');
+		assert.ok(html.includes('goto-location'), 'Card should include interactive goto-location button');
+	});
+
+	it('renders flat vulnerability cards without details, summary, or chevron accordion elements', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
+		assert.ok(!html.includes('<details'), 'Card should not use <details> element');
+		assert.ok(!html.includes('<summary'), 'Card should not use <summary> element');
+		assert.ok(!html.includes('class="chevron"'), 'Chevron fold icon should be removed');
+		assert.ok(!html.includes('class="details-panel"'), 'details-panel fold container should be removed');
+		assert.ok(/<article[^>]*class="vuln-card"/.test(html), 'Card should be a semantic <article> element');
+	});
+
+	it('omits redundant second CWE and OWASP reference block', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
+		assert.ok(!html.includes('detail-label">CWE · OWASP Reference<'), 'Redundant expanded CWE/OWASP section should be removed');
 	});
 
 	it('renders backtick spans in the description as inline code', () => {
