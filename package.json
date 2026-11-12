@@ -4,7 +4,7 @@
   "icon": "media/ariadne.png",
   "publisher": "tallbreadstick",
   "description": "A student-first VS Code tool that reviews code for security flaws without compromising academic integrity.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",

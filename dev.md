@@ -122,7 +122,7 @@ The published page is [README.md](README.md). This section is the lab and develo
 
 - **Sign in** — GitHub session. Scanning, custom rules, and explanations require it.
 - **Sessions** — Session status.
-- **Core** — Editor highlights, whether the bottom panel opens on startup, **Auto** scanner selection, operating system, and scanner binary. Leave **Auto** on unless you need a specific build from the [Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases).
+- **Core** — Editor highlights, whether the bottom panel opens on startup, **Auto** scanner selection, operating system, scanner binary, and (when **Auto** is off) release **version** from the [Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases) list. Leave **Auto** on unless you need a specific build or version.
 - **Scripting** — `.ariadne` rule files in the workspace.
 
 | Core option | What it does |

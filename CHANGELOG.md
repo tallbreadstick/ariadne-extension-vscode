@@ -4,6 +4,19 @@ All notable changes to the "ariadne-extension-vscode" extension will be document
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.3] - 2026-11-12
+
+### Added
+
+- **Commented-out code** warnings when a vulnerability is disabled by commenting it out, with a pill in session metrics.
+- **Persisting** report count pill beside vulnerability labels in session metrics.
+- Onboarding flow: reordered sections, opens the bottom panel on **Start Coding**, spotlight on the settings sidebar, and first-install auto-opens Ariadne settings.
+- Sidebar **Core** release **version** picker (0.0.1, 0.0.2, … from [ariadne-binaries](https://github.com/tallbreadstick/ariadne-binaries/releases)) when **Auto** is off.
+
+### Changed
+
+- After downloading a scanner on Windows, run `Unblock-File` so Explorer-marked downloads are less likely to fail at launch (Smart App Control may still block unsigned exes).
+
 ## [0.1.2] - 2026-11-12
 
 ### Added
