@@ -27,7 +27,6 @@ const RELEASE_HOSTS = [
 let cacheDir: string | undefined;
 let inflightKey: string | undefined;
 let inflight: Promise<string> | undefined;
-let readDebugMode: () => boolean = () => false;
 let readPrefs: () => ScannerPreferences = () => normalizeScannerPreferences({
 	auto: undefined,
 	os: undefined,
@@ -41,13 +40,9 @@ let readPrefs: () => ScannerPreferences = () => normalizeScannerPreferences({
 export function configureAriadneExecutable(
 	storageDir: string,
 	readPreferences: () => ScannerPreferences,
-	readDebugModePreference?: () => boolean,
 ): void {
 	cacheDir = join(storageDir, 'scanner');
 	readPrefs = readPreferences;
-	if (readDebugModePreference) {
-		readDebugMode = readDebugModePreference;
-	}
 }
 
 /**
@@ -72,7 +67,7 @@ export function ensureAriadneExecutable(): Promise<string> {
 function selectionKey(): string {
 	const prefs = readPrefs();
 	const executable = vscode.workspace.getConfiguration('ariadne').get<string>('executable', DEFAULT_EXECUTABLE) ?? DEFAULT_EXECUTABLE;
-	return `${readDebugMode()}\n${prefs.auto}\n${prefs.os}\n${prefs.target}\n${executable}`;
+	return `${prefs.auto}\n${prefs.os}\n${prefs.target}\n${executable}`;
 }
 
 /** Saved Auto / OS / binary choice. Auto is on until the user turns it off. */
@@ -81,10 +76,6 @@ export function readScannerPreferencesFromConfig(): ScannerPreferences {
 }
 
 async function resolveExecutable(): Promise<string> {
-	if (readDebugMode()) {
-		console.log('[Ariadne] Debug mode: using `ariadne` from PATH');
-		return DEFAULT_EXECUTABLE;
-	}
 	const override = localExecutableOverride();
 	if (override) {
 		console.log(`[Ariadne] Scanner setting ignored; using ariadne.executable: ${override}`);

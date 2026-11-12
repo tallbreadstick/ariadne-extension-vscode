@@ -359,12 +359,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			arch: process.arch,
 		});
 	};
-	let debugMode = context.globalState.get<boolean>('ariadne.debugMode') === true;
-	configureAriadneExecutable(
-		context.globalStorageUri.fsPath,
-		readScannerChoice,
-		() => debugMode,
-	);
+	configureAriadneExecutable(context.globalStorageUri.fsPath, readScannerChoice);
 
 	const readCopilotChoice = (): CopilotPreferences => {
 		const defaultVersion = bundledCopilotCliVersion(context.extensionPath);
@@ -585,12 +580,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			binaries: targetsForOs(prefs.os).map(toOption),
 			downloaded: [...downloadedIds].map(toOption),
 			working: scannerChecked ? !scannerBroken : undefined,
-			overrideActive: debugMode || localExecutableOverride() !== undefined,
+			overrideActive: localExecutableOverride() !== undefined,
 			busy: scannerBusy,
 			busyAction: scannerBusyAction,
 			highlightsVisible,
 			openPanelOnStartup,
-			debugMode,
 		};
 	};
 
@@ -1353,7 +1347,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	};
 
 	const activeScannerTarget = (): string | undefined => {
-		if (debugMode || localExecutableOverride()) {
+		if (localExecutableOverride()) {
 			return undefined;
 		}
 		const prefs = readScannerPreferencesFromConfig();
@@ -1513,13 +1507,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				openPanelOnStartup = msg.enabled === true;
 				await context.globalState.update('ariadne.openPanelOnStartup', openPanelOnStartup);
 				await refreshSignInPanel(undefined, { skipQuota: true });
-				return;
-			}
-
-			if (msg.type === 'debug-mode-set') {
-				debugMode = msg.enabled === true;
-				await context.globalState.update('ariadne.debugMode', debugMode);
-				await runScannerChange(() => applyScannerSelection());
 				return;
 			}
 
@@ -1894,7 +1881,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	applyScannerSelection = async () => {
 		const prefs = readScannerPreferencesFromConfig();
-		if (!debugMode && !localExecutableOverride() && !prefs.auto) {
+		if (!localExecutableOverride() && !prefs.auto) {
 			const cached = await cachedScannerPath(prefs.target);
 			if (!cached) {
 				scannerChecked = true;

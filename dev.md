@@ -4,11 +4,7 @@ VS Code extension for **Ariadne** — inline security diagnostics, vulnerability
 
 The scanner binary is downloaded from the [latest Ariadne release](https://github.com/tallbreadstick/ariadne-binaries/releases) the first time a scan runs. **Auto** in the sidebar Core section picks the build for this computer. You can choose a specific build there.
 
-For local engine work, turn on **Debug core** in the sidebar Core section (or set `ariadne.executable` to an absolute path to your `target/debug/ariadne` or `target/release/ariadne`). Debug core spawns `ariadne` from your shell `PATH` and skips release downloads — no publish step required. Example after building the engine:
-
-```bash
-export PATH="/path/to/ariadne-core/target/debug:$PATH"
-```
+For local engine work, set `ariadne.executable` to an absolute path to your `target/debug/ariadne` or `target/release/ariadne` (that setting overrides the downloaded release binary).
 
 The marketplace page is [README.md](README.md). It does not describe the binary picker, settings keys, or this build loop.
 
