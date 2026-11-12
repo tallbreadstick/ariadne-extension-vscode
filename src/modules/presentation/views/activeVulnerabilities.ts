@@ -192,12 +192,6 @@ function locationHtml(filePath: string, line: number): string {
 	return `${FILE_SVG}<span class="loc-path">${parentHtml}<span class="loc-name">${escapeHtml(name)}</span></span><span class="loc-line">${line}</span>`;
 }
 
-const CHEVRON_SVG =
-	`<svg class="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-		<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
-			stroke-linecap="round" stroke-linejoin="round" />
-	</svg>`;
-
 const FILTER_SVG =
 	`<svg class="filter-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2"
@@ -251,12 +245,11 @@ const FOCUS_ICON_SVG = (severity?: Severity) =>
 
 // ── Card builder ──────────────────────────────────────────────────────
 
-function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
+function buildVulnCard(vuln: Vulnerability): string {
 	const meta = buildMeta(vuln);
 	const label = capitalize(vuln.severity);
 	const location = locationHtml(vuln.filePath, vuln.line);
 	const locationTitle = escapeAttr(`${vuln.filePath}:${vuln.line}`);
-	const openAttr = expanded ? ' open' : '';
 	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${askAriadneCommandQuery({
 		cwe: vuln.cwe,
 		title: vuln.title,
@@ -266,66 +259,42 @@ function buildVulnCard(vuln: Vulnerability, expanded: boolean): string {
 	const vulnKey = encodeURIComponent(buildVulnKey(vuln));
 
 	return /* html */ `
-		<details
+		<article
 			class="vuln-card"
 			data-vuln-key="${vulnKey}"
 			data-severity="${vuln.severity}"
 			data-cwe="${escapeAttr(vuln.cwe)}"
 			data-category="${escapeAttr(vuln.owaspRef ?? '')}"
 			data-type="${escapeAttr(vuln.title)}"
-			data-file="${escapeAttr(vuln.filePath)}"${openAttr}>
-			<summary>
-				<div class="summary-row">
-					<div class="summary-left">
-						${WARNING_SVG(vuln.severity)}
-						<div class="summary-content">
-							<div class="summary-header">
-								<span class="badge ${vuln.severity}">${label}</span>
-								<span class="issue-meta">${meta}</span>
-							</div>
-							<div class="issue-title">${vuln.title}</div>
-							<div class="cta-row">
-								<a class="action-button btn-explain" role="button" href="${feedbackHref}"
-									data-cwe="${escapeAttr(vuln.cwe)}"
-									data-title="${escapeAttr(vuln.title)}"
-									data-file="${escapeAttr(vuln.filePath)}"
-									data-line="${vuln.line}"
-									title="View AI conceptual explanation">
-									${LIGHTBULB_SVG}
-									<span>Explain Vulnerability</span>
-								</a>
-							</div>
-							<div class="summary-file" title="${locationTitle}">
-								${location}
-							</div>
-						</div>
-					</div>
-					${CHEVRON_SVG}
-				</div>
-			</summary>
-			<div class="details-panel">
-				<div class="detail-grid">
-					<div class="detail-row span-2">
-						<div class="detail-label">Description</div>
-						<div class="detail-value">${inlineCode(vuln.description)}</div>
-					</div>
-					<div class="detail-row">
-						<div class="detail-label">File Location</div>
-						<button type="button" class="detail-value goto-location"
-						   data-file="${escapeAttr(vuln.filePath)}"
-						   data-line="${vuln.line}"
-						   title="Open ${locationTitle}">
-							${location}
-							${LOC_GO_SVG}
-						</button>
-					</div>
-					<div class="detail-row">
-						<div class="detail-label">CWE · OWASP Reference</div>
-						<div class="detail-value reference">${meta}</div>
-					</div>
+			data-file="${escapeAttr(vuln.filePath)}">
+			<div class="card-header">
+				${WARNING_SVG(vuln.severity)}
+				<div class="card-header-meta">
+					<span class="badge ${vuln.severity}">${label}</span>
+					<span class="issue-meta">${meta}</span>
 				</div>
 			</div>
-		</details>`;
+			<div class="issue-title">${vuln.title}</div>
+			<div class="issue-description">${inlineCode(vuln.description)}</div>
+			<div class="card-actions">
+				<button type="button" class="goto-location"
+					data-file="${escapeAttr(vuln.filePath)}"
+					data-line="${vuln.line}"
+					title="Open ${locationTitle}">
+					${location}
+					${LOC_GO_SVG}
+				</button>
+				<a class="action-button btn-explain" role="button" href="${feedbackHref}"
+					data-cwe="${escapeAttr(vuln.cwe)}"
+					data-title="${escapeAttr(vuln.title)}"
+					data-file="${escapeAttr(vuln.filePath)}"
+					data-line="${vuln.line}"
+					title="View AI conceptual explanation">
+					${LIGHTBULB_SVG}
+					<span>Explain Vulnerability</span>
+				</a>
+			</div>
+		</article>`;
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────
@@ -610,6 +579,15 @@ const CSS = /* css */ `
     }
 
     .vuln-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--card);
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        position: relative;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
         --pulse-color: var(--accent, #46d5c4);
     }
     .vuln-card[data-severity="critical"] {
@@ -1062,31 +1040,28 @@ const CSS = /* css */ `
         background: var(--vscode-button-hoverBackground);
     }
 
-    details {
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background: var(--card);
-        overflow: hidden;
-    }
+	.card-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
 
-    summary {
-        list-style: none;
-        cursor: pointer;
-        padding: 12px 14px;
-        display: grid;
-        gap: 8px;
-        min-width: 0; /* Ensures the grid allows its children to shrink */
-    }
-
-    summary::-webkit-details-marker { display: none; }
+	.card-header-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+		flex-wrap: wrap;
+	}
 
 	button.goto-location {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		width: 100%;
+		flex: 1 1 200px;
 		min-width: 0;
-		padding: 7px 8px 7px 10px;
+		padding: 6px 10px;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: color-mix(in srgb, var(--text) 4%, transparent);
@@ -1113,242 +1088,158 @@ const CSS = /* css */ `
 		color: var(--reference);
 	}
 
-    .summary-row {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        justify-content: space-between;
-        min-width: 0; /* Allows the row to shrink */
-    }
+	.warning-icon {
+		width: 16px;
+		height: 16px;
+		flex: 0 0 auto;
+		color: var(--muted);
+	}
 
-    .summary-left {
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-        min-width: 0; /* Allows left section to shrink */
-    }
+	.warning-icon.critical { color: var(--critical); }
+	.warning-icon.high     { color: var(--high); }
+	.warning-icon.medium   { color: var(--medium); }
+	.warning-icon.low      { color: var(--low); }
 
-    .summary-content {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        min-width: 0; /* Allows content column to shrink */
-    }
+	.loc-path {
+		display: flex;
+		align-items: baseline;
+		min-width: 0;
+		flex: 1 1 auto;
+		overflow: hidden;
+	}
 
-    .summary-header { 
-        display: flex; 
-        align-items: center; 
-        gap: 10px; 
-        min-width: 0; /* Allows the header row to shrink */
-    }
+	.loc-dir {
+		color: var(--muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 0 1000 auto;
+		min-width: 0;
+	}
 
-    .warning-icon {
-        width: 16px;
-        height: 16px;
-        flex: 0 0 auto;
-        margin-top: 3px;
-        color: var(--muted);
-    }
+	.loc-name {
+		color: #4EC9B0;
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		flex: 0 1 auto;
+		min-width: 0;
+	}
 
-    .warning-icon.critical { color: var(--critical); }
-    .warning-icon.high     { color: var(--high); }
-    .warning-icon.medium   { color: var(--medium); }
-    .warning-icon.low      { color: var(--low); }
+	.loc-line {
+		flex: 0 0 auto;
+		font-variant-numeric: tabular-nums;
+		font-size: 11px;
+		line-height: 1.5;
+		padding: 0 6px;
+		border-radius: 999px;
+		color: #4EC9B0;
+		background: color-mix(in srgb, #4EC9B0 16%, transparent);
+	}
 
-    .summary-file {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        color: var(--muted);
-        min-width: 0;
-    }
+	.loc-go {
+		width: 12px;
+		height: 12px;
+		flex: 0 0 auto;
+		color: var(--muted);
+	}
 
-    .loc-path {
-        display: flex;
-        align-items: baseline;
-        min-width: 0;
-        flex: 1 1 auto;
-        overflow: hidden;
-    }
+	button.goto-location:hover .loc-go,
+	button.goto-location:hover .file-icon {
+		color: var(--text);
+	}
 
-    .loc-dir {
-        color: var(--muted);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        flex: 0 1000 auto;
-        min-width: 0;
-    }
+	.file-icon { width: 14px; height: 14px; flex: 0 0 auto; color: var(--muted); }
 
-    .loc-name {
-        color: var(--text);
-        font-weight: 600;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        flex: 0 1 auto;
-        min-width: 0;
-    }
+	.badge {
+		padding: 3px 7px;
+		border-radius: 3px;
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		color: white;
+		flex: 0 0 auto;
+	}
 
-    .summary-file .loc-path {
-        flex: 0 1 auto;
-    }
+	.badge.critical { background-color: var(--critical); }
+	.badge.high     { background-color: var(--high); }
+	.badge.medium   { background-color: var(--medium); }
+	.badge.low      { background-color: var(--low); }
 
-    .summary-file .loc-name {
-        color: #4EC9B0;
-        font-weight: 500;
-    }
+	.issue-title {
+		font-weight: 600;
+		font-size: 14px;
+		color: var(--text);
+		line-height: 1.35;
+	}
 
-    .loc-line {
-        flex: 0 0 auto;
-        font-variant-numeric: tabular-nums;
-        font-size: 11px;
-        line-height: 1.5;
-        padding: 0 6px;
-        border-radius: 999px;
-        color: var(--muted);
-        background: color-mix(in srgb, var(--text) 8%, transparent);
-    }
+	.issue-meta { 
+		font-size: 12px; 
+		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 
-    button.goto-location .loc-line {
-        color: #4EC9B0;
-        background: color-mix(in srgb, #4EC9B0 16%, transparent);
-    }
+	.issue-description {
+		font-size: 12.5px;
+		color: var(--muted);
+		line-height: 1.45;
+		word-break: break-word;
+	}
 
-    .loc-go {
-        width: 12px;
-        height: 12px;
-        flex: 0 0 auto;
-        color: var(--muted);
-    }
+	.issue-description code {
+		font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+		font-size: 12px;
+		font-weight: 600;
+		padding: 0 4px;
+		border-radius: 4px;
+		color: var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground));
+		background: color-mix(
+			in srgb,
+			var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground)) 18%,
+			var(--vscode-textCodeBlock-background)
+		);
+		box-shadow: inset 0 0 0 1px color-mix(
+			in srgb,
+			var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground)) 45%,
+			transparent
+		);
+	}
 
-    button.goto-location:hover .loc-go,
-    button.goto-location:hover .file-icon {
-        color: var(--text);
-    }
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+		margin-top: 2px;
+	}
 
-    .file-icon { width: 14px; height: 14px; flex: 0 0 auto; color: var(--muted); }
+	.action-button,
+	.btn-explain {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		text-decoration: none;
+		user-select: none;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		padding: 6px 12px;
+		font-size: 12px;
+		font-weight: 500;
+		background: var(--button-bg);
+		color: var(--button-text);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: background 0.15s ease, filter 0.15s ease;
+	}
 
-    .badge {
-        padding: 4px 8px;
-        border-radius: 3px;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        color: white;
-        flex: 0 0 auto; /* Prevents the badge from shrinking */
-    }
-
-    .badge.critical { background-color: var(--critical); }
-    .badge.high     { background-color: var(--high); }
-    .badge.medium   { background-color: var(--medium); }
-    .badge.low      { background-color: var(--low); }
-
-    .issue-title {
-        font-weight: 600;
-        font-size: 14px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* Force the CWE/OWASP meta text to truncate */
-    .issue-meta { 
-        font-size: 12px; 
-        color: var(--muted);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .chevron {
-        width: 16px;
-        height: 16px;
-        margin-top: 3px;
-        flex: 0 0 auto; /* Prevents chevron from shrinking or squishing */
-        color: var(--muted);
-        transition: transform 0.2s ease;
-    }
-
-    details[open] .chevron { transform: rotate(180deg); }
-
-    .details-panel {
-        border-top: 1px solid var(--border);
-        background: var(--panel);
-        padding: 12px 14px 14px;
-        display: grid;
-        gap: 12px;
-    }
-
-    .detail-grid {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .detail-row.span-2 { grid-column: 1 / -1; }
-    .detail-row { display: grid; gap: 6px; }
-
-    .detail-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        color: var(--muted);
-        font-weight: 600;
-    }
-
-    /* Note: Allowing detail values to wrap naturally so they remain readable */
-    .detail-value { font-size: 13px; color: var(--text); line-height: 1.4; word-break: break-word; }
-    .detail-value code {
-        font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-        font-size: 12px;
-        font-weight: 600;
-        padding: 0 4px;
-        border-radius: 4px;
-        color: var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground));
-        background: color-mix(
-            in srgb,
-            var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground)) 18%,
-            var(--vscode-textCodeBlock-background)
-        );
-        box-shadow: inset 0 0 0 1px color-mix(
-            in srgb,
-            var(--vscode-textPreformat-foreground, var(--vscode-textLink-foreground)) 45%,
-            transparent
-        );
-    }
-
-    .cta-row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-    }
-
-    .action-button,
-    .btn-explain {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        text-decoration: none;
-        user-select: none;
-        border: 1px solid transparent;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 12px;
-        font-weight: 500;
-        background: var(--button-bg);
-        color: var(--button-text);
-        cursor: pointer;
-        transition: background 0.15s ease, filter 0.15s ease;
-    }
-
-    .action-button:hover,
-    .btn-explain:hover {
-        background: var(--vscode-button-hoverBackground, var(--button-bg));
-        filter: brightness(1.08);
-    }
+	.action-button:hover,
+	.btn-explain:hover {
+		background: var(--vscode-button-hoverBackground, var(--button-bg));
+		filter: brightness(1.08);
+	}
 
     .lightbulb-icon {
         width: 14px;
@@ -1627,13 +1518,7 @@ export function buildActiveVulnerabilitiesHtml(
 </html>`;
 	}
 
-	const expandedKey = options.expandedKey
-		? encodeURIComponent(options.expandedKey)
-		: undefined;
-	const cards = vulns.map((v) => {
-		const key = encodeURIComponent(buildVulnKey(v));
-		return buildVulnCard(v, key === expandedKey);
-	}).join('\n');
+	const cards = vulns.map((v) => buildVulnCard(v)).join('\n');
 	const emptyState = /* html */ `
         <div class="empty-state" role="status" aria-live="polite">
             <div class="empty-title">No active vulnerabilities</div>
@@ -1749,15 +1634,6 @@ export function buildActiveVulnerabilitiesHtml(
 					if (persist) {
 						persistUiState({ filterPanelOpen: visible });
 					}
-				}
-
-				function applyAccordion(openedEl) {
-					cards.forEach((el) => {
-						if (el !== openedEl) {
-							el.open = false;
-						}
-					});
-					persistExpandedKey(openedEl?.dataset.vulnKey ?? null);
 				}
 
 				function cardMatchesFilters(el) {
@@ -1878,18 +1754,6 @@ export function buildActiveVulnerabilitiesHtml(
 					setFilterVisibility(!filterMenu?.classList.contains('open'));
 				});
 
-				cards.forEach((el) => {
-					el.addEventListener('toggle', () => {
-						if (el.open) {
-							applyAccordion(el);
-							return;
-						}
-						if (!cards.some((card) => card.open)) {
-							persistExpandedKey(null);
-						}
-					});
-				});
-
 				[categoryFilter, typeFilter].forEach((el) => {
 					el?.addEventListener('change', () => {
 						persistFilters();
@@ -1925,9 +1789,6 @@ export function buildActiveVulnerabilitiesHtml(
 									resetBtn.click();
 								}
 							}
-							targetCard.open = true;
-							applyAccordion(targetCard);
-							persistExpandedKey(decodedKey);
 							targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
 							targetCard.classList.remove('highlight-pulse');
 							void targetCard.offsetWidth;
