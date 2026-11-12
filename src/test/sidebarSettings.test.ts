@@ -181,6 +181,8 @@ describe('Sidebar settings accordion', () => {
 					{ id: 'macos', label: 'macOS' },
 				],
 				target: 'x86_64-pc-windows-msvc',
+				version: '0.0.3',
+				versionOptions: ['0.0.3', '0.0.2'],
 				binaries: [
 					{ id: 'x86_64-pc-windows-msvc', label: 'Windows 64-bit x86 (MSVC)', downloaded: true },
 				],
@@ -195,6 +197,7 @@ describe('Sidebar settings accordion', () => {
 		assert.ok(html.includes('>Linux<'));
 		assert.ok(html.includes('>macOS<'));
 		assert.ok(html.includes('id="scanner-target"'));
+		assert.ok(html.includes('id="scanner-version"'));
 		assert.ok(html.includes('title="Incompatible"'));
 		assert.ok(html.includes('class="binary-bad"'));
 		assert.ok(html.includes('title="Delete"'));
@@ -216,6 +219,9 @@ describe('Sidebar settings accordion', () => {
 					{ id: 'macos', label: 'macOS' },
 				],
 				target: 'aarch64-unknown-linux-gnu',
+				version: '0.0.3',
+				versionOptions: ['0.0.3'],
+				activeDownloaded: false,
 				binaries: [
 					{ id: 'x86_64-unknown-linux-gnu', label: 'Linux 64-bit x86', downloaded: true },
 					{ id: 'aarch64-unknown-linux-gnu', label: 'Linux 64-bit ARM', downloaded: false },
@@ -245,6 +251,8 @@ describe('Sidebar settings accordion', () => {
 					{ id: 'macos', label: 'macOS' },
 				],
 				target: 'aarch64-unknown-linux-gnu',
+				version: '0.0.3',
+				versionOptions: ['0.0.3'],
 				binaries: [
 					{ id: 'x86_64-unknown-linux-gnu', label: 'Linux 64-bit x86', downloaded: true },
 					{ id: 'aarch64-unknown-linux-gnu', label: 'Linux 64-bit ARM', downloaded: false },

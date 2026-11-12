@@ -72,6 +72,25 @@ const CSS = /* css */ `
 		--input-border: var(--vscode-input-border, var(--vscode-panel-border));
 	}
 
+	@keyframes panelSpotlightPulse {
+		0% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--bg));
+		}
+		50% {
+			box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+			background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--bg));
+		}
+		100% {
+			box-shadow: inset 0 0 0 0 transparent;
+			background-color: var(--bg);
+		}
+	}
+
+	body.panel-spotlight {
+		animation: panelSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
 	* { box-sizing: border-box; }
 
 	body {
@@ -776,6 +795,8 @@ function defaultScannerSettings(): ScannerSettingsViewModel {
 			{ id: 'macos', label: 'macOS' },
 		],
 		target: 'x86_64-unknown-linux-gnu',
+		version: '0.0.1',
+		versionOptions: ['0.0.1'],
 		binaries: [],
 		downloaded: [],
 	};
@@ -811,7 +832,16 @@ function buildScannerSection(model: SignInPanelViewModel): string {
 			: selectedId)
 		: selectedId;
 	const activeLabel = SCANNER_TARGET_LABELS[activeId as ScannerTarget] ?? activeId;
-	const isDownloaded = downloaded.has(activeId);
+	const versionRows = scanner.versionOptions ?? [];
+	const activeVersion = scanner.version ?? versionRows[0] ?? '0.0.1';
+	const versionOptions = (versionRows.length > 0
+		? versionRows
+		: [activeVersion]
+	).map((row) => {
+		const selected = row === activeVersion ? 'selected' : '';
+		return `<option value="${escapeHtml(row)}" ${selected}>${escapeHtml(row)}</option>`;
+	}).join('');
+	const isDownloaded = scanner.activeDownloaded ?? downloaded.has(activeId);
 	const osOptions = [
 		{ id: 'windows', label: 'Windows' },
 		{ id: 'linux', label: 'Linux' },
@@ -866,9 +896,13 @@ function buildScannerSection(model: SignInPanelViewModel): string {
 					<span class="field-label">Binary</span>
 					<select id="scanner-target" aria-label="Scanner binary" ${disabled}>${binaryOptions}</select>
 				</label>
+				<label class="field">
+					<span class="field-label">Version</span>
+					<select id="scanner-version" aria-label="Scanner version" ${disabled}>${versionOptions}</select>
+				</label>
 			</div>
 			<div class="binary-row" id="scanner-current">
-				<span id="scanner-current-label">${escapeHtml(activeLabel)}</span>
+				<span id="scanner-current-label">${escapeHtml(activeLabel)} · v${escapeHtml(activeVersion)}</span>
 				<span class="binary-meta" id="scanner-current-actions">
 					<span class="status-slot" id="scanner-status">${statusIcon}</span>
 					<span class="trash-slot" id="scanner-trash">${trash}</span>
@@ -1138,6 +1172,17 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
+			window.addEventListener('message', (event) => {
+				const msg = event.data;
+				if (msg && msg.type === 'highlight-panel') {
+					document.body.classList.remove('panel-spotlight');
+					void document.body.offsetWidth;
+					document.body.classList.add('panel-spotlight');
+					setTimeout(() => {
+						document.body.classList.remove('panel-spotlight');
+					}, 1500);
+				}
+			});
 			const accordionIds = ['accordion-account', 'accordion-session', 'accordion-scanner', 'accordion-copilot', 'accordion-configuration', 'accordion-scripting', 'accordion-help'];
 
 			function restoreAccordion() {
@@ -1402,6 +1447,15 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 				showCurrentTarget(select.value);
 				setScannerBusy();
 				vscode.postMessage({ type: 'scanner-set-target', target: select.value });
+			});
+
+			document.getElementById('scanner-version')?.addEventListener('change', (event) => {
+				const select = event.currentTarget;
+				if (select.disabled) {
+					return;
+				}
+				setScannerBusy();
+				vscode.postMessage({ type: 'scanner-set-version', version: select.value });
 			});
 
 			for (const button of document.querySelectorAll('[data-download-target]')) {

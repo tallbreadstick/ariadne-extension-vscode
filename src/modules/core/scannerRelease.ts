@@ -7,6 +7,9 @@
 export const LATEST_RELEASE_URL =
 	'https://api.github.com/repos/tallbreadstick/ariadne-binaries/releases?per_page=1';
 
+export const RELEASES_LIST_URL =
+	'https://api.github.com/repos/tallbreadstick/ariadne-binaries/releases?per_page=100';
+
 export const SCANNER_AUTO = 'auto';
 
 /** Rust targets published as release assets. Keep in sync with package.json. */
@@ -75,12 +78,15 @@ export interface ScannerPreferences {
 	auto: boolean;
 	os: ScannerOs;
 	target: ScannerTarget;
+	/** Scanner release on ariadne-binaries (e.g. 0.0.3). Ignored when Auto is on. */
+	version?: string;
 }
 
 export interface ScannerPreferenceInput {
 	auto: boolean | undefined;
 	os: string | undefined;
 	target: string | undefined;
+	version?: string | undefined;
 	legacy: string | undefined;
 	platform: string;
 	arch: string;
@@ -143,7 +149,8 @@ export function normalizeScannerPreferences(input: ScannerPreferenceInput): Scan
 	const target = storedTarget && options.includes(storedTarget)
 		? storedTarget
 		: (host && options.includes(host) ? host : options[0]);
-	return { auto, os, target };
+	const version = input.version?.trim() || undefined;
+	return version ? { auto, os, target, version } : { auto, os, target };
 }
 
 /** Asset file names look like `<target>-<semver>` or `<target>-<semver>.exe`. */
@@ -212,19 +219,99 @@ export function selectedScannerTarget(
 	return value as ScannerTarget;
 }
 
+export function assetVersionFromName(name: string): string | undefined {
+	const match = /^(.+)-(\d+\.\d+\.\d+)(?:\.exe)?$/.exec(name);
+	return match?.[2];
+}
+
+export interface ParsedRelease {
+	tag: string;
+	version: string;
+	assets: ReleaseAsset[];
+}
+
+export function versionFromReleaseTag(tag: string): string | undefined {
+	const match = /^(?:Ariadne-|v)?(\d+\.\d+\.\d+)$/i.exec(tag.trim());
+	return match?.[1];
+}
+
+function compareSemverDesc(a: string, b: string): number {
+	const pa = a.split('.').map((n) => Number.parseInt(n, 10));
+	const pb = b.split('.').map((n) => Number.parseInt(n, 10));
+	for (let i = 0; i < 3; i += 1) {
+		const da = pa[i] ?? 0;
+		const db = pb[i] ?? 0;
+		if (da !== db) {
+			return db - da;
+		}
+	}
+	return 0;
+}
+
+/** Lists release versions that ship an asset for `target`, newest first. */
+export function listVersionsForTarget(
+	releases: readonly ParsedRelease[],
+	target: string,
+): string[] {
+	const versions = new Set<string>();
+	for (const release of releases) {
+		if (selectReleaseAsset(release.assets, target, release.version)) {
+			versions.add(release.version);
+		}
+	}
+	return [...versions].sort(compareSemverDesc);
+}
+
+export function parseReleasesList(body: unknown): ParsedRelease[] {
+	if (!Array.isArray(body)) {
+		throw new Error('Ariadne releases response was not a list.');
+	}
+	return body.flatMap((release) => {
+		if (!release || typeof release !== 'object') {
+			return [];
+		}
+		const tagRaw = (release as { tag_name?: unknown }).tag_name;
+		if (typeof tagRaw !== 'string') {
+			return [];
+		}
+		const version = versionFromReleaseTag(tagRaw);
+		if (!version) {
+			return [];
+		}
+		const assets = parseLatestRelease(release);
+		if (assets.length === 0) {
+			return [];
+		}
+		return [{ tag: tagRaw, version, assets }];
+	}).sort((a, b) => compareSemverDesc(a.version, b.version));
+}
+
 /** Finds the asset whose name is `<target>-<version>` or `<target>-<version>.exe`. */
 export function selectReleaseAsset(
 	assets: readonly ReleaseAsset[],
 	target: string,
+	version?: string,
 ): ReleaseAsset | undefined {
 	const prefix = `${target}-`;
-	return assets.find((asset) => {
+	const candidates = assets.filter((asset) => {
 		if (!asset.name.startsWith(prefix) || !asset.browser_download_url) {
 			return false;
 		}
 		const rest = asset.name.slice(prefix.length);
 		return /^\d+\.\d+\.\d+(\.exe)?$/.test(rest);
 	});
+	if (candidates.length === 0) {
+		return undefined;
+	}
+	if (version) {
+		const want = `${prefix}${version}`;
+		return candidates.find((asset) => asset.name === want || asset.name === `${want}.exe`);
+	}
+	return [...candidates].sort((a, b) => {
+		const va = assetVersionFromName(a.name) ?? '0.0.0';
+		const vb = assetVersionFromName(b.name) ?? '0.0.0';
+		return compareSemverDesc(va, vb);
+	})[0];
 }
 
 export function parseLatestRelease(body: unknown): ReleaseAsset[] {

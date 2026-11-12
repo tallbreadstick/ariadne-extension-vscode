@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createWriteStream, existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -8,14 +9,19 @@ import {
 	LATEST_RELEASE_URL,
 	normalizeScannerPreferences,
 	parseLatestRelease,
+	parseReleasesList,
+	RELEASES_LIST_URL,
 	SCANNER_AUTO,
 	selectReleaseAsset,
 	selectedScannerTarget,
 	targetFromAssetName,
+	type ParsedRelease,
 	type ReleaseAsset,
 	type ScannerPreferences,
 	type ScannerTarget,
 } from './scannerRelease.js';
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_EXECUTABLE = 'ariadne';
 const RELEASE_HOSTS = [
@@ -67,7 +73,7 @@ export function ensureAriadneExecutable(): Promise<string> {
 function selectionKey(): string {
 	const prefs = readPrefs();
 	const executable = vscode.workspace.getConfiguration('ariadne').get<string>('executable', DEFAULT_EXECUTABLE) ?? DEFAULT_EXECUTABLE;
-	return `${prefs.auto}\n${prefs.os}\n${prefs.target}\n${executable}`;
+	return `${prefs.auto}\n${prefs.os}\n${prefs.target}\n${prefs.version ?? ''}\n${executable}`;
 }
 
 /** Saved Auto / OS / binary choice. Auto is on until the user turns it off. */
@@ -88,12 +94,12 @@ async function resolveExecutable(): Promise<string> {
 	const prefs = readPrefs();
 	const configured = prefs.auto ? SCANNER_AUTO : prefs.target;
 	const target = selectedScannerTarget(configured, process.platform, process.arch);
-	const cached = await cachedScannerPath(target);
+	const cached = await cachedScannerPath(target, prefs.auto ? undefined : prefs.version);
 	if (!prefs.auto && !cached) {
 		throw new Error('Download the selected scanner binary from the Core section.');
 	}
 	try {
-		const outcome = await downloadReleaseAsset(target);
+		const outcome = await downloadReleaseAsset(target, prefs);
 		if (outcome === 'cancelled') {
 			if (cached) {
 				await markExecutable(cached);
@@ -117,7 +123,7 @@ async function resolveExecutable(): Promise<string> {
 		}
 		throw error;
 	}
-	const ready = await cachedScannerPath(target);
+	const ready = await cachedScannerPath(target, prefs.auto ? undefined : prefs.version);
 	if (!ready) {
 		throw new Error('Download finished without a scanner file.');
 	}
@@ -125,14 +131,44 @@ async function resolveExecutable(): Promise<string> {
 	return ready;
 }
 
-/** Local path for a target that is already on disk. */
-export async function cachedScannerPath(target: ScannerTarget): Promise<string | undefined> {
+/** Local path for a target (and optional release version) already on disk. */
+export async function cachedScannerPath(
+	target: ScannerTarget,
+	version?: string,
+): Promise<string | undefined> {
 	if (!cacheDir) {
 		return undefined;
 	}
 	const names = await cacheFileNames();
+	if (version) {
+		const exact = names.find((name) => name === `${target}-${version}` || name === `${target}-${version}.exe`);
+		if (exact) {
+			return join(cacheDir, exact);
+		}
+	}
 	const match = names.find((name) => targetFromAssetName(name) === target);
 	return match ? join(cacheDir, match) : undefined;
+}
+
+let releasesListCache: { expires: number; value: ParsedRelease[] } | undefined;
+
+export async function fetchScannerReleasesList(): Promise<ParsedRelease[]> {
+	const now = Date.now();
+	if (releasesListCache && releasesListCache.expires > now) {
+		return releasesListCache.value;
+	}
+	const response = await fetch(RELEASES_LIST_URL, {
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'User-Agent': 'ariadne-extension-vscode',
+		},
+	});
+	if (!response.ok) {
+		throw new Error(`Could not list Ariadne releases (HTTP ${response.status}).`);
+	}
+	const parsed = parseReleasesList(await response.json());
+	releasesListCache = { expires: now + 5 * 60_000, value: parsed };
+	return parsed;
 }
 
 export class DownloadCancelled extends Error {
@@ -149,17 +185,20 @@ export class DownloadCancelled extends Error {
  */
 export async function downloadReleaseAsset(
 	target: ScannerTarget,
+	prefs: ScannerPreferences = readPrefs(),
 ): Promise<'finished' | 'cancelled' | 'failed'> {
 	if (!cacheDir) {
 		throw new Error('Ariadne scanner cache is not configured.');
 	}
-	const asset = selectReleaseAsset(await fetchLatestAssets(), target);
+	const version = prefs.auto ? undefined : prefs.version;
+	const assets = await fetchScannerAssets(prefs);
+	const asset = selectReleaseAsset(assets, target, version);
 	if (!asset) {
 		throw new Error(
 			`The latest Ariadne release has no binary for ${target}. Check https://github.com/tallbreadstick/ariadne-binaries/releases`,
 		);
 	}
-	const existing = await cachedScannerPath(target);
+	const existing = await cachedScannerPath(target, version);
 	if (existing && basename(existing) === asset.name) {
 		await markExecutable(existing);
 		return 'finished';
@@ -216,6 +255,22 @@ async function fetchLatestAssets(): Promise<ReleaseAsset[]> {
 		throw new Error(`Could not read the latest Ariadne release (HTTP ${response.status}).`);
 	}
 	return parseLatestRelease(await response.json());
+}
+
+async function fetchScannerAssets(prefs: ScannerPreferences): Promise<ReleaseAsset[]> {
+	if (prefs.auto) {
+		return fetchLatestAssets();
+	}
+	const releases = await fetchScannerReleasesList();
+	const version = prefs.version ?? releases[0]?.version;
+	if (!version) {
+		return fetchLatestAssets();
+	}
+	const release = releases.find((row) => row.version === version);
+	if (!release) {
+		throw new Error(`No Ariadne release ${version} on ariadne-binaries.`);
+	}
+	return release.assets;
 }
 
 function assertDownloadUrl(url: string): void {
@@ -394,6 +449,17 @@ export function probeAriadneExecutable(exe: string): Promise<boolean> {
 
 async function markExecutable(filePath: string): Promise<void> {
 	if (process.platform === 'win32') {
+		// Clears the Mark-of-the-Web after GitHub downloads. Does not replace Authenticode
+		// signing on the release asset (required for Windows Smart App Control).
+		try {
+			await execFileAsync(
+				process.env.SystemRoot ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : 'powershell.exe',
+				['-NoProfile', '-NonInteractive', '-Command', `Unblock-File -LiteralPath ${JSON.stringify(filePath)}`],
+				{ windowsHide: true },
+			);
+		} catch {
+			// Non-fatal when PowerShell is unavailable.
+		}
 		return;
 	}
 	try {

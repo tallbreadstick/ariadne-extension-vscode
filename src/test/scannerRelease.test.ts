@@ -6,10 +6,13 @@ import {
 	hostScannerTarget,
 	normalizeScannerPreferences,
 	parseLatestRelease,
+	listVersionsForTarget,
+	parseReleasesList,
 	selectReleaseAsset,
 	selectedScannerTarget,
 	targetFromAssetName,
 	targetsForOs,
+	versionFromReleaseTag,
 } from '../modules/core/scannerRelease.js';
 
 const sampleAssets = [
@@ -53,7 +56,23 @@ describe('scanner release selection', () => {
 			selectReleaseAsset(sampleAssets, 'aarch64-pc-windows-msvc')?.name,
 			'aarch64-pc-windows-msvc-1.2.3.exe',
 		);
+		assert.strictEqual(
+			selectReleaseAsset(sampleAssets, 'x86_64-unknown-linux-gnu', '0.0.1')?.name,
+			'x86_64-unknown-linux-gnu-0.0.1',
+		);
 		assert.strictEqual(selectReleaseAsset(sampleAssets, 'universal2-apple-darwin'), undefined);
+	});
+
+	it('lists versions from release tags', () => {
+		assert.strictEqual(versionFromReleaseTag('Ariadne-0.0.3'), '0.0.3');
+		const releases = parseReleasesList([
+			{ tag_name: 'Ariadne-0.0.2', assets: sampleAssets },
+			{ tag_name: 'Ariadne-0.0.1', assets: [sampleAssets[0]] },
+		]);
+		assert.deepStrictEqual(
+			listVersionsForTarget(releases, 'x86_64-unknown-linux-gnu'),
+			['0.0.2', '0.0.1'],
+		);
 	});
 
 	it('reads assets from a latest-release payload', () => {

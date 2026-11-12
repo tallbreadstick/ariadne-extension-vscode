@@ -39,7 +39,20 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.match(html, /pedagogical static analysis assistant for Java in VS Code/);
 		});
 
-		it('contains Section 1: The Saving & Scanning Lifecycle with all 6 steps', () => {
+		it('renders sections in the approved instructional order: Core Features -> Lifecycle -> Data Audit -> Closing', () => {
+			const idxCore = html.indexOf('Core Features &amp; Where to Find Them');
+			const idxLifecycle = html.indexOf('The Saving &amp; Scanning Lifecycle');
+			const idxAudit = html.indexOf('Advanced Tool — Data Audit Graph');
+			const idxExit = html.indexOf("You're Ready to Code!");
+
+			assert.ok(idxCore !== -1 && idxLifecycle !== -1 && idxAudit !== -1 && idxExit !== -1, 'All sections must be present');
+			assert.ok(idxCore < idxLifecycle, 'Section 1 (Core Features) must precede Section 2 (Lifecycle)');
+			assert.ok(idxLifecycle < idxAudit, 'Section 2 (Lifecycle) must precede Section 3 (Data Audit Graph)');
+			assert.ok(idxAudit < idxExit, 'Section 3 (Data Audit Graph) must precede Section 4 (Exit closing)');
+		});
+
+
+		it('contains Section 2: The Saving & Scanning Lifecycle with all 6 steps', () => {
 			assert.match(html, /The Saving &amp; Scanning Lifecycle/);
 			// 2.1 First save
 			assert.match(html, /Session Begins on First Save/);
@@ -86,7 +99,7 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(!html.includes('configurable'), 'Should not mention configurable auto-scan');
 		});
 
-		it('contains Section 2: Advanced Tool — Data Audit Graph in a dual-column row layout', () => {
+		it('contains Section 3: Advanced Tool — Data Audit Graph in a dual-column row layout', () => {
 			assert.match(html, /Advanced Tool — Data Audit Graph/);
 			assert.match(html, /For Advanced &amp; Security Auditing/);
 			assert.match(html, /inter-procedural taint flow canvas/);
@@ -116,7 +129,7 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(customHtml.includes('media/test-hover.gif'), 'Should render custom audit hover GIF');
 		});
 
-		it('contains Section 3: Core Features with location badges and interactive action buttons', () => {
+		it('contains Section 1: Core Features with location badges and interactive action buttons', () => {
 			assert.match(html, /Core Features &amp; Where to Find Them/);
 
 			// Settings feature
@@ -126,13 +139,15 @@ describe('Onboarding Guide Webview Panel', () => {
 
 			// Active Vulnerabilities feature
 			assert.match(html, /Active Vulnerabilities/);
-			assert.match(html, /Bottom Panel \(Left\)/);
+			assert.match(html, /Bottom Panel \(Left Pane\)/);
 			assert.match(html, /data-action="openActiveVulnerabilities"/);
+			assert.match(html, /Focus Active Vulnerabilities \(Left\)/);
 
 			// Full Report feature
 			assert.match(html, /Full Report/);
-			assert.match(html, /Bottom Panel \(Right\)/);
+			assert.match(html, /Bottom Panel \(Right Pane\)/);
 			assert.match(html, /data-action="openFullReport"/);
+			assert.match(html, /Focus Full Report \(Right\)/);
 
 			// Inline Highlighting feature
 			assert.match(html, /Inline Highlighting/);

@@ -197,6 +197,7 @@ Open the folder from the Command Palette: **Ariadne: Open Debug Log Folder**.
 | Extension fails to start / “cannot find module” | `dist/` not built | Run `npm run compile` |
 | No findings / core errors in Debug Console | Scanner download or process failed | Check the notification and Debug Console; change Core in the sidebar or set `ariadne.executable` |
 | Stale results after a new core release | Old scanner process still running | Reload the extension window |
+| Windows: “Part of this app has been blocked” for `x86_64-pc-windows-msvc-….exe` | Smart App Control + **unsigned** scanner download | Ship **Authenticode-signed** Windows assets on `ariadne-binaries` (see core `scripts/sign-windows-release.ps1`). Teammates on SAC can turn Smart App Control off under *Windows Security → App & browser control*, or set `ariadne.executable` to a local build until signed releases are live |
 | Explain Vulnerability errors | Copilot auth failure | Check VS Code Copilot extension status |
 
 Check **View → Output** or the **Debug Console** in the host that runs the extension for `[Ariadne Core]` stderr from the Rust process.

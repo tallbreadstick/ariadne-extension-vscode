@@ -11,6 +11,7 @@ export type NotificationLevel = 'milestones' | 'all' | 'quiet';
 
 export type ToastType =
 	| 'recurring'
+	| 'commentedOut'
 	| 'resolved'
 	| 'absentCandidate'
 	| 'newCandidate'
@@ -49,6 +50,33 @@ export function formatAbsentCandidateMessage(findings: FindingClassification[]):
 	return findings.length === 1
 		? 'Ariadne: 1 issue fixed — resolution status is being processed...'
 		: `Ariadne: ${findings.length} issues fixed — resolution status is being processed...`;
+}
+
+/**
+ * Formats the warning notification when vulnerabilities are commented out rather than genuinely fixed.
+ */
+export function formatCommentedOutMessage(findings: FindingClassification[]): string {
+	if (findings.length === 0) {
+		return '';
+	}
+
+	if (findings.length === 1) {
+		const type = findings[0].lifecycle.type?.trim() || 'Vulnerability';
+		return `Ariadne: ${type} is commented out—hidden from Live Scan, but tracked in Full Report until fixed or removed.`;
+	}
+
+	const uniqueTypes = Array.from(
+		new Set(findings.map((f) => f.lifecycle.type?.trim()).filter((t): t is string => Boolean(t))),
+	);
+	let typeSummary = '';
+	if (uniqueTypes.length > 0) {
+		const displayed = uniqueTypes.length <= 3
+			? uniqueTypes.join(', ')
+			: `${uniqueTypes.slice(0, 2).join(', ')}, +${uniqueTypes.length - 2} more`;
+		typeSummary = ` (${displayed})`;
+	}
+
+	return `Ariadne: ${findings.length} vulnerabilities${typeSummary} are commented out—hidden from Live Scan, but tracked in Full Report until fixed or removed.`;
 }
 
 /**
@@ -93,16 +121,39 @@ export function formatGraduatedMessage(vulnTypes: string[]): string {
 	return `Ariadne: ${label} have graduated and were removed from Common Vulnerabilities.`;
 }
 
+function buildCommentedOutPlan(
+	analysis: SessionAnalysis,
+	isEligible: (type: ToastType) => boolean,
+): ToastPlan | null {
+	if (
+		!analysis.commentedOutFindings
+		|| analysis.commentedOutFindings.length === 0
+		|| !isEligible('commentedOut')
+	) {
+		return null;
+	}
+	const msg = formatCommentedOutMessage(analysis.commentedOutFindings);
+	if (!msg) {
+		return null;
+	}
+	return {
+		type: 'commentedOut',
+		severity: 'warning',
+		message: msg,
+	};
+}
+
 /**
  * Determines the single prioritized toast to display (pure logic, no vscode dependency).
  *
  * Priority order:
  *   1. Recurring patterns (warning) — regression
- *   2. Improving trends (info) — milestone: fewer occurrences detected
- *   3. Resolved patterns (info) — milestone: pattern resolved
- *   4. Absent candidates (info) — immediate "fix detected" feedback
- *   5. New candidates (info) — immediate "new issue detected" feedback
- *   6. Newly persisting (warning) — graduation to persisting
+ *   2. Commented-out findings (warning) — code commented out instead of fixed
+ *   3. Improving trends (info) — milestone: fewer occurrences detected
+ *   4. Resolved patterns (info) — milestone: pattern resolved
+ *   5. Absent candidates (info) — immediate "fix detected" feedback
+ *   6. New candidates (info) — immediate "new issue detected" feedback
+ *   7. Newly persisting (warning) — graduation to persisting
  */
 export function determinePrioritizedToast(
 	analysis: SessionAnalysis,
@@ -120,6 +171,11 @@ export function determinePrioritizedToast(
 			severity: 'warning',
 			message: `Ariadne: ${count} ${count === 1 ? 'pattern has reappeared! It needs to be addressed again.' : 'patterns have reappeared! They need to be addressed again.'}`,
 		};
+	}
+
+	const commentedOutPlan = buildCommentedOutPlan(analysis, isEligible);
+	if (commentedOutPlan) {
+		return commentedOutPlan;
 	}
 
 	if (analysis.improvingTrends > 0 && isEligible('improving')) {
@@ -209,6 +265,11 @@ export function determineStackedToasts(
 			severity: 'warning',
 			message: `Ariadne: ${count} ${count === 1 ? 'pattern has reappeared! It needs to be addressed again.' : 'patterns have reappeared! They need to be addressed again.'}`,
 		});
+	}
+
+	const commentedOutPlan = buildCommentedOutPlan(analysis, isEligible);
+	if (commentedOutPlan) {
+		plans.push(commentedOutPlan);
 	}
 
 	if (analysis.improvingTrends > 0 && isEligible('improving')) {

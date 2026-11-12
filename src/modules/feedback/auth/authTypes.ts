@@ -98,6 +98,9 @@ export interface ScannerSettingsViewModel {
 	os: string;
 	osOptions: readonly { id: string; label: string }[];
 	target: string;
+	/** Selected ariadne-binaries release (manual mode). */
+	version: string;
+	versionOptions: readonly string[];
 	/** Binary actually in use. Auto uses this computer's build. */
 	activeTarget?: string;
 	/** Build that matches this computer. Used when Auto is turned on. */
@@ -114,4 +117,6 @@ export interface ScannerSettingsViewModel {
 	highlightsVisible?: boolean;
 	/** When true, showing the sidebar also opens the bottom Ariadne panel. */
 	openPanelOnStartup?: boolean;
+	/** Whether the active target+version is cached locally. */
+	activeDownloaded?: boolean;
 }

@@ -68,6 +68,7 @@ import {
 	deleteDownloadedScanner,
 	DownloadCancelled,
 	downloadReleaseAsset,
+	fetchScannerReleasesList,
 	listDownloadedScannerTargets,
 	localExecutableOverride,
 	probeAriadneExecutable,
@@ -80,6 +81,7 @@ import {
 	hostScannerTarget,
 	isScannerOs,
 	isScannerTarget,
+	listVersionsForTarget,
 	normalizeScannerPreferences,
 	scannerOsForTarget,
 	targetsForOs,
@@ -333,7 +335,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	configureDebugLog(context.globalStorageUri.fsPath);
 
 	const readScannerChoice = (): ScannerPreferences => {
-		const saved = context.globalState.get<{ auto?: boolean; os?: string; target?: string }>('ariadne.scannerPreferences');
+		const saved = context.globalState.get<{ auto?: boolean; os?: string; target?: string; version?: string }>('ariadne.scannerPreferences');
 		if (!saved || typeof saved.auto !== 'boolean') {
 			const initial = normalizeScannerPreferences({
 				auto: true,
@@ -347,6 +349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				auto: true,
 				os: initial.os,
 				target: initial.target,
+				version: undefined,
 			});
 			return initial;
 		}
@@ -354,6 +357,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			auto: saved.auto,
 			os: saved.os,
 			target: saved.target,
+			version: saved.version,
 			legacy: undefined,
 			platform: process.platform,
 			arch: process.arch,
@@ -564,18 +568,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const loadScannerSettings = async (): Promise<ScannerSettingsViewModel> => {
 		const prefs = readScannerPreferencesFromConfig();
 		const downloadedIds = new Set(await listDownloadedScannerTargets());
+		let versionOptions: string[] = [];
+		try {
+			versionOptions = listVersionsForTarget(await fetchScannerReleasesList(), prefs.target);
+		} catch {
+			versionOptions = prefs.version ? [prefs.version] : [];
+		}
+		const version = prefs.auto
+			? versionOptions[0]
+			: (prefs.version && versionOptions.includes(prefs.version) ? prefs.version : versionOptions[0]);
 		const toOption = (id: ScannerPreferences['target']) => ({
 			id,
 			label: SCANNER_TARGET_LABELS[id],
 			downloaded: downloadedIds.has(id),
 		});
 		const hostTarget = hostScannerTarget(process.platform, process.arch);
+		const activeId = prefs.auto ? (hostTarget ?? prefs.target) : prefs.target;
+		const cachedActive = await cachedScannerPath(activeId, prefs.auto ? undefined : version);
 		return {
 			auto: prefs.auto,
 			os: prefs.os,
 			osOptions: SCANNER_OS_OPTIONS,
 			target: prefs.target,
-			activeTarget: prefs.auto ? hostTarget : prefs.target,
+			version: version ?? '0.0.1',
+			versionOptions,
+			activeTarget: activeId,
 			hostTarget,
 			binaries: targetsForOs(prefs.os).map(toOption),
 			downloaded: [...downloadedIds].map(toOption),
@@ -585,6 +602,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			busyAction: scannerBusyAction,
 			highlightsVisible,
 			openPanelOnStartup,
+			activeDownloaded: Boolean(cachedActive),
 		};
 	};
 
@@ -848,6 +866,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		const persistingMap = new Map<string, number>();
 		const typePersistingReportCount = new Map<string, number>();
+		const typePersistingCommentedOut = new Map<string, number>();
 		const recurringMap = new Map<string, number>();
 		const resolvedMap = new Map<string, number>();
 		const improvingMap = new Map<string, ImprovingSubItem>();
@@ -885,6 +904,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					flc.type,
 					Math.max(typePersistingReportCount.get(flc.type) ?? 0, repCount),
 				);
+				if (flc.isCommentedOut) {
+					typePersistingCommentedOut.set(
+						flc.type,
+						(typePersistingCommentedOut.get(flc.type) ?? 0) + 1,
+					);
+				}
 			} else if (flc.lifecycleState === 'improving') {
 				typePersistingCount.set(flc.type, (typePersistingCount.get(flc.type) ?? 0) + 1);
 			}
@@ -919,11 +944,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			? Array.from(persistingMap.entries()).map(([type, instances]) => {
 				const reportCount = typePersistingReportCount.get(type) ?? 2;
 				const countStr = reportCount === 1 ? '1 report' : `${reportCount} reports`;
+				const commentedOutCount = typePersistingCommentedOut.get(type) ?? 0;
 				return {
 					type,
 					instances,
 					reportCount,
-					subtitle: `Present since ${countStr}`,
+					subtitle: `Across ${countStr}`,
+					...(commentedOutCount > 0 ? { commentedOutCount } : {}),
 				};
 			})
 			: undefined;
@@ -1248,6 +1275,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		'ariadne.panel.gateway',
 		gatewayProvider,
 	);
+
+	const onboardingCallbacks = {
+		onOpenSettings: () => {
+			setTimeout(() => {
+				settingsView?.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
+		onOpenActiveVulnerabilities: () => {
+			setTimeout(() => {
+				activeVulnsProvider.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
+		onOpenFullReport: () => {
+			setTimeout(() => {
+				sessionMetricsProvider.postMessage({ type: 'highlight-panel' });
+			}, 50);
+		},
+	};
+
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.activeVulnerabilities',
 		activeVulnsProvider,
@@ -1268,6 +1314,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			auto: next.auto,
 			os: next.os,
 			target: next.target,
+			version: next.auto ? undefined : next.version,
 		});
 	};
 
@@ -1369,7 +1416,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const prefs = readScannerPreferencesFromConfig();
 				const options = targetsForOs(os);
 				const target = options.includes(prefs.target) ? prefs.target : options[0];
-				await saveScannerPreferences({ auto: false, os, target });
+				let version = prefs.version;
+				try {
+					const versions = listVersionsForTarget(await fetchScannerReleasesList(), target);
+					version = version && versions.includes(version) ? version : versions[0];
+				} catch {
+					// keep saved version when the release list is unavailable
+				}
+				await saveScannerPreferences({ auto: false, os, target, version });
 				return;
 			}
 
@@ -1382,7 +1436,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				if (!os) {
 					return;
 				}
-				await saveScannerPreferences({ auto: false, os, target });
+				const prefs = readScannerPreferencesFromConfig();
+				let version = prefs.version;
+				try {
+					const versions = listVersionsForTarget(await fetchScannerReleasesList(), target);
+					version = version && versions.includes(version) ? version : versions[0];
+				} catch {
+					// keep saved version when the release list is unavailable
+				}
+				await saveScannerPreferences({ auto: false, os, target, version });
+				return;
+			}
+
+			if (msg.type === 'scanner-set-version') {
+				const version = typeof msg.version === 'string' ? msg.version.trim() : '';
+				if (!version) {
+					return;
+				}
+				const prefs = readScannerPreferencesFromConfig();
+				await saveScannerPreferences({ ...prefs, auto: false, version });
 				return;
 			}
 
@@ -1395,9 +1467,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				if (!os) {
 					return;
 				}
-				await writeScannerPreferences({ auto: false, os, target });
+				const prefs = readScannerPreferencesFromConfig();
+				await writeScannerPreferences({ auto: false, os, target, version: prefs.version });
 				await runScannerChange(async () => {
-					const outcome = await downloadReleaseAsset(target);
+					const outcome = await downloadReleaseAsset(target, readScannerPreferencesFromConfig());
 					if (outcome === 'finished') {
 						await applyScannerSelection();
 					}
@@ -1612,7 +1685,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 
 			if (msg.type === 'open-onboarding') {
-				showOnboardingPanel(context);
+				showOnboardingPanel(context, onboardingCallbacks);
 				return;
 			}
 
@@ -1882,7 +1955,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	applyScannerSelection = async () => {
 		const prefs = readScannerPreferencesFromConfig();
 		if (!localExecutableOverride() && !prefs.auto) {
-			const cached = await cachedScannerPath(prefs.target);
+			const cached = await cachedScannerPath(prefs.target, prefs.auto ? undefined : prefs.version);
 			if (!cached) {
 				scannerChecked = true;
 				scannerBroken = true;
@@ -2478,7 +2551,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openOnboarding = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openOnboarding',
 		() => {
-			showOnboardingPanel(context);
+			showOnboardingPanel(context, onboardingCallbacks);
 		},
 	);
 
@@ -2689,7 +2762,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	// ── First-run Onboarding & Welcome Orientation ───────────────────────
-	void checkAndShowOnboarding(context);
+	void checkAndShowOnboarding(context, onboardingCallbacks);
 	void checkAndShowWelcomeToast(context.globalState, openBottomPanel);
 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
