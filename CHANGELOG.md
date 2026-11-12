@@ -4,6 +4,23 @@ All notable changes to the "ariadne-extension-vscode" extension will be document
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.2] - 2026-11-12
+
+### Added
+
+- Flat active-vulnerability cards (description and file link visible without expanding an accordion).
+- Unified gateway loading panel in the bottom workspace.
+- Sidebar **Configuration** accordion (notification level, auto-scan interval, consent) with live sync to VS Code settings.
+
+### Changed
+
+- Cross-filtering keeps the vulnerability filter drawer closed so the list stays readable.
+- Debug log folder command for troubleshooting scanner downloads and ingest.
+
+### Removed
+
+- **Debug core** sidebar toggle (use the `ariadne.executable` setting for a local scanner path).
+
 ## [0.1.1] - 2026-03-26
 
 ### Added
