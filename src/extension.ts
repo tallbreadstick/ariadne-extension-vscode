@@ -1437,10 +1437,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	const onboardingCallbacks = {
-		onOpenSettings: () => {
+		onOpenSettings: async () => {
+			await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', true);
+			await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
 			setTimeout(() => {
 				settingsView?.postMessage({ type: 'highlight-panel' });
 			}, 50);
+			setTimeout(() => {
+				settingsView?.postMessage({ type: 'highlight-panel' });
+			}, 200);
 		},
 		onOpenActiveVulnerabilities: () => focusRequestedPanel('activeVulnerabilities', true),
 		onOpenFullReport: () => focusRequestedPanel('sessionMetrics', true),

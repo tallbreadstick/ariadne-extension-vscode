@@ -1228,6 +1228,7 @@ export function showOnboardingPanel(context: vscode.ExtensionContext, callbacks?
 		async (message: { action?: string }) => {
 			switch (message.action) {
 				case 'openSettings':
+					await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', true);
 					await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
 					callbacks?.onOpenSettings?.();
 					break;
