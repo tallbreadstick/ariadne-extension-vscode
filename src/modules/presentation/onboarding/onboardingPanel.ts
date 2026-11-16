@@ -802,8 +802,8 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 								<span class="location-badge">Activity Bar (Left)</span>
 							</div>
 							<p class="feature-desc">
-								Manage your GitHub authentication, toggle inline code highlight visibility, 
-								access the help guide, and manage custom rule scripts across organized accordions.
+								Located in the <strong>Ariadne Sidebar</strong> (Activity Bar). Manage your GitHub authentication, toggle inline code highlight visibility, 
+								access the help guide, and manage custom rule scripts across organized accordions. Easily switch between Settings and Full Report via the header buttons.
 							</p>
 						</div>
 						<button class="btn" data-action="openSettings">
@@ -969,7 +969,7 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 						<div class="process-body">
 							<h4>Full Report Multi-Save Durability</h4>
 							<p>
-								When you fix a vulnerability, Ariadne verifies the <strong>durability</strong> of your remediation across <strong>3 consecutive saves</strong> before marking it permanently resolved. This multi-save verification ensures your fix is genuine and lasting, preventing accidental regressions or commented-out code from prematurely distorting your progress.
+								When you fix a vulnerability in your code, a <strong>Confirming</strong> card appears in the Active Vulnerabilities panel, verifying the <strong>durability</strong> of your remediation across <strong>3 consecutive saves</strong> before marking it permanently resolved. This multi-save verification ensures your fix is genuine and lasting—updating both your <strong>Session Progress bar</strong> and sidebar <strong>Full Report</strong> without allowing accidental regressions or commented-out code to prematurely distort your progress.
 							</p>
 							${step23GifUri ? /* html */ `
 							<div class="demo-media-wrapper">
@@ -1014,14 +1014,14 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 							<p>
 								If the same vulnerability remains unfixed and persists for 2 hours across your coding session, 
 								it is recognized as a recurring habit and appears under <strong>Common Vulnerabilities</strong> 
-								in your Full Report so you can focus on mastering that security pattern.
+								in your sidebar Full Report so you can focus on mastering that security pattern.
 							</p>
 							${step25GifUri ? /* html */ `
 							<div class="demo-media-wrapper">
 								<img src="${step25GifUri}" alt="Common vulnerabilities promotion" class="demo-media" loading="lazy" />
 								<div class="demo-media-caption">
 									<span class="caption-dot"></span>
-									<span>Visual indicator: Persistent vulnerability promoted to Common Vulnerabilities in the Full Report.</span>
+									<span>Visual indicator: Persistent vulnerability promoted to Common Vulnerabilities in the sidebar Full Report.</span>
 								</div>
 							</div>` : ''}
 						</div>
