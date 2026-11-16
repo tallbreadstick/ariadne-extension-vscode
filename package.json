@@ -167,6 +167,11 @@
           "default": "ariadne",
           "markdownDescription": "Optional path to a local `ariadne` binary. Leave as `ariadne` to use the binary selected in the sidebar Core section."
         },
+        "ariadne.debugCore": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run `ariadne` from the system PATH instead of the downloaded scanner, for a local build such as `cargo install`. Default off. A real file in `ariadne.executable` still wins. The environment variable `ARIADNE_DEBUG_CORE=1` does the same thing."
+        },
         "ariadne.notifications.level": {
           "type": "string",
           "default": "milestones",

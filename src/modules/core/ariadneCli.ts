@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { ensureAriadneExecutable } from './ariadneExecutable.js';
+import { logAriadneError } from './debugLog.js';
 import {
 	INIT_RULE_SCRIPT_ARGS,
 	RESET_RULE_SCRIPT_ARGS,
@@ -25,9 +26,9 @@ export async function runAriadneCli(
 			stderr += chunk.toString();
 		});
 		proc.on('error', (err) => {
-			reject(new Error(
-				`Could not run \`${exe}\`: ${err.message}.`,
-			));
+			const error = new Error(`Could not run \`${exe}\`: ${err.message}.`);
+			logAriadneError('scanner-spawn', error);
+			reject(error);
 		});
 		proc.on('close', (code) => {
 			const output = (stdout || stderr).trim();
@@ -35,9 +36,9 @@ export async function runAriadneCli(
 				resolve(output);
 				return;
 			}
-			reject(new Error(
-				output || `\`${exe} ${args.join(' ')}\` failed (exit ${code})`,
-			));
+			const error = new Error(output || `\`${exe} ${args.join(' ')}\` failed (exit ${code})`);
+			logAriadneError('scanner-spawn', error, `exit=${code ?? 'null'}`);
+			reject(error);
 		});
 	});
 }

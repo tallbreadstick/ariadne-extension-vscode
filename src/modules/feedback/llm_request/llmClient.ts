@@ -6,6 +6,7 @@
  * Uses a warm client manager to avoid cold-start latency on each request.
  */
 
+import { logAriadneError } from '../../core/debugLog.js';
 import { CopilotClientManager } from './copilotClientManager.js';
 import type { CopilotRuntimeOptions } from './copilotRuntime.js';
 import type { AriadneLLMRequestBody } from './requestTypes.js';
@@ -68,11 +69,15 @@ export async function callLLM(
 
 		return content;
 	} catch (error: unknown) {
-		if (error instanceof Error && /timed?\s*out/i.test(error.message)) {
-			throw new Error(
+		const timedOut = error instanceof Error && /timed?\s*out/i.test(error.message);
+		if (timedOut) {
+			const timeout = new Error(
 				`Copilot request timed out after ${LLM_TIMEOUT_MS / 1000} seconds`,
 			);
+			logAriadneError('llm', timeout, 'timeout');
+			throw timeout;
 		}
+		logAriadneError('llm', error, 'request failed');
 		throw error;
 	} finally {
 		if (session) {

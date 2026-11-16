@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import * as vscode from 'vscode';
 import { ensureAriadneExecutable } from '../core/ariadneExecutable';
+import { logAriadneError } from '../core/debugLog.js';
 
 const DEBOUNCE_MS = 400;
 const DIAGNOSTIC_SOURCE = 'ariadne-rules';
@@ -244,14 +245,16 @@ async function spawnCheck(projectRoot: string): Promise<CheckReport> {
 			stderr += chunk.toString();
 		});
 		proc.on('error', (err) => {
-			reject(new Error(
-				`Could not run \`${exe}\`: ${err.message}.`,
-			));
+			const error = new Error(`Could not run \`${exe}\`: ${err.message}.`);
+			logAriadneError('scanner-spawn', error);
+			reject(error);
 		});
 		proc.on('close', () => {
 			const trimmed = stdout.trim();
 			if (!trimmed) {
-				reject(new Error(stderr.trim() || `\`${exe} check\` produced no output`));
+				const error = new Error(stderr.trim() || `\`${exe} check\` produced no output`);
+				logAriadneError('scan', error, 'rules check');
+				reject(error);
 				return;
 			}
 			try {

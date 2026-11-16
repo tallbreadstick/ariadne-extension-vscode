@@ -36,6 +36,8 @@ export interface ActiveVulnerabilitiesOptions {
 	resolvedCount?: number;
 	/** Authoritative baseline or total issues tracked in this session. */
 	totalSessionIssues?: number;
+	/** Live absences that have not reached durable resolution yet. */
+	confirmingCount?: number;
 	/** Common vulnerability habit types (for Next Focus prioritization). */
 	commonVulnTypes?: string[];
 }
@@ -1429,13 +1431,19 @@ function buildSessionProgressSection(
 		activeCount + resolvedCount,
 		options.totalSessionIssues ?? (activeCount + resolvedCount),
 	);
+	const confirmingCount = Math.max(0, options.confirmingCount ?? 0);
 
 	if (options.loading || totalSessionIssues === 0) {
 		return '';
 	}
 
-	// Victory State: All issues tracked in this session have been resolved
-	if (activeCount === 0 && resolvedCount > 0 && resolvedCount >= totalSessionIssues) {
+	// Victory only when nothing is left to confirm.
+	if (
+		activeCount === 0
+		&& confirmingCount === 0
+		&& resolvedCount > 0
+		&& resolvedCount >= totalSessionIssues
+	) {
 		return /* html */ `
 			<section class="session-progress-card victory" aria-label="Session Resolution Progress">
 				<div class="progress-info-row">
@@ -1539,11 +1547,22 @@ export function buildActiveVulnerabilitiesHtml(
 	}
 
 	const cards = vulns.map((v) => buildVulnCard(v)).join('\n');
+	const resolvedCount = Math.max(0, options.resolvedCount ?? 0);
+	const totalSessionIssues = Math.max(
+		vulns.length + resolvedCount,
+		options.totalSessionIssues ?? (vulns.length + resolvedCount),
+	);
+	const confirmingCount = Math.max(0, options.confirmingCount ?? 0);
+	const confirmationOpen = confirmingCount > 0
+		|| (vulns.length === 0 && resolvedCount < totalSessionIssues && totalSessionIssues > 0);
+	const emptyCopy = confirmationOpen
+		? 'Still confirming resolution.'
+		: 'You are all clear for this scan cycle.';
 	const emptyState = /* html */ `
         <div class="empty-state" role="status" aria-live="polite">
             <div class="empty-title">No active vulnerabilities</div>
             <div class="empty-subtitle">
-                You are all clear for this scan cycle.
+                ${emptyCopy}
             </div>
         </div>`;
 	const filterEmptyState = /* html */ `
@@ -1916,7 +1935,16 @@ export function buildActiveVulnerabilitiesHtml(
 							if (option) {
 								typeFilter.value = option.value;
 							} else {
-								typeFilter.value = '';
+								const note = 'Still confirming. ' + targetType + ' is not in the live scan.';
+								const subtitle = document.querySelector('.empty-subtitle');
+								if (subtitle) {
+									subtitle.textContent = note;
+								}
+								if (filterEmpty) {
+									filterEmpty.textContent = note;
+									filterEmpty.classList.add('visible');
+								}
+								return;
 							}
 						}
 						persistFilters();

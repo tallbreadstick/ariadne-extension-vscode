@@ -4,7 +4,7 @@ import { createWriteStream, existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import * as vscode from 'vscode';
-import { logAriadneError } from './debugLog.js';
+import { logAriadneError, loggableUrl } from './debugLog.js';
 import {
 	LATEST_RELEASE_URL,
 	normalizeScannerPreferences,
@@ -70,10 +70,20 @@ export function ensureAriadneExecutable(): Promise<string> {
 	return inflight;
 }
 
+/** True when a local `ariadne` on PATH should replace the downloaded binary. */
+export function debugCoreEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+	const flag = env.ARIADNE_DEBUG_CORE?.trim().toLowerCase();
+	if (flag === '1' || flag === 'true') {
+		return true;
+	}
+	return vscode.workspace.getConfiguration('ariadne').get<boolean>('debugCore', false) === true;
+}
+
 function selectionKey(): string {
 	const prefs = readPrefs();
 	const executable = vscode.workspace.getConfiguration('ariadne').get<string>('executable', DEFAULT_EXECUTABLE) ?? DEFAULT_EXECUTABLE;
-	return `${prefs.auto}\n${prefs.os}\n${prefs.target}\n${prefs.version ?? ''}\n${executable}`;
+	const debugCore = debugCoreEnabled() ? 'debug-core' : '';
+	return `${prefs.auto}\n${prefs.os}\n${prefs.target}\n${prefs.version ?? ''}\n${executable}\n${debugCore}`;
 }
 
 /** Saved Auto / OS / binary choice. Auto is on until the user turns it off. */
@@ -86,6 +96,10 @@ async function resolveExecutable(): Promise<string> {
 	if (override) {
 		console.log(`[Ariadne] Scanner setting ignored; using ariadne.executable: ${override}`);
 		return override;
+	}
+	if (debugCoreEnabled()) {
+		console.log('[Ariadne] Debug core enabled; using ariadne from PATH.');
+		return DEFAULT_EXECUTABLE;
 	}
 	if (!cacheDir) {
 		throw new Error('Ariadne scanner cache is not configured.');
@@ -116,6 +130,9 @@ async function resolveExecutable(): Promise<string> {
 			throw new Error('Ariadne: download failed.');
 		}
 	} catch (error: unknown) {
+		if (!(error instanceof DownloadCancelled)) {
+			logAriadneError('scanner-setup', error);
+		}
 		if (cached && !(error instanceof DownloadCancelled)) {
 			console.warn('[Ariadne] Could not check the latest scanner release; using the cached binary.');
 			await markExecutable(cached);
@@ -164,7 +181,10 @@ export async function fetchScannerReleasesList(): Promise<ParsedRelease[]> {
 		},
 	});
 	if (!response.ok) {
-		throw new Error(`Could not list Ariadne releases (HTTP ${response.status}).`);
+		const url = loggableUrl(RELEASES_LIST_URL);
+		const error = new Error(`Could not list Ariadne releases (HTTP ${response.status}) ${url}`);
+		logAriadneError('scanner-download', error, `status=${response.status} url=${url}`);
+		throw error;
 	}
 	const parsed = parseReleasesList(await response.json());
 	releasesListCache = { expires: now + 5 * 60_000, value: parsed };
@@ -252,7 +272,10 @@ async function fetchLatestAssets(): Promise<ReleaseAsset[]> {
 		},
 	});
 	if (!response.ok) {
-		throw new Error(`Could not read the latest Ariadne release (HTTP ${response.status}).`);
+		const url = loggableUrl(LATEST_RELEASE_URL);
+		const error = new Error(`Could not read the latest Ariadne release (HTTP ${response.status}) ${url}`);
+		logAriadneError('scanner-download', error, `status=${response.status} url=${url}`);
+		throw error;
 	}
 	return parseLatestRelease(await response.json());
 }
@@ -310,7 +333,10 @@ async function downloadAsset(
 		throw error;
 	}
 	if (!response.ok || !response.body) {
-		throw new Error(`Could not download ${asset.name} (HTTP ${response.status}).`);
+		const url = loggableUrl(asset.browser_download_url);
+		const error = new Error(`Could not download ${asset.name} (HTTP ${response.status}) ${url}`);
+		logAriadneError('scanner-download', error, `status=${response.status} url=${url}`);
+		throw error;
 	}
 	await mkdir(cacheDir!, { recursive: true });
 	const partial = `${destination}.partial`;
@@ -442,8 +468,16 @@ export function probeAriadneExecutable(exe: string): Promise<boolean> {
 			resolve(ok);
 		};
 		timer = setTimeout(() => finish(true), 800);
-		child.once('error', () => finish(false));
-		child.once('exit', () => finish(false));
+		child.once('error', (err: Error) => {
+			logAriadneError('scanner-spawn', err);
+			finish(false);
+		});
+		child.once('exit', (code: number | null) => {
+			if (!settled && code !== null && code !== 0) {
+				logAriadneError('scanner-spawn', new Error(`Scanner probe exited with code ${code}`));
+			}
+			finish(false);
+		});
 	});
 }
 

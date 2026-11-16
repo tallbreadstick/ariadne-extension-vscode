@@ -222,5 +222,25 @@ describe('Session Progress Bar & Victory State', () => {
 
 		assert.ok(!html.includes('class="session-progress-card"'), 'Progress card should be omitted');
 	});
+
+	it('does not say all clear while confirmation is still open', () => {
+		const html = buildActiveVulnerabilitiesHtml([], {
+			signedIn: true,
+			resolvedCount: 7,
+			totalSessionIssues: 11,
+			confirmingCount: 4,
+		});
+
+		assert.ok(html.includes('7 of 11'));
+		assert.ok(html.includes('Still confirming resolution.'));
+		assert.ok(!html.includes('all clear'));
+		assert.ok(!html.includes('session-progress-card victory'));
+	});
+
+	it('says still confirming when a trend type is not in the live list', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, { signedIn: true });
+		assert.ok(html.includes('Still confirming. '));
+		assert.ok(html.includes('is not in the live scan.'));
+	});
 });
 

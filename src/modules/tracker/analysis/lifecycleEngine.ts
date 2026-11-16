@@ -332,11 +332,9 @@ function updateAbsentLifecycle(
 	const postGrace = (lifecycle.postGraceAbsenceCount ?? 0) + 1;
 	lifecycle.postGraceAbsenceCount = postGrace;
 
-	// Require two settled absences after grace before provisional resolution.
+	// Three settled saves: the first absence set missingSince, this
+	// post-grace save is provisional (save 2), and the next one is durable.
 	if (lifecycle.provisionalResolutionAt === null) {
-		if (postGrace < 2) {
-			return;
-		}
 		lifecycle.provisionalResolutionAt = timestamp;
 		lifecycle.currentOccurrenceCount = 0;
 		console.log(
@@ -346,10 +344,6 @@ function updateAbsentLifecycle(
 		return;
 	}
 
-	// Already provisionally resolved — another post-grace absence → durable
-	if (postGrace < 3) {
-		return;
-	}
 	lifecycle.durableResolutionAt = timestamp;
 	console.log(
 		`[Ariadne Lifecycle] Durable resolution confirmed: ` +
@@ -652,12 +646,72 @@ export function startSession(
 	};
 }
 
+export interface LiveSessionProgress {
+	/** Findings absent from the live scan, including ones still being confirmed. */
+	resolvedCount: number;
+	/** Live findings plus absences, and at least the seeded baseline size. */
+	totalSessionIssues: number;
+	/** Absences that are not yet durably resolved. */
+	confirmingCount: number;
+}
+
 /**
- * Sets the baseline checkpoint for a session from the first
- * settled observation's findings.
- *
- * Should be called once when the first settled observation arrives
- * in a session (i.e. when `baselineCheckpoint` is null).
+ * Counts session progress from the live scan.
+ * A finding seen this session and missing from the current scan counts
+ * immediately. Durable resolution is what finishes confirmation.
+ */
+export function countLiveSessionProgress(
+	liveFingerprints: ReadonlySet<string>,
+	lifecycles: readonly FindingLifecycleRecord[],
+	baselineFingerprints: readonly string[],
+	sessionStartedAt: number | null,
+): LiveSessionProgress {
+	const byFingerprint = new Map(lifecycles.map((row) => [row.logicalFingerprint, row]));
+	const known = new Set(baselineFingerprints);
+	if (sessionStartedAt !== null) {
+		for (const row of lifecycles) {
+			if (row.firstConfirmedAt >= sessionStartedAt) {
+				known.add(row.logicalFingerprint);
+			}
+		}
+	}
+
+	let resolvedCount = 0;
+	let confirmingCount = 0;
+	let commentedOut = 0;
+	for (const fingerprint of known) {
+		if (liveFingerprints.has(fingerprint)) {
+			continue;
+		}
+		const row = byFingerprint.get(fingerprint);
+		if (row?.isCommentedOut) {
+			commentedOut += 1;
+			continue;
+		}
+		resolvedCount += 1;
+		const durableAt = row?.durableResolutionAt ?? null;
+		const durableThisSession = durableAt !== null
+			&& (sessionStartedAt === null || durableAt >= sessionStartedAt);
+		if (!durableThisSession) {
+			confirmingCount += 1;
+		}
+	}
+
+	return {
+		resolvedCount,
+		totalSessionIssues: Math.max(
+			baselineFingerprints.length,
+			liveFingerprints.size + resolvedCount + commentedOut,
+		),
+		confirmingCount,
+	};
+}
+
+/**
+ * Sets the baseline checkpoint for a session.
+ * The caller passes the first live scan when one exists, so a fix made
+ * before the first settled save stays in the baseline.
+ * Later calls no-op once `baselineCheckpoint` is set.
  */
 export function setSessionBaseline(
 	session: SessionRecord,

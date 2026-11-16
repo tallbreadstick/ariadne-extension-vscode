@@ -3,6 +3,7 @@ import { AriadneMessage } from './messages';
 import type { VulnerabilityMetadata } from '../../feedback/vulnerability_results/vulnerabilityTypes.js';
 import type { DataAuditPayload } from '../../presentation/views/treeViewPanel.js';
 import { ensureAriadneExecutable } from '../../core/ariadneExecutable';
+import { logAriadneError } from '../../core/debugLog.js';
 
 export type FindingsCallback = (findings: VulnerabilityMetadata[]) => void;
 export type TreeViewCallback = (payload: DataAuditPayload) => void;
@@ -88,11 +89,15 @@ export function runSession(): AriadneSession {
 			}
 		};
 
-		child.on('error', () => {
+		child.on('error', (err: Error) => {
+			logAriadneError('scanner-spawn', err);
 			noteExit(null);
 		});
 
 		child.on('close', (code: number | null) => {
+			if (code !== null && code !== 0) {
+				logAriadneError('scanner-spawn', new Error(`Scanner exited with code ${code}`));
+			}
 			noteExit(code);
 		});
 	};

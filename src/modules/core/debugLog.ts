@@ -33,6 +33,29 @@ function isoTimestamp(): string {
 	return new Date().toISOString();
 }
 
+/** Drops tokens, bearer headers, and query secrets before a line is written. */
+export function redactSecrets(text: string): string {
+	return text
+		.replace(/([?&])(token|access_token|api_key|apikey|key|sig|signature)=[^&\s]*/gi, '$1$2=[redacted]')
+		.replace(/\b(bearer\s+)\S+/gi, '$1[redacted]')
+		.replace(/\b(ghp_|github_pat_|gho_|ghu_|ghs_|sk-)[A-Za-z0-9_]+/g, '[redacted]');
+}
+
+/** Logs an origin and path, never a signed query string. */
+export function loggableUrl(raw: string): string {
+	try {
+		const url = new URL(raw);
+		return `${url.origin}${url.pathname}`;
+	} catch {
+		return redactSecrets(raw.split('?')[0] ?? raw);
+	}
+}
+
+function clip(text: string, max = 500): string {
+	const clean = redactSecrets(text).replace(/\s+/g, ' ').trim();
+	return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+}
+
 /** Formats one log line (tested). Never include tokens or raw LLM bodies. */
 export function formatAriadneErrorLine(
 	scope: string,
@@ -41,15 +64,15 @@ export function formatAriadneErrorLine(
 ): string {
 	const parts: string[] = [`[${isoTimestamp()}]`, 'ERROR', `[${scope}]`];
 	if (detail?.trim()) {
-		parts.push(detail.trim());
+		parts.push(clip(detail));
 	}
 	if (error instanceof Error) {
-		parts.push(error.message);
+		parts.push(clip(error.message));
 		if (error.stack) {
-			parts.push(error.stack.replace(/\r\n/g, '\n').split('\n').slice(0, 8).join(' | '));
+			parts.push(clip(error.stack.replace(/\r\n/g, '\n').split('\n').slice(0, 8).join(' | '), 800));
 		}
 	} else if (error !== undefined && error !== null) {
-		parts.push(String(error));
+		parts.push(clip(String(error)));
 	}
 	return parts.join(' ');
 }

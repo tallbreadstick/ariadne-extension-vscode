@@ -9,6 +9,7 @@ import {
 	classifyFinding,
 	startSession,
 	setSessionBaseline,
+	countLiveSessionProgress,
 	updateSessionLatest,
 	finalizeSession,
 	extractTrendComparisonBaseline,
@@ -182,7 +183,7 @@ describe('Lifecycle Engine Test Suite', () => {
 			assert.strictEqual(stepAbsent2.lifecycles[0].provisionalResolutionAt, null);
 		});
 
-		it('marks provisional resolution after grace period exceeds 5,000ms', () => {
+		it('marks provisional resolution on the first settled absence after the 5s grace period', () => {
 			const finding = createMockFinding();
 			const step1 = processObservation([finding], [], t0, true);
 			const step2 = processObservation([finding], step1.lifecycles, t0 + 10_000, true);
@@ -190,21 +191,17 @@ describe('Lifecycle Engine Test Suite', () => {
 			const tAbsent1 = t0 + 15_000;
 			processObservation([], step2.lifecycles, tAbsent1, true);
 
-			// One post-grace absence is not enough for provisional resolution
-			const tAbsent2 = tAbsent1 + 6_000;
-			const stepEarly = processObservation([], step2.lifecycles, tAbsent2, true);
-			assert.strictEqual(stepEarly.lifecycles[0].provisionalResolutionAt, null);
-
-			const tAbsentProvisional = tAbsent2 + 5_000;
-			const stepProvisional = processObservation([], step2.lifecycles, tAbsentProvisional, true);
+			// Save 2 of 3: the first post-grace absence is provisional, not durable.
+			const tProvisional = tAbsent1 + 6_000;
+			const stepProvisional = processObservation([], step2.lifecycles, tProvisional, true);
 
 			const lc = stepProvisional.lifecycles[0];
-			assert.strictEqual(lc.provisionalResolutionAt, tAbsentProvisional);
+			assert.strictEqual(lc.provisionalResolutionAt, tProvisional);
 			assert.strictEqual(lc.currentOccurrenceCount, 0);
 			assert.strictEqual(lc.durableResolutionAt, null);
 		});
 
-		it('confirms durable resolution on subsequent settled observation', () => {
+		it('confirms durable resolution on the third settled absence', () => {
 			const finding = createMockFinding();
 			const step1 = processObservation([finding], [], t0, true);
 			const step2 = processObservation([finding], step1.lifecycles, t0 + 10_000, true);
@@ -212,19 +209,69 @@ describe('Lifecycle Engine Test Suite', () => {
 			const tAbsent1 = t0 + 15_000;
 			processObservation([], step2.lifecycles, tAbsent1, true);
 
-			const tAbsent2 = tAbsent1 + 6_000;
-			processObservation([], step2.lifecycles, tAbsent2, true);
+			const tProvisional = tAbsent1 + 6_000;
+			processObservation([], step2.lifecycles, tProvisional, true);
+			assert.strictEqual(step2.lifecycles[0].provisionalResolutionAt, tProvisional);
 
-			const tAbsent3 = tAbsent2 + 5_000;
-			processObservation([], step2.lifecycles, tAbsent3, true);
-
-			const tDurable = tAbsent3 + 5_000;
+			const tDurable = tProvisional + 5_000;
 			const stepDurable = processObservation([], step2.lifecycles, tDurable, true);
 
 			const lc = stepDurable.lifecycles[0];
 			assert.strictEqual(lc.durableResolutionAt, tDurable);
 			assert.strictEqual(stepDurable.classifications[0].status, 'resolved');
 			assert.strictEqual(lc.lifecycleState, 'resolved');
+		});
+	});
+
+	describe('live session progress', () => {
+		it('counts a finding that just left the live scan without shrinking the total', () => {
+			const findings = Array.from({ length: 11 }, (_, index) => createMockFinding({
+				logicalFingerprint: `fp-${index}`,
+				instanceName: `query-${index}`,
+			}));
+			const seeded = processObservation(findings, [], t0, false);
+			const live = new Set(findings.slice(1).map((finding) => finding.logicalFingerprint));
+			const progress = countLiveSessionProgress(
+				live,
+				seeded.lifecycles,
+				findings.map((finding) => finding.logicalFingerprint),
+				null,
+			);
+
+			assert.strictEqual(progress.resolvedCount, 1);
+			assert.strictEqual(progress.totalSessionIssues, 11);
+			assert.strictEqual(progress.confirmingCount, 1);
+		});
+
+		it('stops confirming once the absence is durable', () => {
+			const finding = createMockFinding();
+			const lifecycles: FindingLifecycleRecord[] = [];
+			processObservation([finding], lifecycles, t0, true);
+			processObservation([], lifecycles, t0 + 1_000, true);
+			processObservation([], lifecycles, t0 + 7_000, true);
+			processObservation([], lifecycles, t0 + 13_000, true);
+			assert.notStrictEqual(lifecycles[0].durableResolutionAt, null);
+
+			const progress = countLiveSessionProgress(
+				new Set(),
+				lifecycles,
+				[finding.logicalFingerprint],
+				t0,
+			);
+			assert.strictEqual(progress.resolvedCount, 1);
+			assert.strictEqual(progress.confirmingCount, 0);
+			assert.strictEqual(progress.totalSessionIssues, 1);
+		});
+
+		it('does not count lifecycles from before this session', () => {
+			const stale: FindingLifecycleRecord = {
+				...processObservation([createMockFinding()], [], t0, true).lifecycles[0],
+				firstConfirmedAt: t0,
+			};
+			const progress = countLiveSessionProgress(new Set(), [stale], [], t0 + 50_000);
+			assert.strictEqual(progress.resolvedCount, 0);
+			assert.strictEqual(progress.totalSessionIssues, 0);
+			assert.strictEqual(progress.confirmingCount, 0);
 		});
 	});
 

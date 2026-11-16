@@ -74,6 +74,7 @@ import {
 	probeAriadneExecutable,
 	readScannerPreferencesFromConfig,
 	ensureAriadneExecutable,
+	debugCoreEnabled,
 } from './modules/core/ariadneExecutable.js';
 import {
 	SCANNER_OS_OPTIONS,
@@ -134,6 +135,7 @@ import {
 	setSessionBaseline,
 	updateSessionLatest,
 	finalizeSession,
+	countLiveSessionProgress,
 } from './modules/tracker/analysis/lifecycleEngine.js';
 import { SessionStore } from './modules/tracker/storage/sessionStore.js';
 import type { SaveScanState } from './modules/tracker/storage/sessionStore.js';
@@ -272,34 +274,14 @@ function buildVulnsHtml(
 	scannerBroken = false,
 	loading = false,
 	treeViewOpen = false,
+	findingLifecycles?: FindingLifecycleRecord[],
+	progress?: { resolvedCount: number; totalSessionIssues: number; confirmingCount: number },
+	sessionForCommon?: SessionRecord | null,
 ): string {
-	const lifecycles = store.loadFindingLifecycles();
-	const activeSession = store.loadActiveSession();
-	const activeKeys = new Set(
-		vulns.map((v) => `${v.filePath}|${v.cwe}|${v.title}`.toLowerCase()),
-	);
-
-	const resolvedCount = lifecycles.filter((flc) => {
-		// A finding actively present in the workspace cannot be considered resolved
-		const flcKey = `${flc.filePath}|${flc.cweId}|${flc.type}`.toLowerCase();
-		if (activeKeys.has(flcKey)) {
-			return false;
-		}
-
-		if (flc.lifecycleState === 'resolved') {
-			return true;
-		}
-		if (flc.durableResolutionAt !== null) {
-			return activeSession === null || flc.durableResolutionAt >= activeSession.startedAt;
-		}
-		if (flc.provisionalResolutionAt !== null) {
-			return activeSession === null || flc.provisionalResolutionAt >= activeSession.startedAt;
-		}
-		return false;
-	}).length;
-
-	const baselineCount = activeSession?.baselineCheckpoint?.findings.length ?? 0;
-	const totalSessionIssues = Math.max(vulns.length + resolvedCount, baselineCount);
+	const lifecycles = findingLifecycles ?? store.loadFindingLifecycles();
+	const resolvedCount = progress?.resolvedCount ?? 0;
+	const totalSessionIssues = progress?.totalSessionIssues ?? Math.max(vulns.length, resolvedCount);
+	const confirmingCount = progress?.confirmingCount ?? 0;
 
 	let commonVulnTypes: string[] = [];
 	try {
@@ -307,7 +289,7 @@ function buildVulnsHtml(
 		const gradHistory = store.loadGraduationHistory();
 		const commonMap = computeCommonVulnerabilities(
 			completedSessions,
-			activeSession,
+			sessionForCommon === undefined ? store.loadActiveSession() : sessionForCommon,
 			lifecycles,
 			gradHistory,
 		);
@@ -324,6 +306,7 @@ function buildVulnsHtml(
 		treeViewOpen,
 		resolvedCount,
 		totalSessionIssues,
+		confirmingCount,
 		commonVulnTypes,
 	});
 }
@@ -333,6 +316,17 @@ function buildVulnsHtml(
 // ─────────────────────────────────────────────────────────────────────
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	configureDebugLog(context.globalStorageUri.fsPath);
+	const logUncaught = (error: unknown): void => {
+		logAriadneError('uncaught', error);
+	};
+	process.on('uncaughtException', logUncaught);
+	process.on('unhandledRejection', logUncaught);
+	context.subscriptions.push({
+		dispose: () => {
+			process.off('uncaughtException', logUncaught);
+			process.off('unhandledRejection', logUncaught);
+		},
+	});
 
 	const readScannerChoice = (): ScannerPreferences => {
 		const saved = context.globalState.get<{ auto?: boolean; os?: string; target?: string; version?: string }>('ariadne.scannerPreferences');
@@ -734,16 +728,93 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		void store.saveSaveScanState(saveScanState);
 	}
 
-	// Session is created lazily on the first settled save scan, so that
-	// SessionRecord.startedAt matches the initial checkpoint timestamp exactly.
-	// Until then, activeSession is null and no lifecycle or Trends writes occur.
+	// The session record still starts on the first settled save. The baseline
+	// findings are captured on the first non-empty live scan, so a fix made
+	// before that save still has a lifecycle.
 	let activeSession: ReturnType<typeof startSession> | null = null;
 	let lastSettledRevision: number | null = null;
 
 	let latestVulnerabilities: Vulnerability[] = [];
 	let latestObservedFindings: ObservedFinding[] = [];
+	let liveBaselineFindings: ObservedFinding[] | null = null;
+	const seenFingerprints = new Set<string>();
 	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
 	let latestSessionAnalysis: SessionAnalysis | null = null;
+
+	function noteSeenFindings(findings: readonly ObservedFinding[]): void {
+		for (const finding of findings) {
+			if (finding.logicalFingerprint) {
+				seenFingerprints.add(finding.logicalFingerprint);
+			}
+		}
+	}
+
+	async function ensureKnownLifecycles(findings: readonly ObservedFinding[]): Promise<void> {
+		const known = new Set(lifecycles.map((row) => row.logicalFingerprint));
+		const unseen: ObservedFinding[] = [];
+		const queued = new Set<string>();
+		for (const finding of findings) {
+			if (!finding.logicalFingerprint || known.has(finding.logicalFingerprint) || queued.has(finding.logicalFingerprint)) {
+				continue;
+			}
+			queued.add(finding.logicalFingerprint);
+			unseen.push(finding);
+		}
+		if (unseen.length === 0) {
+			return;
+		}
+		const result = processObservation(unseen, lifecycles, Date.now(), false, getWorkspaceFileContent);
+		lifecycles = result.lifecycles;
+		await store.saveFindingLifecycles(lifecycles);
+	}
+
+	function panelVulnsHtml(
+		vulns: Vulnerability[],
+		panelStore: SessionStore,
+		signedIn: boolean,
+		scannerBroken = false,
+		loading = false,
+		treeViewOpen = false,
+	): string {
+		const progress = countLiveSessionProgress(
+			new Set(latestObservedFindings.map((finding) => finding.logicalFingerprint)),
+			lifecycles,
+			[...seenFingerprints],
+			activeSession?.startedAt ?? null,
+		);
+		return buildVulnsHtml(
+			vulns,
+			panelStore,
+			signedIn,
+			scannerBroken,
+			loading,
+			treeViewOpen,
+			lifecycles,
+			progress,
+			activeSession,
+		);
+	}
+
+	function applyLiveSeverity(target: { critical: number; high: number; medium: number; low: number }): void {
+		if (!initialFindingsReceived) {
+			return;
+		}
+		target.critical = 0;
+		target.high = 0;
+		target.medium = 0;
+		target.low = 0;
+		for (const vuln of latestVulnerabilities) {
+			if (vuln.severity === 'critical') {
+				target.critical += 1;
+			} else if (vuln.severity === 'high') {
+				target.high += 1;
+			} else if (vuln.severity === 'medium') {
+				target.medium += 1;
+			} else if (vuln.severity === 'low') {
+				target.low += 1;
+			}
+		}
+	}
 
 	function buildPendingResolutions(): PendingResolutionItem[] | undefined {
 		if (lifecycles.length === 0) {
@@ -814,12 +885,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		if (latestSessionAnalysis) {
 			const metrics = toSessionMetrics(latestSessionAnalysis, commonVulns, totalSessionsAnalyzed, sessionLabel, activeSession !== null);
-			if (latestVulnerabilities.length > 0) {
-				metrics.critical = latestVulnerabilities.filter(v => v.severity === 'critical').length;
-				metrics.high = latestVulnerabilities.filter(v => v.severity === 'high').length;
-				metrics.medium = latestVulnerabilities.filter(v => v.severity === 'medium').length;
-				metrics.low = latestVulnerabilities.filter(v => v.severity === 'low').length;
-			}
+			applyLiveSeverity(metrics);
 			const dismissed = new Set(store.loadDismissedNotifications());
 			if (metrics.notifications) {
 				metrics.notifications = metrics.notifications.filter(n => !dismissed.has(n.id));
@@ -834,21 +900,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		let medium = 0;
 		let low = 0;
 
-		if (latestVulnerabilities.length > 0) {
+		if (initialFindingsReceived) {
 			for (const v of latestVulnerabilities) {
 				if (v.severity === 'critical') { critical++; }
 				else if (v.severity === 'high') { high++; }
 				else if (v.severity === 'medium') { medium++; }
 				else if (v.severity === 'low') { low++; }
-			}
-		} else if (lifecycles.length > 0) {
-			for (const flc of lifecycles) {
-				if (flc.durableResolutionAt === null) {
-					if (flc.severity === 'critical') { critical++; }
-					else if (flc.severity === 'high') { high++; }
-					else if (flc.severity === 'medium') { medium++; }
-					else if (flc.severity === 'low') { low++; }
-				}
 			}
 		} else if (priorCompletedSession?.finalCheckpoint?.findings) {
 			for (const f of priorCompletedSession.finalCheckpoint.findings) {
@@ -1028,7 +1085,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		refreshSessionMetricsPanel();
 	}
 
-	let initialVulnsHtml = buildVulnsHtml([], store, false, false, true);
+	let initialVulnsHtml = panelVulnsHtml([], store, false, false, true);
 	let initialMetricsHtml = buildSessionMetricsHtml(buildCurrentSessionMetrics(), {
 		signedIn: false,
 		loading: true,
@@ -1160,7 +1217,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
+		panelVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -1923,7 +1980,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		latestVulnerabilities = [];
 		latestTreeView = null;
 		diagnosticManager.clearAll();
-		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, featuresUnlocked, true, false, treeViewOpen));
+		activeVulnsProvider.updateHtml(panelVulnsHtml([], store, featuresUnlocked, true, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshTreeViewPanel();
 		updatePanelReadyContext({ kind: 'error' });
@@ -1939,11 +1996,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			scannerBroken = false;
 			if (initialFindingsReceived) {
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, true, false, false),
+					panelVulnsHtml(latestVulnerabilities, store, true, false, false),
 				);
 			} else {
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml([], store, true, false, true),
+					panelVulnsHtml([], store, true, false, true),
 				);
 			}
 			updatePanelReadyContext();
@@ -1954,7 +2011,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	applyScannerSelection = async () => {
 		const prefs = readScannerPreferencesFromConfig();
-		if (!localExecutableOverride() && !prefs.auto) {
+		if (!localExecutableOverride() && !debugCoreEnabled() && !prefs.auto) {
 			const cached = await cachedScannerPath(prefs.target, prefs.auto ? undefined : prefs.version);
 			if (!cached) {
 				scannerChecked = true;
@@ -1973,6 +2030,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await confirmScannerProcess();
 			} catch (error: unknown) {
 				if (!(error instanceof DownloadCancelled)) {
+					logAriadneError('scanner-setup', error);
 					const message = error instanceof Error ? error.message : String(error);
 					if (message !== 'Ariadne: download failed.') {
 						vscode.window.showErrorMessage(`Ariadne: ${message}`);
@@ -1989,6 +2047,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				scannerChecked = true;
 				scannerBroken = true;
 				if (!(error instanceof DownloadCancelled)) {
+					logAriadneError('scanner-setup', error);
 					const message = error instanceof Error ? error.message : String(error);
 					if (message !== 'Download the selected scanner binary from the Core section.'
 						&& message !== 'Ariadne: download failed.') {
@@ -2136,7 +2195,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				}
 			}
 
-			void store.saveFindingLifecycles(lifecycles);
+			await store.saveFindingLifecycles(lifecycles);
 
 			// Record hourly checkpoint on active session without ending or resetting the session
 			hourlySessionCount++;
@@ -2168,7 +2227,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			refreshSessionMetricsPanel();
 			updateStatusBar(sessionAnalysis);
 			activeVulnsProvider.updateHtml(
-				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+				panelVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
 			);
 
 			vscode.window.setStatusBarMessage(
@@ -2176,6 +2235,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				5000,
 			);
 		} catch (err) {
+			logAriadneError('scan', err, 'hourly full scan');
 			setReportUpdateStatus(activeSession !== null ? 'updated' : 'idle');
 			console.warn('[Ariadne] Hourly auto full scan rollover failed:', err);
 		}
@@ -2221,6 +2281,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await confirmScannerProcess();
 			} catch (error: unknown) {
 				if (!(error instanceof DownloadCancelled)) {
+					logAriadneError('scanner-setup', error);
 					const message = error instanceof Error ? error.message : String(error);
 					if (message !== 'Download the selected scanner binary from the Core section.'
 						&& message !== 'Ariadne: download failed.') {
@@ -2232,7 +2293,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				scannerBusy = false;
 				startupLoading = !initialFindingsReceived && !scannerBroken;
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, true, scannerBroken, startupLoading),
+					panelVulnsHtml(latestVulnerabilities, store, true, scannerBroken, startupLoading),
 				);
 				refreshSessionMetricsPanel();
 				await refreshSignInPanel();
@@ -2257,7 +2318,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerChecked = false;
 		acceptFindings = false;
 		reportUpdateStatus = 'idle';
-		activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, true));
+		activeVulnsProvider.updateHtml(panelVulnsHtml([], store, false, false, true));
 		activeVulnsProvider.setBadgeCount(0);
 		refreshSessionMetricsPanel();
 		updatePanelReadyContext({ kind: 'signed-out' });
@@ -2265,7 +2326,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	};
 
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-		if (!event.affectsConfiguration('ariadne.executable')) {
+		if (!event.affectsConfiguration('ariadne.executable') && !event.affectsConfiguration('ariadne.debugCore')) {
 			return;
 		}
 		console.log('[Ariadne] Scanner executable changed');
@@ -2275,7 +2336,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	void githubAuth.isAuthenticated().then(async (signedIn) => {
 		if (!signedIn) {
 			startupLoading = true;
-			activeVulnsProvider.updateHtml(buildVulnsHtml([], store, false, false, true));
+			activeVulnsProvider.updateHtml(panelVulnsHtml([], store, false, false, true));
 			refreshSessionMetricsPanel();
 			updatePanelReadyContext({ kind: 'signed-out' });
 			return;
@@ -2295,7 +2356,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	// ── Wire findings from the engine to every UI surface ───────────────
-	session.onFindings(async (findings: VulnerabilityMetadata[]) => {
+	const handleLiveFindings = async (findings: VulnerabilityMetadata[]): Promise<void> => {
 		if (!acceptFindings) {
 			return;
 		}
@@ -2303,11 +2364,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const vulns = findings.map(metadataToVulnerability);
 		latestVulnerabilities = vulns;
 		latestObservedFindings = metadataToObservedFindings(findings);
+		if (liveBaselineFindings === null && latestObservedFindings.length > 0) {
+			liveBaselineFindings = latestObservedFindings.map((finding) => ({ ...finding }));
+		}
+		noteSeenFindings(latestObservedFindings);
+		await ensureKnownLifecycles(latestObservedFindings);
 		scannerBroken = false;
 		scannerChecked = true;
 		startupLoading = false;
 		initialFindingsReceived = true;
-		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen));
+		activeVulnsProvider.updateHtml(panelVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 		updatePanelReadyContext();
 
@@ -2384,7 +2450,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// settlement timestamp so startedAt === initialCheckpointDoneAt.
 				const priorCompletedSession = store.loadPriorCompletedSession();
 				activeSession = startSession(store.nextSessionId(), timestamp, priorCompletedSession);
-				setSessionBaseline(activeSession, observedFindings, timestamp);
+				setSessionBaseline(activeSession, liveBaselineFindings ?? observedFindings, timestamp);
 				updateSessionLatest(activeSession, observedFindings, timestamp);
 				saveScanState.initialCheckpointDoneAt = timestamp;
 				startHourlyScanTimer();
@@ -2413,8 +2479,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			);
 			lifecycles = result.lifecycles;
 
-			// Persist updated lifecycles (serialized via write queue)
-			void store.saveFindingLifecycles(lifecycles);
+			await store.saveFindingLifecycles(lifecycles);
 
 			saveScanState.totalSaveScansThisSession += 1;
 			void store.saveSaveScanState(saveScanState);
@@ -2451,7 +2516,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				refreshSessionMetricsPanel();
 				updateStatusBar(sessionAnalysis);
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+					panelVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
 				);
 
 				// ── 4e. VS Code toast notifications ──────────────────────
@@ -2487,13 +2552,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						`[Ariadne Common Vulns] No common types (${completedSessions.length + (activeSession ? 1 : 0)} session(s) analyzed, ${gradCount} graduated)`,
 					);
 				}
-			} catch {
-				// buildSessionAnalysis guards are in place, but be safe
+			} catch (error: unknown) {
+				logAriadneError('scan', error, 'session analysis');
 			}
 
 			// Track previous snapshot for the next save cycle
 			previousScanSnapshot = currentSnapshot;
 		}, 2000);
+	};
+	session.onFindings((findings) => {
+		void handleLiveFindings(findings).catch((error: unknown) => {
+			logAriadneError('scan', error, 'live scan');
+		});
 	});
 
 
@@ -2839,7 +2909,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				getWorkspaceFileContent,
 			);
 			lifecycles = result.lifecycles;
-			void store.saveFindingLifecycles(lifecycles);
+			await store.saveFindingLifecycles(lifecycles);
 
 			const finalized = finalizeSession(activeSession, lifecycles, timestamp, 'completed');
 			store.saveFinalizedSessionSync(finalized);
@@ -2848,6 +2918,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void store.clearActiveSession();
 			console.log(`[Ariadne] Final scan completed. Session ${activeSession.sessionId} finalized as 'completed'.`);
 		} catch (err) {
+			logAriadneError('scan', err, 'final session scan');
 			console.warn(
 				`[Ariadne] Final scan failed during deactivation ` +
 				`(${err instanceof Error ? err.message : String(err)}). Marking session 'incomplete'.`,
