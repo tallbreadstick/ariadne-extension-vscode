@@ -121,13 +121,28 @@ export class SessionForwarder {
 		fileLocationOpenCount: 0,
 	};
 
+	private lastKnownUsername: string | null = null;
+	private lastKnownAccountId: string | null = null;
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(
 		private readonly context: vscode.ExtensionContext,
 		private readonly store: SessionStore,
 		private readonly authStorage: AuthStorage,
-	) {}
+	) {
+		// Restore cached credentials from persistent global storage
+		this.lastKnownUsername = context.globalState.get<string>('ariadne.lastKnownGithubUsername') ?? null;
+		this.lastKnownAccountId = context.globalState.get<string>('ariadne.lastKnownGithubAccountId') ?? null;
+
+		// Listen to auth session changes so username is continuously synchronized
+		context.subscriptions.push(
+			vscode.authentication.onDidChangeSessions((event) => {
+				if (event.provider.id === 'github') {
+					void this.resolveAccountInfo();
+				}
+			}),
+		);
+	}
 
 	recordExplainVulnerability(): void {
 		this.counts.explainVulnerabilityCount += 1;
@@ -193,24 +208,68 @@ export class SessionForwarder {
 
 	private async resolveAccountInfo(): Promise<{ id: string | null; username: string | null }> {
 		try {
-			// 1. Check stored session metadata
-			const meta = await this.authStorage.loadSessionMeta();
-			let id = meta?.accountId?.trim() ?? null;
-			let username = meta?.accountLabel?.trim() ?? null;
+			let id: string | null = null;
+			let username: string | null = null;
 
-			// 2. Fall back to live VS Code GitHub session if stored metadata is missing
+			// 1. Try reading directly from live VS Code GitHub sessions with fallback scope sets
+			// Scope combination A: default requested by Ariadne
+			let liveSession = await vscode.authentication.getSession(
+				'github',
+				['read:user', 'user:email'],
+				{ silent: true },
+			);
+
+			// Scope combination B: minimal read:user
+			if (!liveSession) {
+				liveSession = await vscode.authentication.getSession(
+					'github',
+					['read:user'],
+					{ silent: true },
+				);
+			}
+
+			// Scope combination C: empty scopes (matches any active GitHub login in VS Code)
+			if (!liveSession) {
+				liveSession = await vscode.authentication.getSession(
+					'github',
+					[],
+					{ silent: true },
+				);
+			}
+
+			if (liveSession) {
+				id = liveSession.account.id;
+				username = liveSession.account.label;
+			}
+
+			// 2. Fall back to Ariadne SecretStorage if live session didn't return immediately
 			if (!id || !username) {
-				const liveSession = await vscode.authentication.getSession('github', ['read:user'], { silent: true });
-				if (liveSession) {
-					id = id || liveSession.account.id;
-					username = username || liveSession.account.label;
-				}
+				const meta = await this.authStorage.loadSessionMeta();
+				id = id || (meta?.accountId?.trim() ?? null);
+				username = username || (meta?.accountLabel?.trim() ?? null);
+			}
+
+			// 3. Fall back to cached in-memory / persistent values from earlier runs
+			id = id || this.lastKnownAccountId;
+			username = username || this.lastKnownUsername;
+
+			// Cache valid discoveries to memory and persistent globalState so they survive reloads
+			if (username && username !== this.lastKnownUsername) {
+				this.lastKnownUsername = username;
+				void this.context.globalState.update('ariadne.lastKnownGithubUsername', username);
+			}
+			if (id && id !== this.lastKnownAccountId) {
+				this.lastKnownAccountId = id;
+				void this.context.globalState.update('ariadne.lastKnownGithubAccountId', id);
 			}
 
 			const validId = id && /^[0-9]+$/.test(id) ? id : null;
 			return { id: validId, username: username || null };
 		} catch {
-			return { id: null, username: null };
+			return {
+				id: this.lastKnownAccountId,
+				username: this.lastKnownUsername,
+			};
 		}
 	}
 }
