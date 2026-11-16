@@ -6,10 +6,11 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { Vulnerability, Severity } from '../panelTypes.js';
+import { Vulnerability, Severity, PendingResolutionItem } from '../panelTypes.js';
 import { severityCssVars } from '../severityColors.js';
 import { collectVulnFilterFacets, formatCategoryLabel } from './vulnFilters.js';
 import { buildStartupLoadingHtml } from './startupLoading.js';
+import { getPendingResolutionDetails, PENDING_RESOLUTIONS_CSS } from './pendingResolutions.js';
 
 const OPEN_FEEDBACK_COMMAND = 'ariadne-extension-vscode.openFeedbackPanel';
 const OPEN_SIGN_IN_COMMAND = 'ariadne-extension-vscode.openSignInPanel';
@@ -38,6 +39,12 @@ export interface ActiveVulnerabilitiesOptions {
 	totalSessionIssues?: number;
 	/** Common vulnerability habit types (for Next Focus prioritization). */
 	commonVulnTypes?: string[];
+	/** Live-fixed findings awaiting multi-save confirmation before being counted as resolved. */
+	pendingResolutions?: PendingResolutionItem[];
+	/** Session number label, e.g. "Session 2". */
+	sessionLabel?: string;
+	/** Whether the current session has started (settled save scan recorded). */
+	isSessionActive?: boolean;
 }
 
 export interface NextFocusTarget {
@@ -243,6 +250,64 @@ const FOCUS_ICON_SVG = (severity?: Severity) =>
 		<path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>
 	</svg>`;
 
+const CONFIRMING_SVG =
+	`<svg class="confirming-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+		<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+		<path d="M9 12.2l2 2 4-4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
+
+function buildConfirmingCard(item: PendingResolutionItem): string {
+	const { guidance, savesLeftLabel, dotsHtml } = getPendingResolutionDetails(item);
+	const metaParts = [escapeHtml(item.cweId)];
+	if (item.instanceName) {
+		metaParts.push(escapeHtml(item.instanceName));
+	}
+	const fileBtnHtml = item.filePath
+		? `<button type="button" class="goto-location"
+				data-file="${escapeAttr(item.filePath)}"
+				data-line="1"
+				title="Open ${escapeAttr(item.filePath)}">
+				${locationHtml(item.filePath, 1)}
+				${LOC_GO_SVG}
+			</button>`
+		: '';
+	const feedbackHref = `command:${OPEN_FEEDBACK_COMMAND}?${askAriadneCommandQuery({
+		cwe: item.cweId,
+		title: item.type,
+		filePath: item.filePath ?? '',
+		line: 1,
+	})}`;
+
+	return /* html */ `
+		<article class="confirming-card" role="status" aria-live="polite">
+			<div class="card-header">
+				${CONFIRMING_SVG}
+				<div class="card-header-meta">
+					<span class="badge confirming">Confirming</span>
+					<span class="issue-meta">${metaParts.join(' · ')}</span>
+				</div>
+				<div class="pending-resolution-steps" title="${item.savesCompleted} of ${item.savesRequired} confirmation saves completed (${savesLeftLabel})">
+					<span class="save-step-dots" aria-hidden="true">${dotsHtml}</span>
+					<span class="save-step-counter">Save ${item.savesCompleted}/${item.savesRequired}</span>
+				</div>
+			</div>
+			<div class="issue-title">${escapeHtml(item.type)}</div>
+			<div class="issue-description">${guidance}</div>
+			<div class="card-actions">
+				${fileBtnHtml}
+				<a class="action-button btn-explain" role="button" href="${feedbackHref}"
+					data-cwe="${escapeAttr(item.cweId)}"
+					data-title="${escapeAttr(item.type)}"
+					data-file="${escapeAttr(item.filePath ?? '')}"
+					data-line="1"
+					title="View AI conceptual explanation">
+					${LIGHTBULB_SVG}
+					<span>Explain Vulnerability</span>
+				</a>
+			</div>
+		</article>`;
+}
+
 // ── Card builder ──────────────────────────────────────────────────────
 
 function buildVulnCard(vuln: Vulnerability): string {
@@ -309,6 +374,8 @@ const CSS = /* css */ `
         --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
         --text: var(--vscode-foreground);
         --muted: var(--vscode-descriptionForeground);
+        --accent: #46d5c4;
+        --accent-strong: #5ce6d7;
         ${severityCssVars()}
 		--reference: #CE9178;
         --button-bg: var(--vscode-button-background);
@@ -390,6 +457,37 @@ const CSS = /* css */ `
         height: 16px;
         color: var(--muted);
         flex-shrink: 0;
+    }
+
+    .session-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: color-mix(in srgb, var(--vscode-editor-background) 85%, white);
+        color: var(--text);
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+    }
+
+    .session-badge.not-started {
+        border-color: color-mix(in srgb, #f87171 38%, transparent);
+        background: color-mix(in srgb, #f87171 8%, var(--card));
+    }
+
+    .session-dot {
+        font-size: 9px;
+        line-height: 1;
+        color: #46d5c4;
+    }
+
+    .session-dot.not-started {
+        color: #f87171;
     }
 
     /* ── Session Progress & Next Focus ── */
@@ -481,6 +579,19 @@ const CSS = /* css */ `
 
     .progress-bar-fill.victory-fill {
         background: linear-gradient(90deg, #3fb950, #2ea043);
+    }
+
+    ${PENDING_RESOLUTIONS_CSS}
+
+    .sticky-top-bar .pending-resolutions-section {
+        margin-bottom: 8px;
+        padding: 10px 12px;
+        border-radius: 6px;
+        border: 1px solid color-mix(in srgb, var(--accent) 28%, rgba(255, 255, 255, 0.1));
+    }
+
+    .sticky-top-bar .pending-resolutions-list {
+        max-height: 140px;
     }
 
     .toolbar-row.actions-row {
@@ -598,7 +709,8 @@ const CSS = /* css */ `
         text-overflow: ellipsis;
     }
 
-    .vuln-card {
+    .vuln-card,
+    .confirming-card {
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--card);
@@ -609,6 +721,17 @@ const CSS = /* css */ `
         position: relative;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
         --pulse-color: var(--accent, #46d5c4);
+    }
+    .confirming-card {
+        border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+        background: color-mix(in srgb, var(--accent) 6%, var(--card));
+    }
+    .confirming-icon {
+        color: var(--accent-strong);
+        flex-shrink: 0;
+    }
+    .confirming-card .pending-resolution-steps {
+        margin-left: auto;
     }
     .vuln-card[data-severity="critical"] {
         --pulse-color: var(--critical, #ff5370);
@@ -1182,10 +1305,15 @@ const CSS = /* css */ `
 		flex: 0 0 auto;
 	}
 
-	.badge.critical { background-color: var(--critical); }
-	.badge.high     { background-color: var(--high); }
-	.badge.medium   { background-color: var(--medium); }
-	.badge.low      { background-color: var(--low); }
+	.badge.critical   { background-color: var(--critical); }
+	.badge.high       { background-color: var(--high); }
+	.badge.medium     { background-color: var(--medium); }
+	.badge.low        { background-color: var(--low); }
+	.badge.confirming {
+		background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+		color: var(--accent-strong);
+		border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+	}
 
 	.issue-title {
 		font-weight: 600;
@@ -1538,6 +1666,11 @@ export function buildActiveVulnerabilitiesHtml(
 </html>`;
 	}
 
+	const confirmingCards = (options.pendingResolutions ?? [])
+		.slice()
+		.sort((a, b) => b.savesCompleted - a.savesCompleted || a.type.localeCompare(b.type))
+		.map((item) => buildConfirmingCard(item))
+		.join('\n');
 	const cards = vulns.map((v) => buildVulnCard(v)).join('\n');
 	const emptyState = /* html */ `
         <div class="empty-state" role="status" aria-live="polite">
@@ -1550,6 +1683,17 @@ export function buildActiveVulnerabilitiesHtml(
 		<div class="filter-empty" id="filter-empty" role="status" aria-live="polite">
 			No vulnerabilities match the current filters.
 		</div>`;
+
+	const sessionBadgeText = (options.sessionLabel ?? 'Session 1').toUpperCase();
+	const isSessionActive = options.isSessionActive ?? false;
+	const sessionTitle = isSessionActive
+		? 'Session active'
+		: 'Session not started yet — save a file to begin';
+	const badgeClass = isSessionActive ? 'session-badge' : 'session-badge not-started';
+	const dotClass = isSessionActive ? 'session-dot' : 'session-dot not-started';
+	const sessionBadgeHtml = options.sessionLabel !== undefined || options.isSessionActive !== undefined
+		? `<span class="${badgeClass}" title="${sessionTitle}"><span class="${dotClass}">●</span> ${escapeHtml(sessionBadgeText)}</span>`
+		: '';
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -1566,12 +1710,14 @@ export function buildActiveVulnerabilitiesHtml(
 					${LIVE_SCAN_SVG}
 					<span>Live Scan</span>
 				</div>
+				${sessionBadgeHtml}
 			</header>
 			${buildSessionProgressSection(vulns, options)}
 			${buildToolbar(vulns, options)}
 		</div>
 		<section class="vuln-stack" id="vuln-stack">
-            ${vulns.length === 0 ? emptyState : cards}
+            ${confirmingCards}
+            ${vulns.length === 0 && !confirmingCards ? emptyState : cards}
 		</section>
 		${vulns.length === 0 ? '' : filterEmptyState}
 		<script>

@@ -224,3 +224,96 @@ describe('Session Progress Bar & Victory State', () => {
 	});
 });
 
+describe('Confirming Resolution in Active Vulnerabilities', () => {
+	it('renders confirming cards pinned above active vuln cards inside #vuln-stack', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, {
+			signedIn: true,
+			resolvedCount: 1,
+			totalSessionIssues: 4,
+			pendingResolutions: [
+				{
+					type: 'OS Command Injection',
+					cweId: 'CWE-78',
+					instanceName: 'processBuilder',
+					filePath: 'src/controller/AdminController.java',
+					savesCompleted: 1,
+					savesRequired: 3,
+				},
+			],
+		});
+
+		assert.ok(html.includes('class="confirming-card"'), 'Should render confirming card');
+		assert.ok(html.includes('badge confirming'), 'Should render Confirming badge');
+		assert.ok(html.includes('OS Command Injection'), 'Should render finding type');
+		assert.ok(html.includes('Save 1/3'), 'Should render save step counter');
+		assert.ok(html.includes('data-file="src/controller/AdminController.java"'), 'Should render clickable file button');
+		assert.ok(html.includes('Explain Vulnerability'), 'Should keep Explain Vulnerability button');
+
+		const confirmingCardHtml = html.slice(
+			html.indexOf('class="confirming-card"'),
+			html.indexOf('</article>', html.indexOf('class="confirming-card"')),
+		);
+		assert.ok(
+			confirmingCardHtml.indexOf('pending-resolution-steps') < confirmingCardHtml.indexOf('issue-title'),
+			'Save counter should sit in the top-right card header above the issue title',
+		);
+		assert.ok(
+			confirmingCardHtml.indexOf('btn-explain') > confirmingCardHtml.indexOf('goto-location'),
+			'Explain Vulnerability should stay in the bottom card actions beside the file button',
+		);
+
+		const stackIdx = html.indexOf('id="vuln-stack"');
+		const confirmingIdx = html.indexOf('class="confirming-card"');
+		const activeCardIdx = html.indexOf('class="vuln-card"');
+		assert.ok(stackIdx !== -1 && confirmingIdx !== -1 && activeCardIdx !== -1);
+		assert.ok(stackIdx < confirmingIdx, 'Confirming card should be inside #vuln-stack');
+		assert.ok(confirmingIdx < activeCardIdx, 'Confirming card should be pinned above active vuln cards');
+	});
+
+	it('hides all-clear empty state while confirming cards are still pending', () => {
+		const html = buildActiveVulnerabilitiesHtml([], {
+			signedIn: true,
+			pendingResolutions: [
+				{
+					type: 'SQL Injection',
+					cweId: 'CWE-89',
+					savesCompleted: 2,
+					savesRequired: 3,
+				},
+			],
+		});
+
+		assert.ok(html.includes('class="confirming-card"'));
+		assert.ok(!html.includes('No active vulnerabilities'), 'Should not show empty state while confirming');
+	});
+
+	it('omits confirming cards when pendingResolutions is empty or undefined', () => {
+		const html = buildActiveVulnerabilitiesHtml(sample, {
+			signedIn: true,
+			pendingResolutions: [],
+		});
+
+		assert.ok(!html.includes('class="confirming-card"'));
+	});
+
+	it('renders session badge beside Live Scan header when sessionLabel or isSessionActive is provided', () => {
+		const notStartedHtml = buildActiveVulnerabilitiesHtml(sample, {
+			signedIn: true,
+			sessionLabel: 'Session 2',
+			isSessionActive: false,
+		});
+		assert.ok(notStartedHtml.includes('session-badge not-started'));
+		assert.ok(notStartedHtml.includes('SESSION 2</span>'));
+		assert.ok(!notStartedHtml.includes('NOT STARTED YET'));
+
+		const activeHtml = buildActiveVulnerabilitiesHtml(sample, {
+			signedIn: true,
+			sessionLabel: 'Session 2',
+			isSessionActive: true,
+		});
+		assert.ok(activeHtml.includes('class="session-badge"'));
+		assert.ok(activeHtml.includes('SESSION 2</span>'));
+		assert.ok(!activeHtml.includes('NOT STARTED YET'));
+	});
+});
+
