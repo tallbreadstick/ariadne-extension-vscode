@@ -35,6 +35,10 @@ import { checkAndShowWelcomeToast } from './modules/presentation/onboarding/welc
 import {
 	showOnboardingPanel,
 	checkAndShowOnboarding,
+	isBottomPanelReady,
+	planOnboardingPanelFocus,
+	type OnboardingBottomPanel,
+	type OnboardingPanelAvailability,
 } from './modules/presentation/onboarding/onboardingPanel.js';
 
 // ── Feedback panel (LLM-powered) ──────────────────────────────────────
@@ -277,6 +281,7 @@ function buildVulnsHtml(
 	findingLifecycles?: FindingLifecycleRecord[],
 	progress?: { resolvedCount: number; totalSessionIssues: number; confirmingCount: number },
 	sessionForCommon?: SessionRecord | null,
+	pendingResolutions?: PendingResolutionItem[],
 ): string {
 	const lifecycles = findingLifecycles ?? store.loadFindingLifecycles();
 	const resolvedCount = progress?.resolvedCount ?? 0;
@@ -308,6 +313,7 @@ function buildVulnsHtml(
 		totalSessionIssues,
 		confirmingCount,
 		commonVulnTypes,
+		pendingResolutions,
 	});
 }
 
@@ -792,6 +798,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			lifecycles,
 			progress,
 			activeSession,
+			buildPendingResolutions(),
 		);
 	}
 
@@ -847,6 +854,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					type: flc.type,
 					cweId: flc.cweId,
 					instanceName: flc.instanceName || undefined,
+					filePath: flc.filePath || undefined,
+					severity: flc.severity,
 					savesCompleted,
 					savesRequired: 3,
 				});
@@ -1235,6 +1244,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
 					activeVulnsProvider.postMessage({ type: 'set-filter-type', vulnType: msg.vulnType });
 				})();
+			} else if (msg.type === 'open-settings') {
+				void (async () => {
+					await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', true);
+					await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+					settingsView?.postMessage({ type: 'open-section', section: 'account' });
+				})();
 			}
 		},
 	);
@@ -1244,6 +1259,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			loading: startupLoading,
 		}),
 	);
+
+	let pendingOnboardingFocus: { view: OnboardingBottomPanel; highlight: boolean } | undefined;
+
+	const readPanelAvailability = (): OnboardingPanelAvailability => ({
+		featuresUnlocked,
+		startupLoading,
+		scannerBroken,
+		downloading: scannerBusy && scannerBusyAction === 'download',
+	});
+
+	const spotlightPanel = (view: OnboardingBottomPanel): void => {
+		const provider = view === 'activeVulnerabilities' ? activeVulnsProvider : sessionMetricsProvider;
+		setTimeout(() => {
+			provider.postMessage({ type: 'highlight-panel' });
+		}, 50);
+	};
+
+	const focusRequestedPanel = async (view: OnboardingBottomPanel, highlight: boolean): Promise<void> => {
+		const plan = planOnboardingPanelFocus(readPanelAvailability(), view);
+		if (plan.kind === 'focus-view') {
+			pendingOnboardingFocus = undefined;
+			await vscode.commands.executeCommand(`ariadne.panel.${view}.focus`);
+			if (highlight) {
+				spotlightPanel(view);
+			}
+			return;
+		}
+		pendingOnboardingFocus = plan.kind === 'focus-gateway-until-ready'
+			? { view, highlight }
+			: undefined;
+		await vscode.commands.executeCommand('ariadne.panel.gateway.focus');
+		if (plan.kind !== 'focus-gateway-until-ready') {
+			return;
+		}
+		// The gateway focus command can resolve after the panel becomes ready
+		// and would otherwise leave the user on the gateway.
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		if (isBottomPanelReady(readPanelAvailability())) {
+			pendingOnboardingFocus = { view, highlight };
+			flushPendingOnboardingFocus();
+		}
+	};
+
+	const flushPendingOnboardingFocus = (): void => {
+		if (!pendingOnboardingFocus) {
+			return;
+		}
+		const pending = pendingOnboardingFocus;
+		const plan = planOnboardingPanelFocus(readPanelAvailability(), pending.view);
+		if (plan.kind === 'focus-gateway') {
+			pendingOnboardingFocus = undefined;
+			return;
+		}
+		if (plan.kind !== 'focus-view') {
+			return;
+		}
+		pendingOnboardingFocus = undefined;
+		void vscode.commands.executeCommand(`ariadne.panel.${pending.view}.focus`).then(() => {
+			if (pending.highlight) {
+				spotlightPanel(pending.view);
+			}
+		});
+	};
 
 	let currentGatewayState: GatewayState = { kind: 'signed-out' };
 
@@ -1320,9 +1398,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				: { kind: 'initializing' };
 		}
 
-		const isDownloading = scannerBusy && scannerBusyAction === 'download';
-		const isPanelReady = featuresUnlocked && !startupLoading && !scannerBroken && !isDownloading;
-		void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', isPanelReady);
+		const isPanelReady = isBottomPanelReady(readPanelAvailability());
+		void vscode.commands.executeCommand('setContext', 'ariadne.panelReady', isPanelReady).then(() => {
+			setTimeout(() => flushPendingOnboardingFocus(), 50);
+		});
 		gatewayProvider.updateHtml(buildGatewayHtml(currentGatewayState));
 	};
 
@@ -1339,16 +1418,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				settingsView?.postMessage({ type: 'highlight-panel' });
 			}, 50);
 		},
-		onOpenActiveVulnerabilities: () => {
-			setTimeout(() => {
-				activeVulnsProvider.postMessage({ type: 'highlight-panel' });
-			}, 50);
-		},
-		onOpenFullReport: () => {
-			setTimeout(() => {
-				sessionMetricsProvider.postMessage({ type: 'highlight-panel' });
-			}, 50);
-		},
+		onOpenActiveVulnerabilities: () => focusRequestedPanel('activeVulnerabilities', true),
+		onOpenFullReport: () => focusRequestedPanel('sessionMetrics', true),
+		onStartCoding: () => focusRequestedPanel('activeVulnerabilities', false),
 	};
 
 	const activeVulnsDisposable = vscode.window.registerWebviewViewProvider(
@@ -1459,6 +1531,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	};
 
 	const handleSettingsMessage = async (msg: Record<string, unknown>): Promise<void> => {
+			if (msg.type === 'close-settings') {
+				await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', false);
+				await vscode.commands.executeCommand('ariadne.panel.sessionMetrics.focus');
+				return;
+			}
+
 			if (msg.type === 'scanner-set-auto') {
 				const prefs = readScannerPreferencesFromConfig();
 				await saveScannerPreferences({ ...prefs, auto: msg.auto === true });
@@ -1894,7 +1972,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 	settingsView.setResolveHtml(() => latestSignInHtml);
 
+	void vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', false);
+
 	openAriadneSettings = async (section?: 'account' | 'core') => {
+		await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', true);
 		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
 		settingsView?.postMessage({
 			type: 'pulse-section',

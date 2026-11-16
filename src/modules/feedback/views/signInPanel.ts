@@ -99,7 +99,18 @@ const CSS = /* css */ `
 		color: var(--text);
 		font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 		font-size: var(--vscode-font-size, 13px);
-		line-height: 1.5;
+		line-height: 1.38;
+	}
+
+	@keyframes slideInFromRight {
+		from {
+			opacity: 0;
+			transform: translateX(16px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
 	}
 
 	.sidebar {
@@ -109,11 +120,54 @@ const CSS = /* css */ `
 		max-width: 560px;
 	}
 
+	.sidebar.slide-in-right {
+		animation: slideInFromRight 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.settings-topbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 6px 8px 4px;
+		border-bottom: 1px solid var(--border);
+	}
+
 	.settings-title {
 		margin: 0;
-		padding: 12px 8px 0;
-		font-size: 16px;
+		font-size: 13px;
 		font-weight: 600;
+	}
+
+	.back-to-metrics-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 7px;
+		border-radius: 4px;
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 11px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+	}
+
+	.back-to-metrics-btn:hover {
+		color: var(--text);
+		background: color-mix(in srgb, var(--text) 8%, transparent);
+		border-color: color-mix(in srgb, var(--text) 25%, transparent);
+	}
+
+	@media (max-width: 245px) {
+		.back-label {
+			display: none;
+		}
+		.back-to-metrics-btn {
+			padding: 2px 6px;
+		}
 	}
 
 	.accordion-item {
@@ -150,9 +204,9 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 8px;
-		padding: 8px;
-		font-size: 11px;
+		gap: 6px;
+		padding: 5px 8px;
+		font-size: 10.5px;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
@@ -184,16 +238,16 @@ const CSS = /* css */ `
 	}
 
 	.accordion-body {
-		padding: 0 8px 12px;
+		padding: 2px 8px 8px;
 		display: grid;
-		gap: 8px;
+		gap: 6px;
 	}
 
 	.subtitle {
 		margin: 0;
 		color: var(--muted);
-		font-size: 12px;
-		line-height: 1.45;
+		font-size: 11px;
+		line-height: 1.35;
 	}
 
 	.status-pill {
@@ -401,6 +455,7 @@ const CSS = /* css */ `
 		height: 100%;
 		border-radius: 999px;
 		background: var(--accent);
+		/* impeccable-disable-next-line layout-transition: Copilot usage meter fill; settings UI left as shipped */
 		transition: width 0.2s ease-out;
 	}
 
@@ -1027,7 +1082,7 @@ function buildConfigurationSection(model: SignInPanelViewModel): string {
 	const isQuiet = level === 'quiet';
 
 	return /* html */ `
-		<p class="subtitle">Customize scan intervals, notifications, scanner binary path, and metrics telemetry.</p>
+		<p class="subtitle">Customize notification verbosity and background auto-scan intervals.</p>
 
 		<label class="field">
 			<span class="field-label">Notification level</span>
@@ -1043,41 +1098,7 @@ function buildConfigurationSection(model: SignInPanelViewModel): string {
 			<span class="field-label">Auto-scan interval (minutes)</span>
 			<input type="number" id="config-autoscan-interval" min="2" max="180" step="1" value="${config.autoScanIntervalMinutes}" aria-label="Auto-scan interval in minutes" />
 		</label>
-		<p class="config-hint">Full background scan interval (2–180 minutes, default 60).</p>
-
-		<label class="field">
-			<span class="field-label">Executable path</span>
-			<input type="text" id="config-executable-path" value="${escapeHtml(config.executablePath)}" placeholder="ariadne" aria-label="Executable path" />
-		</label>
-		<p class="config-hint">Optional path to a local binary. Leave as <code>ariadne</code> to use the managed build.</p>
-
-		<hr class="config-divider" />
-		<div class="config-subhead">Metrics telemetry</div>
-
-		<button class="switch" id="config-metrics-enabled" type="button" role="switch" aria-checked="${config.metricsEnabled ? 'true' : 'false'}">
-			<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-			<span>Send session metrics</span>
-		</button>
-		<p class="config-hint">Send anonymized metrics when signed in with analytics consent.</p>
-
-		<div id="config-metrics-details" ${config.metricsEnabled ? '' : 'hidden'}>
-			<label class="field">
-				<span class="field-label">Collection server URL</span>
-				<input type="text" id="config-metrics-base-url" value="${escapeHtml(config.metricsBaseUrl)}" placeholder="https://127.0.0.1:8443" aria-label="Collection server base URL" />
-			</label>
-
-			<label class="field" style="margin-top: 8px;">
-				<span class="field-label">API key (bearer token)</span>
-				<input type="password" id="config-metrics-api-key" value="${escapeHtml(config.metricsApiKey)}" placeholder="Token (32+ characters)" aria-label="Metrics ingest API key" />
-			</label>
-			<p class="config-hint">Leave empty to use secret storage token.</p>
-
-			<button class="switch" id="config-metrics-trust-local-tls" type="button" role="switch" aria-checked="${config.metricsTrustLocalTls ? 'true' : 'false'}" style="margin-top: 6px;">
-				<span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-				<span>Trust local TLS certificates</span>
-			</button>
-			<p class="config-hint">Allow self-signed certificates for 127.0.0.1 or localhost.</p>
-		</div>`;
+		<p class="config-hint">Full background scan interval (2–180 minutes, default 60).</p>`;
 }
 
 function buildSessionSection(): string {
@@ -1114,6 +1135,10 @@ function buildHelpSection(): string {
  * Builds the Ariadne sidebar HTML (accordion settings).
  */
 export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
+	const isSignedIn = model.status === 'signed-in';
+	const backBtnHtml = isSignedIn
+		? '<button type="button" class="back-to-metrics-btn" id="back-to-metrics-btn" title="Back to Session Metrics" aria-label="Back to Session Metrics"><span aria-hidden="true">←</span><span class="back-label"> Back</span></button>'
+		: '';
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
 	<head>
@@ -1125,8 +1150,11 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		<style>${CSS}</style>
 	</head>
 	<body>
-		<div class="sidebar">
-			<h1 class="settings-title">Ariadne Settings</h1>
+		<div class="sidebar${isSignedIn ? ' slide-in-right' : ''}">
+			<div class="settings-topbar">
+				<h1 class="settings-title">Ariadne Settings</h1>
+				${backBtnHtml}
+			</div>
 			<details class="accordion-item" id="accordion-account" name="ariadne-settings" open>
 				<summary>Account<span class="chevron" aria-hidden="true"></span></summary>
 				<div class="accordion-body">
@@ -1172,6 +1200,11 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 		</div>
 		<script>
 			const vscode = acquireVsCodeApi();
+
+			document.getElementById('back-to-metrics-btn')?.addEventListener('click', () => {
+				vscode.postMessage({ type: 'close-settings' });
+			});
+
 			window.addEventListener('message', (event) => {
 				const msg = event.data;
 				if (msg && msg.type === 'highlight-panel') {
@@ -1246,7 +1279,7 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 
 			window.addEventListener('message', (event) => {
 				const msg = event.data;
-				if (msg && msg.type === 'pulse-section') {
+				if (msg && (msg.type === 'pulse-section' || msg.type === 'open-section')) {
 					const targetMap = {
 						core: 'accordion-scanner',
 						account: 'accordion-account',
@@ -1265,7 +1298,7 @@ export function buildSignInPanelHtml(model: SignInPanelViewModel): string {
 					}
 					vscode.setState({ ...(vscode.getState() ?? {}), openSection: targetId });
 					const targetEl = document.getElementById(targetId);
-					if (targetEl) {
+					if (targetEl && msg.type === 'pulse-section') {
 						targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 						targetEl.classList.remove('pulse-attention');
 						void targetEl.offsetWidth;

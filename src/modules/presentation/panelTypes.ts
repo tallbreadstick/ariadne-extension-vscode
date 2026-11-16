@@ -82,6 +82,10 @@ export interface PendingResolutionItem {
 	cweId: string;
 	/** Optional instance identifier (e.g. variable or method name). */
 	instanceName?: string;
+	/** File path where the finding was last observed. */
+	filePath?: string;
+	/** Severity level of the finding. */
+	severity?: Severity;
 	/** Number of settled confirmation saves completed so far (0, 1, or 2). */
 	savesCompleted: 0 | 1 | 2;
 	/** Total settled saves required to confirm durable resolution (3). */

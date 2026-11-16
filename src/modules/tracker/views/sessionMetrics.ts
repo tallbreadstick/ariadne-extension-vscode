@@ -6,9 +6,8 @@
  * It contains zero data — all data flows in from the caller.
  */
 
-import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem, PendingResolutionItem } from '../../presentation/panelTypes.js';
+import { SessionMetrics, SessionNotification, TrendSubItem, ImprovingSubItem, CommonVulnerabilityItem, Severity } from '../../presentation/panelTypes.js';
 import { SEVERITY_COLORS } from '../../presentation/severityColors.js';
-import type { Severity } from '../../presentation/panelTypes.js';
 import { COMMON_VULN_POLICY } from '../analysis/commonVulnerabilities.js';
 import { buildStartupLoadingHtml } from '../../presentation/views/startupLoading.js';
 
@@ -81,26 +80,48 @@ const FULL_REPORT_SVG =
 		<line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 	</svg>`;
 
-const FULL_SCAN_SVG = FULL_REPORT_SVG;
+const GEAR_SVG =
+	`<svg class="gear-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+		<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+		<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
 
-// ── Partial builders ──────────────────────────────────────────────────
+const SAVE_ICON_SVG =
+	`<svg class="status-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden="true">
+		<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+		<polyline points="17 21 17 13 7 13 7 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+		<polyline points="7 3 7 8 15 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
 
-function buildMetricCard(title: string, value: number, severity: Severity): string {
+const CHECK_ICON_SVG =
+	`<svg class="status-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden="true">
+		<polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+	</svg>`;
+
+const ARIADNE_EMPTY_LOGO_SVG =
+	`<svg class="empty-state-logo" width="28" height="28" viewBox="0 0 798 798" fill="none" aria-hidden="true">
+		<g fill="currentColor" transform="translate(88,798) scale(0.1,-0.1)">
+			<path d="M3068 7965 c-15 -8 -136 -88 -270 -178 -408 -274 -816 -505 -1238 -703 -479 -223 -810 -344 -1273 -465 -126 -32 -237 -64 -247 -69 -16 -8 -19 -30 -26 -177 -12 -274 -10 -1286 4 -1503 48 -751 160 -1516 282 -1935 56 -190 160 -504 169 -510 4 -2 84 174 176 393 211 497 270 627 517 1142 110 228 202 422 205 431 3 12 -25 38 -101 93 -58 42 -110 76 -115 76 -5 0 -120 -234 -257 -520 -143 -299 -252 -514 -256 -507 -10 18 -73 459 -102 712 -36 313 -54 564 -66 925 -10 282 -6 949 6 992 3 11 47 29 137 58 505 160 1104 416 1608 685 76 41 141 75 144 75 14 0 -3 -38 -87 -194 -51 -93 -176 -330 -278 -524 l-185 -355 -100 -56 c-180 -102 -326 -211 -430 -322 -236 -251 -241 -513 -14 -741 94 -94 163 -140 344 -228 322 -156 699 -268 1400 -415 487 -102 729 -167 970 -260 267 -103 483 -245 553 -364 23 -40 27 -57 27 -126 0 -69 -4 -87 -29 -132 -81 -146 -306 -324 -561 -444 -55 -25 -192 -81 -305 -124 -262 -99 -334 -133 -436 -200 -131 -88 -199 -179 -241 -326 -15 -55 -18 -103 -18 -341 l0 -277 -31 -23 c-40 -30 -86 -84 -110 -128 -30 -56 -27 -190 6 -254 32 -62 107 -130 167 -150 64 -22 167 -20 220 3 107 49 175 150 181 269 4 66 1 79 -27 137 -30 59 -65 99 -120 136 l-24 15 -5 255 c-6 313 0 344 82 424 64 62 154 108 386 195 254 96 357 141 502 219 445 238 686 571 614 848 -69 271 -319 473 -801 648 -272 99 -457 147 -1050 275 -565 121 -785 181 -1055 287 -223 88 -366 170 -461 265 -128 128 -118 235 38 399 92 96 103 88 44 -30 -23 -44 -41 -87 -41 -95 0 -35 200 -181 220 -160 4 5 129 248 277 539 249 488 446 864 871 1660 88 165 179 334 202 374 l43 75 24 -30 c25 -29 72 -114 413 -749 255 -477 376 -709 813 -1570 610 -1201 919 -1850 1232 -2590 129 -305 147 -345 155 -345 20 0 133 311 190 525 128 480 224 1129 272 1860 14 209 15 1405 1 1600 l-8 109 -75 23 c-41 12 -162 45 -268 73 -419 110 -814 260 -1287 489 -403 196 -735 386 -1098 630 -256 172 -336 221 -357 221 -8 -1 -27 -7 -42 -15z M2856 5367 c-137 -292 -258 -549 -268 -570 l-19 -37 28 -11 c16 -6 208 -49 428 -95 220 -46 479 -104 575 -128 96 -25 176 -44 177 -42 3 3 -187 414 -367 791 -34 72 -102 220 -152 330 -94 208 -137 295 -147 295 -3 0 -118 -240 -255 -533z M2242 4050 c-7 -12 -50 -107 -96 -213 -46 -106 -164 -370 -261 -587 -97 -217 -235 -530 -305 -695 -164 -383 -268 -617 -277 -626 -5 -4 -75 -12 -158 -18 -135 -11 -215 -20 -312 -36 l-32 -6 29 -47 c82 -131 395 -495 602 -698 258 -254 466 -419 818 -652 300 -198 444 -284 640 -380 139 -68 184 -86 220 -86 119 -2 795 395 1200 704 363 278 695 609 996 997 96 123 121 163 102 164 -7 0 -121 12 -253 27 l-239 27 -154 347 -154 346 -112 -73 c-160 -104 -304 -178 -477 -245 -83 -32 -156 -63 -162 -69 -7 -7 -5 -18 7 -33 198 -276 289 -468 350 -740 31 -136 32 -180 9 -204 -62 -62 -496 -363 -723 -501 -149 -90 -374 -213 -391 -213 -17 0 -212 109 -419 233 -411 248 -720 482 -1009 763 -152 148 -148 136 -84 242 138 228 467 492 853 688 251 127 652 291 1014 414 274 93 407 149 538 227 176 104 220 158 220 272 0 64 -14 106 -45 140 -49 52 -308 161 -557 235 -186 54 -225 64 -730 172 -217 46 -446 98 -509 114 -63 17 -117 30 -120 30 -3 0 -12 -9 -19 -20z"/>
+		</g>
+	</svg>`;
+
+function buildSeverityBadge(shortLabel: string, fullTitle: string, value: number, severity: Severity): string {
 	const accent = SEVERITY_COLORS[severity];
 	return /* html */ `
-		<div class="metric-card filterable-metric-card"
-		     data-severity="${severity}"
-		     role="button"
-		     tabindex="0"
-		     title="Filter active vulnerabilities by ${title}"
-		     style="border-left: 3px solid ${accent};">
-			<div class="metric-title">${title}</div>
-			<div class="metric-trend" style="color: ${accent};">
-				${TREND_CHART_SVG}
-				<span>${value}</span>
-			</div>
-		</div>`;
+		<span class="severity-text-badge filterable-metric-card"
+		      data-severity="${severity}"
+		      role="button"
+		      tabindex="0"
+		      aria-pressed="false"
+		      title="Click to filter ${fullTitle} in the Ariadne Active Vulnerabilities bottom panel"
+		      style="--badge-color: ${accent};">
+			<span class="severity-badge-dot" style="background: ${accent};"></span>
+			<span class="severity-badge-count" style="color: ${accent};">${value}</span>
+			<span class="severity-badge-label">${shortLabel}</span>
+		</span>`;
 }
+
+// ── Partial builders ──────────────────────────────────────────────────
 
 function buildBasicSubItems(items: TrendSubItem[] | undefined, count: number): string {
 	if (!items || items.length === 0) {
@@ -140,8 +161,8 @@ function buildPersistingSubItems(items: TrendSubItem[] | undefined, count: numbe
 			     tabindex="0"
 			     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
 				<span class="sub-label-group">
-					<span class="sub-label">${escapeHtml(item.type)}</span>
-					<span class="sub-subtitle persisting-subtitle">${escapeHtml(subtitleText)}</span>
+					<span class="persisting-report-circle" title="${escapeHtml(subtitleText)}" aria-label="${escapeHtml(subtitleText)}">${reportCount}</span>
+					<span class="sub-label" title="${escapeHtml(item.type)}">${escapeHtml(item.type)}</span>
 					${commentedOutBadge}
 				</span>
 				<span class="sub-count">${item.instances}</span>
@@ -175,71 +196,6 @@ function buildImprovingSubItems(items: ImprovingSubItem[] | undefined, count: nu
 	}).join('');
 }
 
-function buildPendingResolutionsSection(items: PendingResolutionItem[] | undefined): string {
-	if (!items || items.length === 0) {
-		return '';
-	}
-
-	// Group instances of the same type at the same save step into one row,
-	// then sort the closest-to-confirmed rows (highest step) first.
-	const grouped = new Map<string, { item: PendingResolutionItem; count: number }>();
-	for (const item of items) {
-		const key = `${item.type}::${item.savesCompleted}`;
-		const existing = grouped.get(key);
-		if (existing) {
-			existing.count += 1;
-		} else {
-			grouped.set(key, { item, count: 1 });
-		}
-	}
-	const groups = [...grouped.values()].sort((a, b) =>
-		b.item.savesCompleted - a.item.savesCompleted || a.item.type.localeCompare(b.item.type));
-
-	const rows = groups.map(({ item, count }) => {
-		const savesLeft = item.savesRequired - item.savesCompleted;
-		const savesLeftLabel = savesLeft === 1 ? '1 save left' : `${savesLeft} saves left`;
-		const guidance = item.savesCompleted === 0
-			? `Fix detected by Live Scan · Save file to start (${savesLeftLabel})`
-			: item.savesCompleted === 1
-				? `Wait 5s, then save again (${savesLeftLabel})`
-				: `Almost done · Save 1 more time to confirm (${savesLeftLabel})`;
-
-		const dots = [0, 1, 2].map((idx) => {
-			const filled = idx < item.savesCompleted ? ' filled' : '';
-			return `<span class="save-step-dot${filled}"></span>`;
-		}).join('');
-
-		const instanceSuffix = count > 1
-			? ` <span class="pending-resolution-instance">(${count} instances)</span>`
-			: item.instanceName
-				? ` <span class="pending-resolution-instance">· ${escapeHtml(item.instanceName)}</span>`
-				: '';
-
-		return /* html */ `
-			<div class="pending-resolution-row">
-				<div class="pending-resolution-info">
-					<span class="pending-resolution-type">${escapeHtml(item.type)}${instanceSuffix}</span>
-					<span class="pending-resolution-sub">${guidance}</span>
-				</div>
-				<div class="pending-resolution-steps" title="${item.savesCompleted} of ${item.savesRequired} confirmation saves completed (${savesLeftLabel})">
-					<span class="save-step-dots" aria-hidden="true">${dots}</span>
-					<span class="save-step-counter">Save ${item.savesCompleted}/${item.savesRequired}</span>
-				</div>
-			</div>`;
-	}).join('');
-
-	return /* html */ `
-		<div class="pending-resolutions-section" role="status" aria-live="polite">
-			<div class="pending-resolutions-header">
-				<span class="pending-resolutions-title">Confirming Resolution (${items.length})</span>
-				<span class="pending-resolutions-hint">Requires 3 settled saves (≥5s apart) to record in Full Report</span>
-			</div>
-			<div class="pending-resolutions-list">
-				${rows}
-			</div>
-		</div>`;
-}
-
 /**
  * Builds a single collapsible trend row.
  *
@@ -261,16 +217,20 @@ function buildCollapsibleTrendRow(
 	tooltip?: string,
 ): string {
 	const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
+	const stateClass = count > 0 ? 'is-populated' : 'is-empty';
 	return /* html */ `
-		<div class="trend-group" data-trend-id="${id}">
+		<div class="trend-group ${stateClass}" data-trend-id="${id}">
 			<button class="trend-header" type="button" aria-expanded="false"
 			        aria-controls="trend-body-${id}" data-trend-toggle="${id}"${tooltipAttr}>
 				<span class="trend-header-left">
 					${icon}
-					<span class="trend-header-label">${label}</span>
+					<span class="trend-header-text">
+						<span class="trend-header-label">${label}</span>
+						<span class="trend-instance-sub">${instanceLabel}</span>
+					</span>
 				</span>
 				<span class="trend-header-right">
-					<span class="trend-instance-count">${instanceLabel} :  <span style="color: var(--text); font-weight: 700;">${count}</span></span>
+					<span class="trend-count-badge">${count}</span>
 					<svg class="chevron-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 						<path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"
 							stroke-linecap="round" stroke-linejoin="round" />
@@ -296,7 +256,11 @@ function buildCommonVulnerabilitiesPanel(
 		const emptyMessage = totalSessions < COMMON_VULN_POLICY.K
 			? 'Not enough session data yet'
 			: 'No common vulnerabilities';
-		content = /* html */ `<div class="panel-empty">${emptyMessage}</div>`;
+		content = /* html */ `
+			<div class="panel-empty">
+				${ARIADNE_EMPTY_LOGO_SVG}
+				<span class="panel-empty-text">${emptyMessage}</span>
+			</div>`;
 	} else {
 		content = items.map(item => {
 			const statusLabel = item.activeFindingCount > 0
@@ -308,12 +272,12 @@ function buildCommonVulnerabilitiesPanel(
 				     role="button"
 				     tabindex="0"
 				     title="Filter active vulnerabilities by ${escapeHtml(item.type)}">
-					<div class="cv-card-left">
-						<span class="cv-type">${item.type}</span>
-						${statusLabel}
+					<div class="cv-row-top">
+						<span class="cv-type">${escapeHtml(item.type)}</span>
+						<span class="cv-cwe">${escapeHtml(item.cweId)}</span>
 					</div>
-					<div class="cv-card-body">
-						<span class="cv-cwe">${item.cweId}</span>
+					<div class="cv-row-bottom">
+						${statusLabel}
 						<span class="cv-instances">found ${item.totalInstanceCount} time${item.totalInstanceCount !== 1 ? 's' : ''}</span>
 					</div>
 				</div>`;
@@ -380,13 +344,13 @@ const CSS = /* css */ `
 
 	body {
 		margin: 0;
-		padding: 16px;
+		padding: 4px 6px;
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 		background: var(--bg);
 		color: var(--text);
 	}
 
-	.dashboard { display: grid; gap: 16px; }
+	.dashboard { display: grid; gap: 0; }
 
 	/* ── Full report section ── */
 	.full-report-section,
@@ -471,16 +435,20 @@ const CSS = /* css */ `
 	.session-badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		font-size: 11px;
+		gap: 4px;
+		font-size: 9.5px;
 		font-weight: 600;
 		letter-spacing: 0.3px;
-		padding: 2px 8px;
+		padding: 2px 6px;
 		border-radius: 10px;
 		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 35%, transparent);
 		color: var(--vscode-badge-foreground, var(--text));
 		border: 1px solid var(--border);
 		text-transform: uppercase;
+		white-space: nowrap;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.session-badge.not-started {
@@ -488,9 +456,10 @@ const CSS = /* css */ `
 	}
 
 	.session-dot {
-		font-size: 8px;
+		font-size: 7px;
 		color: var(--accent);
 		line-height: 1;
+		flex-shrink: 0;
 	}
 
 	.session-dot.not-started {
@@ -568,21 +537,230 @@ const CSS = /* css */ `
 
 	.trend-icon { width: 18px; height: 18px; display: inline-block; }
 
-	/* ── Trends card ── */
-	.trends-card {
+	@keyframes slideInFromLeft {
+		from {
+			opacity: 0;
+			transform: translateX(-14px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+
+	.dashboard {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0;
+		width: 100%;
+		min-width: 0;
+		overflow-x: hidden;
+		animation: slideInFromLeft 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.trends-title-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
+	}
+
+	.trends-header-right {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.settings-gear-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		height: 22px;
+		padding: 0 7px;
+		border-radius: 5px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 11px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: color 0.15s ease, background-color 0.15s ease;
+	}
+
+	.settings-gear-btn:hover {
+		color: var(--text);
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.severity-status-section {
 		background: var(--panel);
+		border-bottom: 1px solid var(--border);
+		padding: 9px 10px 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.report-status-idle {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 2px 7px;
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--vscode-badge-background, #4d4d4d) 45%, transparent);
 		border: 1px solid var(--border);
-		border-radius: var(--radius);
+		color: var(--muted);
+		font-size: 10px;
+		font-weight: 600;
+		white-space: nowrap;
+		max-width: 100%;
 		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.status-icon {
+		flex-shrink: 0;
+	}
+
+	.full-report-status-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: nowrap;
+		gap: 6px;
+		padding-top: 2px;
+		min-width: 0;
+	}
+
+	@media (max-width: 245px) {
+		.severity-badges-bar {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 4px 6px;
+		}
+		.settings-label,
+		.report-status-text {
+			display: none;
+		}
+		.settings-gear-btn {
+			padding: 0 5px;
+		}
+		.report-status-idle,
+		.report-status-updating,
+		.report-status-updated {
+			padding: 3px 6px;
+		}
+	}
+
+	.severity-status-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
+		padding-bottom: 6px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.severity-status-header {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+	}
+
+	.severity-badges-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 4px 6px;
+	}
+
+	.severity-text-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 6px;
+		border-radius: 999px;
+		border: 1px solid transparent;
+		font-size: 10.5px;
+		line-height: 1.3;
+		cursor: pointer;
+		user-select: none;
+		transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+	}
+
+	.severity-text-badge:hover {
+		background: rgba(255, 255, 255, 0.07);
+	}
+
+	.severity-text-badge:active {
+		transform: scale(0.95);
+	}
+
+	.severity-text-badge.is-active {
+		background: color-mix(in srgb, var(--badge-color, var(--accent)) 18%, transparent);
+		border-color: color-mix(in srgb, var(--badge-color, var(--accent)) 55%, transparent);
+	}
+
+	.severity-text-badge.is-active .severity-badge-label {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.severity-badge-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.severity-badge-count {
+		font-weight: 700;
+	}
+
+	.severity-badge-label {
+		color: var(--muted);
+		font-weight: 500;
+	}
+
+	/* ── Trends card (edge-to-edge sidebar section) ── */
+	.trends-card {
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		overflow: hidden;
+		min-width: 0;
+		margin-top: 4px;
 	}
 
 	.trends-header-row {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		justify-content: space-between;
-		gap: 10px;
-		padding: 12px 14px 8px;
+		gap: 4px;
+		padding: 8px 10px;
 		flex-wrap: wrap;
+		min-width: 0;
+	}
+
+	.trends-title-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
+		min-width: 0;
 	}
 
 	.trends-title {
@@ -593,6 +771,10 @@ const CSS = /* css */ `
 		text-transform: uppercase;
 		font-weight: 700;
 		color: var(--muted);
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.trends-subtitle {
@@ -600,126 +782,30 @@ const CSS = /* css */ `
 		color: var(--muted);
 		font-weight: 400;
 		line-height: 1.3;
-	}
-
-	/* ── Pending Resolution Per-Save Counter Section ── */
-	.pending-resolutions-section {
-		border-top: 1px solid var(--vscode-panel-border);
-		background: color-mix(in srgb, var(--accent) 6%, var(--panel));
-		padding: 10px 14px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.pending-resolutions-header {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-
-	.pending-resolutions-title {
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--accent-strong);
-	}
-
-	.pending-resolutions-hint {
-		font-size: 11px;
-		color: var(--muted);
-	}
-
-	.pending-resolutions-list {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		max-height: 170px;
-		overflow-y: auto;
-		padding-right: 2px;
-	}
-
-	.pending-resolution-row { flex-shrink: 0; }
-
-	.pending-resolution-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 8px 10px;
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--vscode-editor-background) 75%, transparent);
-		border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-		flex-wrap: wrap;
-	}
-
-	.pending-resolution-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.pending-resolution-type {
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--text);
-	}
-
-	.pending-resolution-instance {
-		font-weight: 400;
-		color: var(--muted);
-	}
-
-	.pending-resolution-sub {
-		font-size: 11px;
-		color: var(--muted);
-	}
-
-	.pending-resolution-steps {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		padding: 3px 9px;
-		border-radius: 999px;
-		background: color-mix(in srgb, var(--accent) 14%, transparent);
-		border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
-		flex-shrink: 0;
-	}
-
-	.save-step-dots {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	.save-step-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: color-mix(in srgb, var(--muted) 35%, transparent);
-		border: 1px solid color-mix(in srgb, var(--muted) 60%, transparent);
-	}
-
-	.save-step-dot.filled {
-		background: var(--accent-strong);
-		border-color: var(--accent-strong);
-	}
-
-	.save-step-counter {
-		font-size: 11px;
-		font-weight: 700;
-		color: var(--accent-strong);
+		max-width: 100%;
 		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* ── Collapsible trend row ── */
 	.trend-group {
 		border-top: 1px solid var(--vscode-panel-border);
+		transition: background 0.15s ease;
+	}
+
+	.trend-group.is-populated {
+		background: color-mix(in srgb, var(--vscode-editor-background) 62%, black 38%);
+	}
+
+	.trend-group.is-empty .trend-header {
+		opacity: 0.45;
+		color: var(--muted);
+	}
+
+	.trend-group.is-empty .trend-icon,
+	.trend-group.is-empty .chevron-icon {
+		color: var(--muted);
 	}
 
 	.trend-header {
@@ -727,8 +813,8 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 10px;
-		padding: 12px 14px 8px;
+		gap: 6px;
+		padding: 8px 10px;
 		background: transparent;
 		border: none;
 		color: var(--text);
@@ -737,27 +823,73 @@ const CSS = /* css */ `
 	}
 
 	.trend-header:hover { background: rgba(255, 255, 255, 0.04); }
+	.trend-group.is-populated .trend-header:hover { background: rgba(255, 255, 255, 0.05); }
+
+	.trend-count-num {
+		color: var(--text);
+		font-weight: 700;
+	}
+
+	.trend-group.is-empty .trend-count-num {
+		color: var(--muted);
+		font-weight: 500;
+	}
 
 	.trend-header-left {
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.trend-header-text {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		min-width: 0;
+	}
+
+	.trend-header-label {
 		font-size: 12px;
 		font-weight: 600;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.trend-instance-sub {
+		font-size: 10.5px;
+		font-weight: 400;
+		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.trend-header-right {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 6px;
 		flex-shrink: 0;
 	}
 
-	.trend-instance-count {
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--muted);
+	.trend-count-badge {
+		min-width: 24px;
+		padding: 2px 7px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--text) 12%, transparent);
+		color: var(--text);
+		font-size: 11px;
+		font-weight: 700;
+		text-align: center;
 		white-space: nowrap;
+	}
+
+	.trend-group.is-empty .trend-count-badge {
+		background: transparent;
+		color: var(--muted);
+		font-weight: 500;
 	}
 
 	.chevron-icon {
@@ -795,25 +927,62 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 12px 14px 8px 38px;
+		padding: 8px 10px 8px 14px;
 		font-size: 12px;
 		color: var(--text);
 	}
 
-	.trend-sub-item:last-child { padding-bottom: 10px; }
+	.trend-sub-item:last-child { padding-bottom: 8px; }
+
+	.persisting-report-circle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 5px;
+		border-radius: 999px;
+		background: color-mix(in srgb, #E24B4A 22%, transparent);
+		border: 1px solid color-mix(in srgb, #E24B4A 50%, transparent);
+		color: #f87171;
+		font-size: 10.5px;
+		font-weight: 700;
+		line-height: 1;
+		flex-shrink: 0;
+		cursor: pointer;
+		transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
+	}
+
+	.persisting-report-circle:hover {
+		transform: scale(1.18) translateY(-1px);
+		background: color-mix(in srgb, #E24B4A 34%, transparent);
+	}
 
 	.sub-label-group {
 		flex: 1;
 		min-width: 0;
 		display: flex;
 		align-items: center;
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
 		gap: 8px;
 	}
 
-	.sub-label { flex: 1; color: var(--text); }
+	.sub-label {
+		flex: 1;
+		min-width: 0;
+		color: var(--text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 
-	.sub-label-group .sub-label { flex: 0 1 auto; }
+	.sub-label-group .sub-label {
+		flex: 1 1 auto;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 
 	.sub-progress {
 		font-size: 11px;
@@ -872,11 +1041,12 @@ const CSS = /* css */ `
 
 	.divider { height: 1px; background: rgba(58, 58, 58, 0.7); }
 
-	/* ── Common vulnerabilities panel ── */
+	/* ── Common vulnerabilities panel (edge-to-edge sidebar section) ── */
 	.common-vuln-panel {
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
+		background: transparent;
+		border: none;
+		border-top: 1px solid var(--border);
+		border-radius: 0;
 		display: flex;
 		flex-direction: column;
 		max-height: 280px;
@@ -887,8 +1057,8 @@ const CSS = /* css */ `
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
-		gap: 10px;
-		padding: 12px 14px 8px;
+		gap: 6px;
+		padding: 10px 10px 8px;
 		border-bottom: 1px solid rgba(58, 58, 58, 0.6);
 		flex-shrink: 0;
 		flex-wrap: wrap;
@@ -898,6 +1068,9 @@ const CSS = /* css */ `
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
+		min-width: 0;
+		max-width: 100%;
+		overflow: hidden;
 	}
 
 	.common-vuln-title {
@@ -906,6 +1079,10 @@ const CSS = /* css */ `
 		text-transform: uppercase;
 		color: var(--muted);
 		letter-spacing: 0.04em;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.common-vuln-subtitle {
@@ -913,6 +1090,10 @@ const CSS = /* css */ `
 		color: var(--muted);
 		font-weight: 400;
 		line-height: 1.3;
+		max-width: 100%;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.section-icon {
@@ -946,12 +1127,26 @@ const CSS = /* css */ `
 	.panel-empty {
 		flex: 1;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
+		gap: 8px;
 		font-size: 12px;
 		color: var(--muted);
 		text-align: center;
-		padding: 20px 8px;
+		padding: 18px 8px;
+	}
+
+	.empty-state-logo {
+		opacity: 0.45;
+		color: var(--muted);
+	}
+
+	.panel-empty-text {
+		max-width: 100%;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* ── Common vulnerability cards ── */
@@ -960,22 +1155,26 @@ const CSS = /* css */ `
 		border-bottom: 1px solid var(--border);
 		background: var(--card);
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 10px;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
 	}
 
 	.cv-card:last-child { border-bottom: none; }
 
-	.cv-card-left {
+	.cv-row-top,
+	.cv-row-bottom {
 		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
 		min-width: 0;
-		flex: 1;
+		width: 100%;
 	}
 
 	.cv-type {
+		flex: 1;
+		min-width: 0;
 		font-size: 12px;
 		font-weight: 600;
 		color: var(--text);
@@ -984,23 +1183,25 @@ const CSS = /* css */ `
 		white-space: nowrap;
 	}
 
-	.cv-card-body {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 3px;
-		flex-shrink: 0;
-	}
-
 	.cv-cwe {
 		font-size: 10px;
 		color: var(--muted);
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	.cv-instances {
 		font-size: 11px;
 		font-weight: 700;
 		color: var(--accent);
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+
+	.cv-active,
+	.cv-resolved {
+		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.cv-active {
@@ -1110,22 +1311,22 @@ export function buildSessionMetricsHtml(
 	const { critical, high, medium, low, trends } = metrics;
 	const isSessionActive = metrics.isSessionActive !== false;
 	const sessionLabel = (metrics.sessionLabel || 'Session 1').toUpperCase();
-	const fullSessionBadgeText = isSessionActive
-		? escapeHtml(sessionLabel)
-		: `${escapeHtml(sessionLabel)} · NOT STARTED YET`;
+	const fullSessionBadgeText = escapeHtml(sessionLabel);
+	const sessionTitle = isSessionActive
+		? 'Session active'
+		: 'Session not started yet — save a file to begin';
 	const badgeClass = isSessionActive ? 'session-badge' : 'session-badge not-started';
 	const dotClass = isSessionActive ? 'session-dot' : 'session-dot not-started';
 	const reportStatusHtml = metrics.reportUpdateStatus === 'updating'
-		? '<span class="report-status-indicator report-status-updating" role="status" aria-live="polite" title="Settling recent save to update Full Report metrics and trends..."><span class="report-status-spinner" aria-hidden="true"></span>Updating Full Report records...</span>'
+		? '<span class="report-status-indicator report-status-updating" role="status" aria-live="polite" title="Settling recent save to update Full Report metrics and trends..."><span class="report-status-spinner" aria-hidden="true"></span><span class="report-status-text">Updating...</span></span>'
 		: metrics.reportUpdateStatus === 'updated'
-			? '<span class="report-status-indicator report-status-updated" role="status" aria-live="polite" title="Full Report records and trends are up to date with the latest settled save.">✓ Full Report updated</span>'
-			: '';
+			? `<span class="report-status-indicator report-status-updated" role="status" aria-live="polite" title="Full Report records and trends are up to date with the latest settled save.">${CHECK_ICON_SVG}<span class="report-status-text">Updated</span></span>`
+			: `<span class="report-status-indicator report-status-idle" role="status" aria-live="polite" title="Hit Save to update Full Report records.">${SAVE_ICON_SVG}<span class="report-status-text">Hit Save to update</span></span>`;
 
 	const persistingSubItems = buildPersistingSubItems(trends.persistingItems, trends.persistingPatterns);
 	const improvingSubItems = buildImprovingSubItems(trends.improvingItems, trends.improvingTrends);
 	const recurringSubItems = buildBasicSubItems(trends.recurringItems, trends.recurringPatterns);
 	const resolvedSubItems = buildBasicSubItems(trends.resolvedItems, trends.resolvedThisSession);
-	const pendingResolutionsHtml = buildPendingResolutionsSection(trends.pendingResolutions);
 
 	return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -1137,37 +1338,39 @@ export function buildSessionMetricsHtml(
 	</head>
 	<body>
 		<section class="dashboard">
-			<div class="full-report-section">
-				<div class="full-report-header">
-					<div class="full-report-header-left">
+			<div class="severity-status-section" aria-label="Full Report">
+				<div class="severity-status-header-row">
+					<div class="severity-status-header">
 						${FULL_REPORT_SVG}
 						<span>Full Report</span>
 					</div>
-					<div class="full-report-header-right">
-						${reportStatusHtml}
-						<span class="${badgeClass}"><span class="${dotClass}">●</span> ${fullSessionBadgeText}</span>
-					</div>
+					<button type="button" class="settings-gear-btn" id="open-settings-btn"
+					        title="Open Ariadne Settings" aria-label="Open Ariadne Settings">
+						${GEAR_SVG}
+						<span class="settings-label">Settings</span>
+					</button>
 				</div>
-				<div class="metrics-grid">
-					${buildMetricCard('Critical Issues', critical, 'critical')}
-					${buildMetricCard('High Issues', high, 'high')}
-					${buildMetricCard('Medium Issues', medium, 'medium')}
-					${buildMetricCard('Low Issues', low, 'low')}
+				<div class="severity-badges-bar" aria-label="Severity Breakdown">
+					${buildSeverityBadge('Crit', 'Critical Issues', critical, 'critical')}
+					${buildSeverityBadge('High', 'High Issues', high, 'high')}
+					${buildSeverityBadge('Med', 'Medium Issues', medium, 'medium')}
+					${buildSeverityBadge('Low', 'Low Issues', low, 'low')}
+				</div>
+				<div class="full-report-status-row">
+					<span class="${badgeClass}" title="${sessionTitle}"><span class="${dotClass}">●</span> ${fullSessionBadgeText}</span>
+					${reportStatusHtml}
 				</div>
 			</div>
-
-			<div class="divider"></div>
-
 			<div class="trends-card">
 				<div class="trends-header-row">
-					<div class="trends-title">
-						${TRENDS_HEADER_SVG}
-						<span>Trends</span>
+					<div class="trends-title-bar">
+						<div class="trends-title">
+							${TRENDS_HEADER_SVG}
+							<span>Trends</span>
+						</div>
 					</div>
 					<span class="trends-subtitle">Compares reports to track progress and unresolved risks.</span>
 				</div>
-
-				${pendingResolutionsHtml}
 
 				${buildCollapsibleTrendRow(
 		'persisting',
@@ -1210,13 +1413,15 @@ export function buildSessionMetricsHtml(
 	)}
 			</div>
 			
-			<div class="divider"></div>
-			
 			${buildCommonVulnerabilitiesPanel(metrics.commonVulnerabilities, metrics.totalSessionsAnalyzed)}
 		</section>
 		<script>
 			(function () {
 				const vscode = acquireVsCodeApi();
+
+				document.getElementById('open-settings-btn')?.addEventListener('click', function () {
+					vscode.postMessage({ type: 'open-settings' });
+				});
 
 				window.addEventListener('message', function (event) {
 					var msg = event.data;
@@ -1246,9 +1451,19 @@ export function buildSessionMetricsHtml(
 				});
 
 				// ── Cross-filtering to Active Vulnerabilities ────────────
+				function setActiveSeverityBadge(clickedEl) {
+					const shouldActivate = !clickedEl.classList.contains('is-active');
+					document.querySelectorAll('.filterable-metric-card').forEach(function (el) {
+						const active = shouldActivate && el === clickedEl;
+						el.classList.toggle('is-active', active);
+						el.setAttribute('aria-pressed', String(active));
+					});
+				}
+
 				document.addEventListener('click', function (e) {
 					const metricCard = e.target.closest('.filterable-metric-card');
 					if (metricCard && metricCard.dataset.severity) {
+						setActiveSeverityBadge(metricCard);
 						vscode.postMessage({ type: 'filter-severity', severity: metricCard.dataset.severity });
 						return;
 					}
@@ -1264,6 +1479,7 @@ export function buildSessionMetricsHtml(
 						const target = e.target;
 						if (target && target.classList && target.classList.contains('filterable-metric-card') && target.dataset.severity) {
 							e.preventDefault();
+							setActiveSeverityBadge(target);
 							vscode.postMessage({ type: 'filter-severity', severity: target.dataset.severity });
 						} else if (target && target.classList && target.classList.contains('filterable-type-item') && target.dataset.vulnType) {
 							e.preventDefault();

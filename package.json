@@ -129,8 +129,15 @@
       "ariadne-sidebar": [
         {
           "type": "webview",
+          "id": "ariadne.panel.sessionMetrics",
+          "name": "Session Metrics",
+          "when": "ariadne.panelReady && !ariadne.sidebarSettingsOpen"
+        },
+        {
+          "type": "webview",
           "id": "ariadne.sidebar.signIn",
-          "name": "Ariadne"
+          "name": "Ariadne",
+          "when": "!ariadne.panelReady || ariadne.sidebarSettingsOpen"
         }
       ],
       "ariadne-panel": [
@@ -145,16 +152,7 @@
           "type": "webview",
           "id": "ariadne.panel.activeVulnerabilities",
           "name": "ACTIVE VULNERABILITIES",
-          "group": "left",
           "icon": "$(shield)",
-          "when": "ariadne.panelReady"
-        },
-        {
-          "type": "webview",
-          "id": "ariadne.panel.sessionMetrics",
-          "name": "SESSION METRICS",
-          "group": "right",
-          "icon": "$(graph)",
           "when": "ariadne.panelReady"
         }
       ]
