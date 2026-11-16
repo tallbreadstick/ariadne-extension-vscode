@@ -969,15 +969,14 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 						<div class="process-body">
 							<h4>Full Report Multi-Save Durability</h4>
 							<p>
-								The Full Report updates over multiple saves to verify the <strong>durability</strong> of your fixes, 
-								preventing accidental regressions or commented-out code from distorting your progress.
+								When you fix a vulnerability, Ariadne verifies the <strong>durability</strong> of your remediation across <strong>3 consecutive saves</strong> before marking it permanently resolved. This multi-save verification ensures your fix is genuine and lasting, preventing accidental regressions or commented-out code from prematurely distorting your progress.
 							</p>
 							${step23GifUri ? /* html */ `
 							<div class="demo-media-wrapper">
 								<img src="${step23GifUri}" alt="Vulnerability resolution verification process" class="demo-media" loading="lazy" />
 								<div class="demo-media-caption">
 									<span class="caption-dot"></span>
-									<span>Visual indicator: Fixing a vulnerability initiates the resolution verification process across saves until it is confirmed as resolved.</span>
+									<span>Visual indicator: Remediation requires 3 saves to confirm resolution durability before updating your progress.</span>
 								</div>
 							</div>` : ''}
 						</div>
