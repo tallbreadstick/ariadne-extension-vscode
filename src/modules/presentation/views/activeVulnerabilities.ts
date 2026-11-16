@@ -388,21 +388,55 @@ const CSS = /* css */ `
 
     @keyframes panelSpotlightPulse {
         0% {
-            box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
             background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--list-bg));
         }
         50% {
-            box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
             background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--list-bg));
         }
         100% {
-            box-shadow: inset 0 0 0 0 transparent;
             background-color: var(--list-bg);
+        }
+    }
+
+    @keyframes topBarSpotlightPulse {
+        0% {
+            background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 12%, var(--bg));
+        }
+        50% {
+            background-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 8%, var(--bg));
+        }
+        100% {
+            background-color: var(--bg);
+        }
+    }
+
+    @keyframes panelSpotlightBorderPulse {
+        0% {
+            box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+        }
+        50% {
+            box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007acc);
+        }
+        100% {
+            box-shadow: inset 0 0 0 0 transparent;
         }
     }
 
     body.panel-spotlight {
         animation: panelSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    body.panel-spotlight .sticky-top-bar {
+        animation: topBarSpotlightPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    body.panel-spotlight::after {
+        content: '';
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        pointer-events: none;
+        animation: panelSpotlightBorderPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
     * { box-sizing: border-box; }
