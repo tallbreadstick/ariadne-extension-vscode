@@ -274,6 +274,7 @@ function buildVulnsHtml(
 	scannerBroken = false,
 	loading = false,
 	treeViewOpen = false,
+	pendingResolutions?: PendingResolutionItem[],
 ): string {
 	const lifecycles = store.loadFindingLifecycles();
 	const activeSession = store.loadActiveSession();
@@ -327,6 +328,7 @@ function buildVulnsHtml(
 		resolvedCount,
 		totalSessionIssues,
 		commonVulnTypes,
+		pendingResolutions,
 	});
 }
 
@@ -768,6 +770,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					type: flc.type,
 					cweId: flc.cweId,
 					instanceName: flc.instanceName || undefined,
+					filePath: flc.filePath || undefined,
+					severity: flc.severity,
 					savesCompleted,
 					savesRequired: 3,
 				});
@@ -1152,7 +1156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		},
 	);
 	activeVulnsProvider.setResolveHtml(() =>
-		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen),
+		buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, scannerBroken, startupLoading, treeViewOpen, buildPendingResolutions()),
 	);
 	const sessionMetricsProvider = new AriadneViewProvider(
 		initialMetricsHtml,
@@ -1169,6 +1173,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				void (async () => {
 					await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
 					activeVulnsProvider.postMessage({ type: 'set-filter-type', vulnType: msg.vulnType });
+				})();
+			} else if (msg.type === 'open-settings') {
+				void (async () => {
+					await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', true);
+					await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+					settingsView?.postMessage({ type: 'open-section', section: 'account' });
 				})();
 			}
 		},
@@ -1450,6 +1460,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	};
 
 	const handleSettingsMessage = async (msg: Record<string, unknown>): Promise<void> => {
+			if (msg.type === 'close-settings') {
+				await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', false);
+				await vscode.commands.executeCommand('ariadne.panel.sessionMetrics.focus');
+				return;
+			}
+
 			if (msg.type === 'scanner-set-auto') {
 				const prefs = readScannerPreferencesFromConfig();
 				await saveScannerPreferences({ ...prefs, auto: msg.auto === true });
@@ -1866,7 +1882,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 	settingsView.setResolveHtml(() => latestSignInHtml);
 
+	void vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', false);
+
 	openAriadneSettings = async (section?: 'account' | 'core') => {
+		await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', true);
 		await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
 		settingsView?.postMessage({
 			type: 'pulse-section',
@@ -1968,7 +1987,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			scannerBroken = false;
 			if (initialFindingsReceived) {
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, true, false, false),
+					buildVulnsHtml(latestVulnerabilities, store, true, false, false, treeViewOpen, buildPendingResolutions()),
 				);
 			} else {
 				activeVulnsProvider.updateHtml(
@@ -2197,7 +2216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			refreshSessionMetricsPanel();
 			updateStatusBar(sessionAnalysis);
 			activeVulnsProvider.updateHtml(
-				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+				buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false, treeViewOpen, buildPendingResolutions()),
 			);
 
 			vscode.window.setStatusBarMessage(
@@ -2336,7 +2355,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		scannerChecked = true;
 		startupLoading = false;
 		initialFindingsReceived = true;
-		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen));
+		activeVulnsProvider.updateHtml(buildVulnsHtml(vulns, store, featuresUnlocked, false, false, treeViewOpen, buildPendingResolutions()));
 		activeVulnsProvider.setBadgeCount(vulns.length);
 		updatePanelReadyContext();
 
@@ -2480,7 +2499,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				refreshSessionMetricsPanel();
 				updateStatusBar(sessionAnalysis);
 				activeVulnsProvider.updateHtml(
-					buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false),
+					buildVulnsHtml(latestVulnerabilities, store, featuresUnlocked, false, false, treeViewOpen, buildPendingResolutions()),
 				);
 
 				// ── 4e. VS Code toast notifications ──────────────────────

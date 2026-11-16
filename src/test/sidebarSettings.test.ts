@@ -277,19 +277,15 @@ describe('Sidebar settings accordion', () => {
 		const html = buildSignInPanelHtml(signedOutModel());
 		assert.ok(html.includes('id="config-notification-level"'));
 		assert.ok(html.includes('id="config-autoscan-interval"'));
-		assert.ok(html.includes('id="config-executable-path"'));
-		assert.ok(html.includes('id="config-metrics-enabled"'));
-		assert.ok(html.includes('id="config-metrics-base-url"'));
-		assert.ok(html.includes('id="config-metrics-api-key"'));
-		assert.ok(html.includes('id="config-metrics-trust-local-tls"'));
+		assert.ok(!html.includes('id="config-executable-path"'));
+		assert.ok(!html.includes('id="config-metrics-enabled"'));
+		assert.ok(!html.includes('id="config-metrics-base-url"'));
+		assert.ok(!html.includes('id="config-metrics-api-key"'));
+		assert.ok(!html.includes('id="config-metrics-trust-local-tls"'));
 
 		// Default options and attributes
 		assert.ok(html.includes('value="milestones" selected'));
 		assert.ok(html.includes('value="60"'));
-		assert.ok(html.includes('value="ariadne"'));
-		assert.ok(html.includes('https://127.0.0.1:8443'));
-		assert.match(html, /id="config-metrics-enabled"[^>]*aria-checked="true"/);
-		assert.match(html, /id="config-metrics-trust-local-tls"[^>]*aria-checked="true"/);
 	});
 
 	it('renders custom configuration model values when provided', () => {
@@ -309,12 +305,8 @@ describe('Sidebar settings accordion', () => {
 
 		assert.ok(html.includes('value="quiet" selected'));
 		assert.ok(html.includes('value="15"'));
-		assert.ok(html.includes('value="/custom/bin/ariadne"'));
-		assert.match(html, /id="config-metrics-enabled"[^>]*aria-checked="false"/);
-		assert.ok(html.includes('id="config-metrics-details" hidden'));
-		assert.ok(html.includes('value="https://metrics.internal.corp:9443"'));
-		assert.ok(html.includes('value="secret-token-123456789012345678901234567890"'));
-		assert.match(html, /id="config-metrics-trust-local-tls"[^>]*aria-checked="false"/);
+		assert.ok(!html.includes('id="config-executable-path"'));
+		assert.ok(!html.includes('id="config-metrics-enabled"'));
 	});
 });
 
