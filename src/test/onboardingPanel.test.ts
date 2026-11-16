@@ -141,21 +141,21 @@ describe('Onboarding Guide Webview Panel', () => {
 
 			// Active Vulnerabilities feature
 			assert.match(html, /Active Vulnerabilities/);
-			assert.match(html, /Bottom Panel \(Left Pane\)/);
+			assert.match(html, /Bottom Panel \(Live Scan\)/);
 			assert.match(html, /data-action="openActiveVulnerabilities"/);
-			assert.match(html, /Focus Active Vulnerabilities \(Left\)/);
+			assert.match(html, /Focus Active Vulnerabilities/);
 
 			// Full Report feature
 			assert.match(html, /Full Report/);
-			assert.match(html, /Bottom Panel \(Right Pane\)/);
+			assert.match(html, /Activity Bar \(Sidebar\)/);
 			assert.match(html, /data-action="openFullReport"/);
-			assert.match(html, /Focus Full Report \(Right\)/);
+			assert.match(html, /Focus Full Report/);
 
 			// Inline Highlighting feature
 			assert.match(html, /Inline Highlighting/);
 			assert.match(html, /Editor Pane/);
 			assert.match(html, /\[Ariadne\] SQL Injection/);
-			assert.ok(html.includes('#E24B4A80'), 'Should use 50% opacity critical highlight background for demo-box');
+			assert.ok(html.includes('#E24B4A38'), 'Should use critical highlight background for demo-box');
 			assert.ok(!html.includes('Inspect Current Findings'), 'Should not contain redundant Inspect Current Findings button');
 		});
 

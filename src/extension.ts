@@ -1280,15 +1280,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		setTimeout(() => {
 			provider.postMessage({ type: 'highlight-panel' });
 		}, 50);
+		setTimeout(() => {
+			provider.postMessage({ type: 'highlight-panel' });
+		}, 200);
 	};
 
 	const focusRequestedPanel = async (view: OnboardingBottomPanel, highlight: boolean): Promise<void> => {
 		const plan = planOnboardingPanelFocus(readPanelAvailability(), view);
 		if (plan.kind === 'focus-view') {
 			pendingOnboardingFocus = undefined;
+			if (view === 'sessionMetrics') {
+				await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', false);
+			}
 			await vscode.commands.executeCommand(`ariadne.panel.${view}.focus`);
 			if (highlight) {
 				spotlightPanel(view);
+			}
+			return;
+		}
+		if (view === 'sessionMetrics') {
+			await vscode.commands.executeCommand('ariadne.sidebar.signIn.focus');
+			if (highlight) {
+				setTimeout(() => {
+					settingsView?.postMessage({ type: 'highlight-panel' });
+				}, 50);
+				setTimeout(() => {
+					settingsView?.postMessage({ type: 'highlight-panel' });
+				}, 200);
 			}
 			return;
 		}

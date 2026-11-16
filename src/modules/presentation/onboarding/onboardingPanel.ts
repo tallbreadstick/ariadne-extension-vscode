@@ -819,16 +819,16 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 									${VULN_SVG}
 									<h3 class="feature-title">Active Vulnerabilities</h3>
 								</div>
-								<span class="location-badge">Bottom Panel (Left Pane)</span>
+								<span class="location-badge">Bottom Panel (Live Scan)</span>
 							</div>
 							<p class="feature-desc">
-								View real-time vulnerability findings on the <strong>left pane</strong> of the bottom split dock. Features the <strong>Session Progress Bar</strong>, 
+								View real-time vulnerability findings in the <strong>bottom panel (Live Scan)</strong>. Features the <strong>Session Progress Bar</strong>, 
 								the <strong>Next Focus</strong> recommendation chip, collapsible filter drawer, click-to-navigate code links, 
 								and <strong>Explain Vulnerability</strong> learning actions.
 							</p>
 						</div>
 						<button class="btn" data-action="openActiveVulnerabilities">
-							Focus Active Vulnerabilities (Left)
+							Focus Active Vulnerabilities
 						</button>
 					</div>
 
@@ -840,16 +840,16 @@ export function buildOnboardingHtml(mediaUris?: OnboardingMediaUris): string {
 									${REPORT_SVG}
 									<h3 class="feature-title">Full Report</h3>
 								</div>
-								<span class="location-badge">Bottom Panel (Right Pane)</span>
+								<span class="location-badge">Activity Bar (Sidebar)</span>
 							</div>
 							<p class="feature-desc">
-								Inspect your comprehensive security dashboard on the <strong>right pane</strong> of the bottom split dock. Displays finding counts by severity, qualitative trend badges 
+								Inspect your comprehensive security dashboard in the <strong>Ariadne Sidebar</strong> (Activity Bar on the left). Displays finding counts by severity, qualitative trend badges 
 								(<em>Some progress</em>, <em>Clear progress</em>), recurring <strong>Common Vulnerability</strong> habit tracking, 
 								and interactive click-to-filter support.
 							</p>
 						</div>
 						<button class="btn" data-action="openFullReport">
-							Focus Full Report (Right)
+							Focus Full Report
 						</button>
 					</div>
 
@@ -1243,6 +1243,7 @@ export function showOnboardingPanel(context: vscode.ExtensionContext, callbacks?
 						await callbacks.onOpenFullReport();
 						break;
 					}
+					await vscode.commands.executeCommand('setContext', 'ariadne.sidebarSettingsOpen', false);
 					await vscode.commands.executeCommand('ariadne.panel.sessionMetrics.focus');
 					break;
 				case 'startCoding':
