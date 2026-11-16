@@ -21,7 +21,7 @@ When the user has **analytics consent** and is signed in to GitHub, finalized se
 | Setting | Default | Purpose |
 |---|---|---|
 | `ariadne.metricsIngest.enabled` | `true` | Master switch |
-| `ariadne.metricsIngest.baseUrl` | `https://127.0.0.1:8443` | Collection server (change when deployed) |
+| `ariadne.metricsIngest.baseUrl` | `https://127.0.0.1:8080` | Collection server (change when deployed) |
 | `ariadne.metricsIngest.apiKey` | *(empty)* | Bearer token (≥32 chars); matches server `ARIADNE_INGEST_API_KEY` |
 | `ariadne.metricsIngest.trustLocalTls` | `true` | Accept self-signed TLS on localhost |
 

@@ -28,7 +28,7 @@ export function defaultConfigurationSettings(): ConfigurationSettingsViewModel {
 		autoScanIntervalMinutes: DEFAULT_AUTO_SCAN_INTERVAL_MINUTES,
 		executablePath: 'ariadne',
 		metricsEnabled: true,
-		metricsBaseUrl: 'https://127.0.0.1:8443',
+		metricsBaseUrl: 'https://127.0.0.1:8080',
 		metricsApiKey: '',
 		metricsTrustLocalTls: true,
 	};
@@ -54,7 +54,7 @@ export function loadConfigurationSettings(): ConfigurationSettingsViewModel {
 		const autoScanIntervalMinutes = getAutoScanIntervalMinutes();
 		const executablePath = rootConfig.get<string>('executable', 'ariadne') || 'ariadne';
 		const metricsEnabled = metrics.get<boolean>('enabled', true) ?? true;
-		const metricsBaseUrl = metrics.get<string>('baseUrl', 'https://127.0.0.1:8443') || 'https://127.0.0.1:8443';
+		const metricsBaseUrl = metrics.get<string>('baseUrl', 'https://127.0.0.1:8080') || 'https://127.0.0.1:8080';
 		const metricsApiKey = metrics.get<string>('apiKey', '') || '';
 		const metricsTrustLocalTls = metrics.get<boolean>('trustLocalTls', true) ?? true;
 

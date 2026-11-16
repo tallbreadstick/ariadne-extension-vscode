@@ -17,7 +17,7 @@ export async function loadMetricsIngestConfig(
 	if (!enabled) {
 		return null;
 	}
-	const baseUrl = (config.get<string>('baseUrl', 'https://127.0.0.1:8443') ?? '').replace(/\/$/, '');
+	const baseUrl = (config.get<string>('baseUrl', 'https://127.0.0.1:8080') ?? '').replace(/\/$/, '');
 	if (!baseUrl) {
 		return null;
 	}

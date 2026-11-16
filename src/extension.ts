@@ -54,6 +54,7 @@ import { buildPrivacyPolicyHtml } from './modules/feedback/views/privacyPolicyPa
 import { GitHubAuthService } from './modules/feedback/auth/githubAuthService.js';
 import { AuthStorage } from './modules/feedback/auth/authStorage.js';
 import { MetricsIngestService } from './modules/tracker/ingest/metricsIngest.js';
+import { SessionForwarder } from './modules/tracker/ingest/sessionForwarder.js';
 import type { AuthPanelState, ScannerSettingsViewModel, SignInPanelViewModel } from './modules/feedback/auth/authTypes.js';
 import {
 	DEFAULT_COPILOT_MODEL,
@@ -452,6 +453,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const githubAuth = new GitHubAuthService(context);
 	const authStorage = new AuthStorage(context);
 	const metricsIngest = new MetricsIngestService(context, authStorage);
+	const sessionForwarder = new SessionForwarder(context, store, authStorage);
 	const copilotManager = new CopilotClientManager();
 
 	const queueSessionMetricsUpload = (session: SessionRecord): void => {
@@ -1221,7 +1223,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				});
 			}
 			if (msg.type === 'toggle-tree-view') {
+				sessionForwarder.recordAuditGraphOpen();
 				showTreeViewPanel();
+			}
+			if (msg.type === 'goto-line' && msg.filePath && msg.line) {
+				sessionForwarder.recordFileLocationOpen();
 			}
 		},
 	);
@@ -1735,7 +1741,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('enabled', value === true, vscode.ConfigurationTarget.Global);
 				} else if (key === 'metricsIngest.baseUrl') {
 					const val = typeof value === 'string' ? value.trim() : '';
-					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('baseUrl', val || 'https://127.0.0.1:8443', vscode.ConfigurationTarget.Global);
+					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('baseUrl', val || 'https://127.0.0.1:8080', vscode.ConfigurationTarget.Global);
 				} else if (key === 'metricsIngest.apiKey') {
 					const val = typeof value === 'string' ? value.trim() : '';
 					await vscode.workspace.getConfiguration('ariadne.metricsIngest').update('apiKey', val, vscode.ConfigurationTarget.Global);
@@ -2335,6 +2341,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (featuresUnlocked) {
 				setReportUpdateStatus('updating');
 			}
+			sessionForwarder.scheduleForward();
 		},
 		// onRevisionChange: any tracked-file mutation cancels settlement
 		(revision: number) => {
@@ -2683,6 +2690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const toggleTreeViewCommand = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.toggleTreeView',
 		() => {
+			sessionForwarder.recordAuditGraphOpen();
 			showTreeViewPanel();
 		},
 	);
@@ -2769,6 +2777,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const openFeedbackPanel = vscode.commands.registerCommand(
 		'ariadne-extension-vscode.openFeedbackPanel',
 		async (target?: AskAriadneArtifact | string, legacyTitle?: string) => {
+			sessionForwarder.recordExplainVulnerability();
 			const vuln = resolveAskedVulnerability(target, legacyTitle);
 
 			if (!vuln) {
@@ -2919,6 +2928,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	// ── Deactivation Coordinator ─────────────────────────────────────────
 	deactivationHandler = async (): Promise<void> => {
 		console.log('[Ariadne] Deactivating extension...');
+
+		// Forward session data immediately on close (bypasses the save debounce).
+		sessionForwarder.forwardNow();
 
 		// 1. Cancel active timers
 		stopHourlyScanTimer();
