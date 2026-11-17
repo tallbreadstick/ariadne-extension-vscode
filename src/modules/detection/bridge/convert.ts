@@ -288,20 +288,20 @@ function instanceGroupKey(item: VulnerabilityMetadata): string {
 	if (item.instance_fingerprint) {
 		return item.instance_fingerprint;
 	}
-	if (item.logical_fingerprint && item.scope_fingerprint && item.content_fingerprint) {
-		return `${item.logical_fingerprint}:${item.scope_fingerprint}:${item.content_fingerprint}`;
+		if (item.logical_fingerprint && item.scope_fingerprint) {
+			return `${item.logical_fingerprint}:${item.scope_fingerprint}`;
+		}
+		return item.logical_fingerprint
+			?? item.enclosing_symbol_path
+			?? item.instance_name
+			?? `${item.file_path}:${item.line_number}`;
 	}
-	return item.logical_fingerprint
-		?? item.enclosing_symbol_path
-		?? item.instance_name
-		?? `${item.file_path}:${item.line_number}`;
-}
 
-function capitalize(s: string): string {
-	return s.charAt(0).toUpperCase() + s.slice(1);
-}
+	function capitalize(s: string): string {
+		return s.charAt(0).toUpperCase() + s.slice(1);
+	}
 
-/** Returns the file name portion of an absolute path. */
-function shortPath(p: string): string {
-	return p.replace(/\\/g, '/').split('/').at(-1) ?? p;
-}
+	/** Returns the file name portion of an absolute path. */
+	function shortPath(p: string): string {
+		return p.replace(/\\/g, '/').split('/').at(-1) ?? p;
+	}

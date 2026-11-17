@@ -745,14 +745,101 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	let latestVulnerabilities: Vulnerability[] = [];
 	let latestObservedFindings: ObservedFinding[] = [];
 	let liveBaselineFindings: ObservedFinding[] | null = null;
-	const seenFingerprints = new Set<string>();
 	let previousScanSnapshot = null as import('./modules/feedback/vulnerability_results/vulnerabilityTypes.js').ScanSnapshot | null;
 	let latestSessionAnalysis: SessionAnalysis | null = null;
 
-	function noteSeenFindings(findings: readonly ObservedFinding[]): void {
-		for (const finding of findings) {
-			if (finding.logicalFingerprint) {
-				seenFingerprints.add(finding.logicalFingerprint);
+	function reconcileLiveFindingsWithLifecycles(liveFindings: readonly ObservedFinding[]): void {
+		const knownFingerprints = new Set(lifecycles.map((row) => row.logicalFingerprint));
+		const unmatchedLive = liveFindings.filter((l) => !knownFingerprints.has(l.logicalFingerprint));
+		if (unmatchedLive.length === 0) {
+			return;
+		}
+
+		const liveFpSet = new Set(liveFindings.map((l) => l.logicalFingerprint));
+		// Find active/persisting lifecycles that are currently missing from the live scan
+		const missingLifecycles = lifecycles.filter(
+			(row) => !liveFpSet.has(row.logicalFingerprint) && row.durableResolutionAt === null,
+		);
+
+		for (const cand of unmatchedLive) {
+			const candPath = cand.filePath.replace(/\\/g, '/').toLowerCase();
+			const matchIdx = missingLifecycles.findIndex((row) => {
+				if (row.filePath.replace(/\\/g, '/').toLowerCase() !== candPath) {
+					return false;
+				}
+				const typeMatches = (cand.cweId && cand.cweId === row.cweId)
+					|| (cand.type && cand.type === row.type)
+					|| (cand.ruleId && cand.ruleId === row.ruleId);
+				if (!typeMatches) {
+					return false;
+				}
+
+				// Priority 1: Line proximity (within 3 lines in the same file)
+				if (typeof row.lastLineNumber === 'number' && typeof cand.lineNumber === 'number') {
+					if (Math.abs(row.lastLineNumber - cand.lineNumber) <= 3) {
+						return true;
+					}
+				}
+
+				// Priority 2: Same scope (enclosing method / class)
+				if (row.scopeFingerprint && cand.scopeFingerprint && row.scopeFingerprint === cand.scopeFingerprint) {
+					return true;
+				}
+
+				// Priority 3: Same instanceName
+				if (row.instanceName && cand.instanceName && row.instanceName === cand.instanceName) {
+					return true;
+				}
+
+				// Fallback if no line numbers are known on either side
+				if (typeof row.lastLineNumber !== 'number' && typeof cand.lineNumber !== 'number') {
+					return true;
+				}
+
+				return false;
+			});
+
+			if (matchIdx !== -1) {
+				const matchedLifecycle = missingLifecycles.splice(matchIdx, 1)[0];
+				const oldFp = matchedLifecycle.logicalFingerprint;
+				matchedLifecycle.logicalFingerprint = cand.logicalFingerprint;
+				matchedLifecycle.contentFingerprint = cand.contentFingerprint;
+				matchedLifecycle.scopeFingerprint = cand.scopeFingerprint;
+				matchedLifecycle.instanceName = cand.instanceName;
+				if (typeof cand.lineNumber === 'number') {
+					matchedLifecycle.lastLineNumber = cand.lineNumber;
+				}
+				if (typeof cand.endLine === 'number') {
+					matchedLifecycle.lastEndLine = cand.endLine;
+				}
+
+				// Also update liveBaselineFindings if present
+				if (liveBaselineFindings) {
+					const baseItem = liveBaselineFindings.find((f) => f.logicalFingerprint === oldFp);
+					if (baseItem) {
+						baseItem.logicalFingerprint = cand.logicalFingerprint;
+						baseItem.contentFingerprint = cand.contentFingerprint;
+						baseItem.scopeFingerprint = cand.scopeFingerprint;
+						baseItem.instanceName = cand.instanceName;
+						baseItem.lineNumber = cand.lineNumber;
+						baseItem.endLine = cand.endLine;
+					}
+				}
+
+				// Also update activeSession baseline checkpoint if present
+				if (activeSession?.baselineCheckpoint?.findings) {
+					const cpItem = activeSession.baselineCheckpoint.findings.find(
+						(f) => f.logicalFingerprint === oldFp,
+					);
+					if (cpItem) {
+						cpItem.logicalFingerprint = cand.logicalFingerprint;
+						cpItem.contentFingerprint = cand.contentFingerprint;
+						cpItem.scopeFingerprint = cand.scopeFingerprint;
+						cpItem.instanceName = cand.instanceName;
+						cpItem.lineNumber = cand.lineNumber;
+						cpItem.endLine = cand.endLine;
+					}
+				}
 			}
 		}
 	}
@@ -784,11 +871,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		loading = false,
 		treeViewOpen = false,
 	): string {
+		const baselineFindings = activeSession?.baselineCheckpoint?.findings
+			?? liveBaselineFindings
+			?? latestObservedFindings;
+		const baselineFingerprints = baselineFindings.map((finding) => finding.logicalFingerprint);
 		const progress = countLiveSessionProgress(
 			new Set(latestObservedFindings.map((finding) => finding.logicalFingerprint)),
 			lifecycles,
-			[...seenFingerprints],
+			baselineFingerprints,
 			activeSession?.startedAt ?? null,
+			latestObservedFindings,
+			baselineFindings,
 		);
 		return buildVulnsHtml(
 			vulns,
@@ -1975,6 +2068,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					await store.clearAllLifecycleData();
 					lifecycles = [];
 					activeSession = null;
+					liveBaselineFindings = null;
 					latestSessionAnalysis = null;
 					lastSettledRevision = null;
 					previousScanSnapshot = null;
@@ -2478,7 +2572,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (liveBaselineFindings === null && latestObservedFindings.length > 0) {
 			liveBaselineFindings = latestObservedFindings.map((finding) => ({ ...finding }));
 		}
-		noteSeenFindings(latestObservedFindings);
+		reconcileLiveFindingsWithLifecycles(latestObservedFindings);
 		await ensureKnownLifecycles(latestObservedFindings);
 		scannerBroken = false;
 		scannerChecked = true;

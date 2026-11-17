@@ -248,6 +248,19 @@ Within each section, newest decision at the top.
 - supersedes: Common Vulnerabilities — Cross-Session Type-Level Awareness Metric (counting and graduation logic only; entry threshold K=3 and panel rendering unchanged)
 - task: docs/ai/tasks/2026-09-19-common-vuln-realignment.md
 
+### Live Session Progress Fingerprint Reconciliation & In-Place Edit Stability
+
+- date: 2026-11-17
+- status: accepted
+- context: When editing source code in the editor (such as modifying string literals or renaming variables in expressions like `(Student) record` to `(Student) recordd`), the scanner emits findings whose source slice or instance name mutates. In earlier code, `instanceGroupKey` concatenated raw `content_fingerprint` in fallback, `seenFingerprints` accumulated every ephemeral keystroke into the session baseline, and `countLiveSessionProgress` lacked active presence verification. This caused phantom resolved counts (e.g. jumping from `0 of 11` to `1 of 12` issues resolved) on simple keystrokes.
+- decision:
+  1. Remove `seenFingerprints` accumulator; pass stable session baseline (`baselineCheckpoint` or `liveBaselineFindings`) to `countLiveSessionProgress`.
+  2. Remove volatile `content_fingerprint` from `instanceGroupKey` fallback so findings retain stable composite identity (`logical_fingerprint:scope_fingerprint`).
+  3. Implement `reconcileLiveFindingsWithLifecycles` in `extension.ts` prioritizing line proximity and enclosing scope over volatile symbol names, migrating lifecycle records and baseline checkpoints when edits occur to prevent duplicate lifecycles.
+  4. In `countLiveSessionProgress`, verify live candidate presence before counting an absent baseline finding as resolved.
+- consequences: In-place edits, typing, and variable modifications within vulnerable statements preserve accurate session progress without inflating denominators or generating phantom resolutions.
+- task: docs/ai/tasks/archive/2026-11-17-session-progress-fingerprint-mutation.md
+
 <!-- Add new post-MVP decisions above this line -->
 
 

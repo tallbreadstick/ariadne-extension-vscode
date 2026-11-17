@@ -655,6 +655,60 @@ export interface LiveSessionProgress {
 	confirmingCount: number;
 }
 
+function normalizeEnginePath(p: string): string {
+	return p.replace(/\\/g, '/').toLowerCase();
+}
+
+function findMatchingLiveCandidate(
+	target: {
+		filePath: string;
+		cweId?: string;
+		type?: string;
+		ruleId?: string;
+		instanceName?: string;
+		lastLineNumber?: number;
+		scopeFingerprint?: string;
+	},
+	pool: readonly ObservedFinding[],
+): number {
+	const targetPath = normalizeEnginePath(target.filePath);
+	for (let i = 0; i < pool.length; i++) {
+		const cand = pool[i];
+		if (normalizeEnginePath(cand.filePath) !== targetPath) {
+			continue;
+		}
+		const typeMatches = (cand.cweId && target.cweId && cand.cweId === target.cweId)
+			|| (cand.type && target.type && cand.type === target.type)
+			|| (cand.ruleId && target.ruleId && cand.ruleId === target.ruleId);
+		if (!typeMatches) {
+			continue;
+		}
+
+		// Priority 1: Line proximity (within 3 lines in the same file)
+		if (typeof target.lastLineNumber === 'number' && typeof cand.lineNumber === 'number') {
+			if (Math.abs(target.lastLineNumber - cand.lineNumber) <= 3) {
+				return i;
+			}
+		}
+
+		// Priority 2: Same scope (e.g. enclosing method / class)
+		if (target.scopeFingerprint && cand.scopeFingerprint && target.scopeFingerprint === cand.scopeFingerprint) {
+			return i;
+		}
+
+		// Priority 3: Same instanceName
+		if (target.instanceName && cand.instanceName && target.instanceName === cand.instanceName) {
+			return i;
+		}
+
+		// Fallback: If no line numbers are known on either side
+		if (typeof target.lastLineNumber !== 'number' && typeof cand.lineNumber !== 'number') {
+			return i;
+		}
+	}
+	return -1;
+}
+
 /**
  * Counts session progress from the live scan.
  * A finding seen this session and missing from the current scan counts
@@ -665,8 +719,13 @@ export function countLiveSessionProgress(
 	lifecycles: readonly FindingLifecycleRecord[],
 	baselineFingerprints: readonly string[],
 	sessionStartedAt: number | null,
+	liveFindings?: readonly ObservedFinding[],
+	baselineFindings?: readonly ObservedFinding[],
 ): LiveSessionProgress {
 	const byFingerprint = new Map(lifecycles.map((row) => [row.logicalFingerprint, row]));
+	const baselineByFingerprint = baselineFindings
+		? new Map(baselineFindings.map((b) => [b.logicalFingerprint, b]))
+		: null;
 	const known = new Set(baselineFingerprints);
 	if (sessionStartedAt !== null) {
 		for (const row of lifecycles) {
@@ -676,6 +735,11 @@ export function countLiveSessionProgress(
 		}
 	}
 
+	// Live findings that did not directly match any known baseline fingerprint
+	const unmatchedLive = liveFindings
+		? liveFindings.filter((l) => !known.has(l.logicalFingerprint))
+		: [];
+
 	let resolvedCount = 0;
 	let confirmingCount = 0;
 	let commentedOut = 0;
@@ -684,10 +748,33 @@ export function countLiveSessionProgress(
 			continue;
 		}
 		const row = byFingerprint.get(fingerprint);
+		const baseFinding = baselineByFingerprint?.get(fingerprint);
 		if (row?.isCommentedOut) {
 			commentedOut += 1;
 			continue;
 		}
+
+		// Target metadata from lifecycle record or baseline finding
+		const target = {
+			filePath: row?.filePath ?? baseFinding?.filePath ?? '',
+			cweId: row?.cweId ?? baseFinding?.cweId,
+			type: row?.type ?? baseFinding?.type,
+			ruleId: row?.ruleId ?? baseFinding?.ruleId,
+			instanceName: row?.instanceName ?? baseFinding?.instanceName,
+			lastLineNumber: row?.lastLineNumber ?? baseFinding?.lineNumber,
+			scopeFingerprint: row?.scopeFingerprint ?? baseFinding?.scopeFingerprint,
+		};
+
+		// If target has an active counterpart in unmatchedLive (e.g. fingerprint mutated on edit),
+		// it is STILL PRESENT in the live scan and must NOT be counted as resolved.
+		if (unmatchedLive.length > 0) {
+			const candidateIdx = findMatchingLiveCandidate(target, unmatchedLive);
+			if (candidateIdx !== -1) {
+				unmatchedLive.splice(candidateIdx, 1);
+				continue;
+			}
+		}
+
 		resolvedCount += 1;
 		const durableAt = row?.durableResolutionAt ?? null;
 		const durableThisSession = durableAt !== null
@@ -697,11 +784,12 @@ export function countLiveSessionProgress(
 		}
 	}
 
+	const activeCount = liveFindings ? liveFindings.length : liveFingerprints.size;
 	return {
 		resolvedCount,
 		totalSessionIssues: Math.max(
 			baselineFingerprints.length,
-			liveFingerprints.size + resolvedCount + commentedOut,
+			activeCount + resolvedCount + commentedOut,
 		),
 		confirmingCount,
 	};
