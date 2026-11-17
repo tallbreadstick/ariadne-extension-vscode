@@ -483,6 +483,7 @@ const CSS = /* css */ `
 		align-items: center;
 		gap: 6px;
 		line-height: 1.4;
+		margin-top: auto;
 	}
 
 	.demo-media-caption .caption-dot {
@@ -503,8 +504,21 @@ const CSS = /* css */ `
 	}
 
 	.explain-variants-grid > .demo-media-wrapper {
-		align-self: start;
+		height: 100%;
 		margin-top: 0;
+	}
+
+	.explain-variants-grid .demo-media {
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		object-fit: contain;
+		background: #1e1e1e;
+		flex-shrink: 0;
+	}
+
+	.explain-variants-grid .demo-media-placeholder {
+		aspect-ratio: 16 / 9;
+		min-height: unset;
 	}
 
 	@media (max-width: 600px) {
