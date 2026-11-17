@@ -39,7 +39,7 @@ interface SessionForwardPayload {
   /** GitHub numeric account ID (e.g., "12345678"), or null if unavailable */
   githubAccountId: string | null;
 
-  /** GitHub username handle (e.g., "octocat"), or null if unavailable */
+  /** One-way SHA-256 hashed GitHub account ID, or null if unavailable */
   githubUsername: string | null;
 
   /** Client environment metadata */

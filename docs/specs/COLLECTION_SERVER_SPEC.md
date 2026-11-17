@@ -49,7 +49,7 @@ export interface SessionForwardPayload {
   /** Numeric GitHub account ID (or null if unauthenticated) */
   githubAccountId: string | null;
 
-  /** GitHub username handle (or null if unauthenticated) */
+  /** One-way SHA-256 hashed GitHub account ID (or null if unauthenticated) */
   githubUsername: string | null;
 
   /** Client environment metadata */

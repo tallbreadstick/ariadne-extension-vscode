@@ -32,6 +32,7 @@
  * metrics ingest calls is reused for authentication.
  */
 
+import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import * as vscode from 'vscode';
@@ -64,6 +65,13 @@ interface SessionForwardPayload {
 }
 
 const DEBOUNCE_MS = 60_000; // 1 minute
+
+function hashAccountId(accountId: string | null): string | null {
+	if (!accountId) {
+		return null;
+	}
+	return crypto.createHash('sha256').update(accountId).digest('hex');
+}
 
 function allowInsecureTls(hostname: string, trustLocalTls: boolean): boolean {
 	return trustLocalTls && (hostname === '127.0.0.1' || hostname === 'localhost');
@@ -196,7 +204,7 @@ export class SessionForwarder {
 					platform: `${process.platform}-${process.arch}`,
 				},
 				githubAccountId: accountInfo.id,
-				githubUsername: accountInfo.username,
+				githubUsername: hashAccountId(accountInfo.id),
 			};
 			await postSessionForward(config, payload);
 			console.log(`[Ariadne] Session data forwarded (trigger: ${trigger}).`);
