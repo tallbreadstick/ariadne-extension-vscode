@@ -1520,9 +1520,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		'ariadne.panel.activeVulnerabilities',
 		activeVulnsProvider,
 	);
+	const withSidebarOpenHook = (
+		provider: vscode.WebviewViewProvider,
+	): vscode.WebviewViewProvider => ({
+		resolveWebviewView(webviewView, resolveContext, token) {
+			provider.resolveWebviewView(webviewView, resolveContext, token);
+			const openPanel = (): void => {
+				if (!openPanelOnStartup) {
+					return;
+				}
+				void openBottomPanel();
+			};
+			openPanel();
+			const visibility = webviewView.onDidChangeVisibility(() => {
+				if (webviewView.visible) {
+					openPanel();
+				}
+			});
+			webviewView.onDidDispose(() => visibility.dispose());
+		},
+	});
+
 	const sessionMetricsDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.panel.sessionMetrics',
-		sessionMetricsProvider,
+		withSidebarOpenHook(sessionMetricsProvider),
 	);
 
 	const requestTreeView = (): void => {
@@ -2078,7 +2099,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	};
 
 	const openBottomPanel = async (): Promise<void> => {
-		await vscode.commands.executeCommand('ariadne.panel.activeVulnerabilities.focus');
+		const viewId = isBottomPanelReady(readPanelAvailability())
+			? 'ariadne.panel.activeVulnerabilities'
+			: 'ariadne.panel.gateway';
+		await vscode.commands.executeCommand(`${viewId}.focus`);
 	};
 
 	void (async () => {
@@ -2088,24 +2112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	const signInDisposable = vscode.window.registerWebviewViewProvider(
 		'ariadne.sidebar.signIn',
-		{
-			resolveWebviewView(webviewView) {
-				settingsView.resolveWebviewView(webviewView);
-				const openPanel = (): void => {
-					if (!openPanelOnStartup) {
-						return;
-					}
-					void openBottomPanel();
-				};
-				openPanel();
-				const visibility = webviewView.onDidChangeVisibility(() => {
-					if (webviewView.visible) {
-						openPanel();
-					}
-				});
-				webviewView.onDidDispose(() => visibility.dispose());
-			},
-		},
+		withSidebarOpenHook(settingsView),
 		{ webviewOptions: { retainContextWhenHidden: true } },
 	);
 
