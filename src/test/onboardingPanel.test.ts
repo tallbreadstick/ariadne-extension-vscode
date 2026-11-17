@@ -90,10 +90,11 @@ describe('Onboarding Guide Webview Panel', () => {
 			assert.ok(html.includes('class="demo-media-caption"'), 'Should render media captions');
 		});
 
-		it('renders Explain Vulnerability dual variants in Step 2.2', () => {
+		it('renders Explain Vulnerability dual variants in Step 2.2 with snug start alignment', () => {
 			assert.match(html, /explain-variants-grid/);
 			assert.match(html, /Variant 1/);
 			assert.match(html, /Variant 2/);
+			assert.match(html, /\.explain-variants-grid\s*>\s*\.demo-media-wrapper\s*\{\s*align-self:\s*start;/);
 		});
 
 		it('removes configurable auto-scan from settings description', () => {

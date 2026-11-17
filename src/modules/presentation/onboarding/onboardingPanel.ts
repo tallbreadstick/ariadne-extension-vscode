@@ -502,6 +502,11 @@ const CSS = /* css */ `
 		margin-top: 12px;
 	}
 
+	.explain-variants-grid > .demo-media-wrapper {
+		align-self: start;
+		margin-top: 0;
+	}
+
 	@media (max-width: 600px) {
 		.explain-variants-grid {
 			grid-template-columns: 1fr;
