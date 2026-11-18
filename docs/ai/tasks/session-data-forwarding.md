@@ -1,13 +1,27 @@
+<!-- CLI-parsed fields (case-sensitive "- key: value" bullets):
+  status        required  Values: todo | in progress | completed
+  next action   required  Free-text next step
+  blockers      optional  Use "none" when clear
+  spec          optional  Path like docs/specs/YYYY-MM-DD-slug.md or "none"
+  plan          optional  Path like docs/plans/YYYY-MM-DD-slug.md or "none"
+-->
+
 # Task: Session Data Forwarding
 
-**Slug**: session-data-forwarding  
-**Status**: completed  
-**Created**: 2026-11-16  
-**Completed**: 2026-11-16  
+## Linked artifacts
+
+- spec: docs/specs/DIFFERENTIAL_SYNC_API_V2.md
+- plan: docs/plans/differential-sync-api-v2.md
+
+## Current state
+
+- status: in progress
+- next action: implement differential sync and chunking
+- blockers: none
 
 ## Summary
 
-Implemented session data forwarding that captures the full session export snapshot along with user interaction counters and asynchronously POSTs it to a configured collection server endpoint whenever the user saves or closes the editor.
+Implemented session data forwarding that captures session data along with user interaction counters and asynchronously POSTs it to a configured collection server endpoint whenever the user saves or closes the editor. Currently upgrading to API v2 with state-hash handshaking, differential updates, chunking, and gzip compression to resolve HTTP 413 errors.
 
 ## Implementation details
 

@@ -1,38 +1,17 @@
 /**
- * Session data forwarder.
+ * Session data forwarder with differential synchronization and chunking (API v2).
  *
- * Sends the full session export snapshot plus per-session feature usage
- * counts to the collection server endpoint whenever the user saves or
- * closes the editor.
- *
- * Trigger rules:
- *  - On save: a 60-second debounce prevents spam from repeated saves.
- *    The timer is reset on each save and fires only when the user stops
- *    saving for a full minute.
- *  - On editor close: the pending timer is cancelled and a forward is
- *    dispatched immediately (fire-and-forget) so data is not lost.
- *
- * Network calls are always asynchronous and never block the caller.
- *
- * ── Endpoint configuration ────────────────────────────────────────────
- * The target URL is composed from the existing `ariadne.metricsIngest`
- * VS Code settings block:
- *
- *   ariadne.metricsIngest.enabled   — set false to disable forwarding
- *   ariadne.metricsIngest.baseUrl   — base URL of the collection server
- *                                     (default: https://127.0.0.1:8080)
- *   ariadne.metricsIngest.apiKey    — Bearer token (≥ 32 chars)
- *   ariadne.metricsIngest.trustLocalTls — allow self-signed certs for localhost
- *
- * The forwarder posts to:  <baseUrl>/v1/session-forward
- *
- * To point this at your deployed collection server, update
- * `ariadne.metricsIngest.baseUrl` in VS Code settings (Settings →
- * search "Ariadne Metrics Ingest").  The same API key used for other
- * metrics ingest calls is reused for authentication.
+ * Implements state-hash handshakes and delta diffing:
+ *  - Computes workspace state hash (SHA-256).
+ *  - Sends a lightweight handshake (`/v1/session-forward/handshake`).
+ *  - If server state is up-to-date, halts immediately (0 data transferred).
+ *  - If diff needed, extracts modified entities and feature deltas.
+ *  - Compresses diffs with Gzip.
+ *  - Slices across multiple chunk requests if payload exceeds threshold.
+ *  - Gracefully falls back to legacy endpoint (`/v1/session-forward`) if
+ *    server does not yet support v2 routes (404/405).
  */
 
-import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import * as vscode from 'vscode';
@@ -40,53 +19,53 @@ import type { SessionStore } from '../storage/sessionStore.js';
 import type { MetricsIngestConfig } from './metricsIngestConfig.js';
 import { loadMetricsIngestConfig } from './metricsIngestConfig.js';
 import type { AuthStorage } from '../../feedback/auth/authStorage.js';
-/** Counts of user interactions with the three tracked features. */
+import { computeStateHash, computeWorkspaceId } from './diff/stateHasher.js';
+import { extractDiff } from './diff/diffEngine.js';
+import { sliceDiffPayload, compressGzip, type DiffChunkPayload } from './diff/chunker.js';
+
 export interface SessionFeatureCounts {
 	explainVulnerabilityCount: number;
 	auditGraphOpenCount: number;
 	fileLocationOpenCount: number;
 }
 
-/** Full payload sent to the collection server. */
-interface SessionForwardPayload {
-	format: 'ariadne-session-forward';
-	version: 1;
-	forwardedAt: string;
-	trigger: 'save' | 'close';
-	sessionSnapshot: ReturnType<SessionStore['exportSessionSnapshot']>;
-	featureCounts: SessionFeatureCounts;
-	client: {
-		extensionVersion: string;
-		vscodeVersion: string;
-		platform: string;
-	};
-	githubAccountId: string | null;
-	githubUsername: string | null;
+interface HandshakeResponse {
+	status: 'up-to-date' | 'need-diff';
+	serverStateHash?: string;
+	knownCompletedSessionIds?: string[];
+	lastSyncedTimestamp?: number;
+}
+
+interface DiffAckResponse {
+	success: boolean;
+	chunkReceived?: number;
+	chunksRemaining?: number;
+	currentServerStateHash?: string;
+	error?: string;
 }
 
 const DEBOUNCE_MS = 60_000; // 1 minute
-
-function hashAccountId(accountId: string | null): string | null {
-	if (!accountId) {
-		return null;
-	}
-	return crypto.createHash('sha256').update(accountId).digest('hex');
-}
 
 function allowInsecureTls(hostname: string, trustLocalTls: boolean): boolean {
 	return trustLocalTls && (hostname === '127.0.0.1' || hostname === 'localhost');
 }
 
-async function postSessionForward(
+/**
+ * Generic HTTP POST request helper supporting raw string or gzip buffer payloads.
+ */
+function requestPost(
 	config: MetricsIngestConfig,
-	payload: SessionForwardPayload,
-): Promise<void> {
-	const url = new URL('/v1/session-forward', `${config.baseUrl}/`);
-	const body = JSON.stringify(payload);
+	path: string,
+	data: Buffer | string,
+	extraHeaders: Record<string, string> = {},
+): Promise<{ statusCode: number; body: string }> {
+	const url = new URL(path, `${config.baseUrl}/`);
 	const isHttps = url.protocol === 'https:';
 	const lib = isHttps ? https : http;
 
-	await new Promise<void>((resolve, reject) => {
+	const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+
+	return new Promise((resolve, reject) => {
 		const options: https.RequestOptions = {
 			hostname: url.hostname,
 			port: url.port || (isHttps ? 443 : 80),
@@ -95,7 +74,8 @@ async function postSessionForward(
 			headers: {
 				Authorization: `Bearer ${config.apiKey}`,
 				'Content-Type': 'application/json',
-				'Content-Length': Buffer.byteLength(body),
+				'Content-Length': buffer.length,
+				...extraHeaders,
 			},
 			...(isHttps && allowInsecureTls(url.hostname, config.trustLocalTls)
 				? { rejectUnauthorized: false }
@@ -106,18 +86,18 @@ async function postSessionForward(
 			let text = '';
 			res.on('data', (chunk) => { text += String(chunk); });
 			res.on('end', () => {
-				if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-					resolve();
-					return;
-				}
-				reject(new Error(`Session forward HTTP ${res.statusCode ?? '?'}: ${text.slice(0, 200)}`));
+				resolve({
+					statusCode: res.statusCode ?? 500,
+					body: text,
+				});
 			});
 		});
+
 		req.on('error', reject);
 		req.setTimeout(15_000, () => {
-			req.destroy(new Error('Session forward request timed out'));
+			req.destroy(new Error(`Request to ${path} timed out`));
 		});
-		req.write(body);
+		req.write(buffer);
 		req.end();
 	});
 }
@@ -129,8 +109,15 @@ export class SessionForwarder {
 		fileLocationOpenCount: 0,
 	};
 
-	private lastKnownUsername: string | null = null;
+	private lastSyncedFeatureCounts: SessionFeatureCounts = {
+		explainVulnerabilityCount: 0,
+		auditGraphOpenCount: 0,
+		fileLocationOpenCount: 0,
+	};
+
 	private lastKnownAccountId: string | null = null;
+	private lastSyncedStateHash: string | null = null;
+	private lastSyncedTimestamp: number | null = null;
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(
@@ -138,15 +125,19 @@ export class SessionForwarder {
 		private readonly store: SessionStore,
 		private readonly authStorage: AuthStorage,
 	) {
-		// Restore cached credentials from persistent global storage
-		this.lastKnownUsername = context.globalState.get<string>('ariadne.lastKnownGithubUsername') ?? null;
 		this.lastKnownAccountId = context.globalState.get<string>('ariadne.lastKnownGithubAccountId') ?? null;
+		this.lastSyncedStateHash = context.workspaceState.get<string>('ariadne.lastSyncedStateHash') ?? null;
+		this.lastSyncedTimestamp = context.workspaceState.get<number>('ariadne.lastSyncedTimestamp') ?? null;
 
-		// Listen to auth session changes so username is continuously synchronized
+		const savedCounts = context.workspaceState.get<SessionFeatureCounts>('ariadne.lastSyncedFeatureCounts');
+		if (savedCounts) {
+			this.lastSyncedFeatureCounts = { ...savedCounts };
+		}
+
 		context.subscriptions.push(
 			vscode.authentication.onDidChangeSessions((event) => {
 				if (event.provider.id === 'github') {
-					void this.resolveAccountInfo();
+					void this.resolveAccountId();
 				}
 			}),
 		);
@@ -190,94 +181,217 @@ export class SessionForwarder {
 			if (!config) {
 				return;
 			}
-			const accountInfo = await this.resolveAccountInfo();
-			const payload: SessionForwardPayload = {
-				format: 'ariadne-session-forward',
-				version: 1,
-				forwardedAt: new Date().toISOString(),
+
+			const clientId = await this.resolveAccountId();
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			const workspaceId = computeWorkspaceId(workspaceFolder);
+
+			const currentLifecycles = this.store.loadFindingLifecycles();
+			const activeSession = this.store.loadActiveSession();
+			const completedSessions = this.store.loadCompletedSessions();
+			const sessionMeta = this.store.loadSessionMeta();
+
+			// 1. Calculate local deterministic state hash
+			const clientStateHash = computeStateHash({
+				findingLifecycles: currentLifecycles,
+				activeSession,
+				completedSessions,
+				sessionMeta,
+			});
+
+			// If local state hasn't changed since last confirmed sync, skip network call
+			if (
+				trigger === 'save'
+				&& this.lastSyncedStateHash === clientStateHash
+				&& this.counts.explainVulnerabilityCount === this.lastSyncedFeatureCounts.explainVulnerabilityCount
+				&& this.counts.auditGraphOpenCount === this.lastSyncedFeatureCounts.auditGraphOpenCount
+				&& this.counts.fileLocationOpenCount === this.lastSyncedFeatureCounts.fileLocationOpenCount
+			) {
+				console.log('[Ariadne Sync] Workspace state unchanged. Skipping forward.');
+				return;
+			}
+
+			// 2. Perform Handshake with server
+			const handshakePayload = {
+				format: 'ariadne-sync-handshake',
+				version: 2,
+				timestamp: new Date().toISOString(),
+				clientId,
+				workspaceId,
+				clientStateHash,
+				meta: {
+					sessionIdSeed: sessionMeta.sessionIdSeed,
+					totalScansCount: sessionMeta.totalScansCount,
+				},
+			};
+
+			let handshakeRes = await requestPost(
+				config,
+				'/v1/session-forward/handshake',
+				JSON.stringify(handshakePayload),
+			);
+
+			// Fallback: If server does not implement /handshake (404/405), fallback to legacy v1 snapshot
+			if (handshakeRes.statusCode === 404 || handshakeRes.statusCode === 405) {
+				console.log('[Ariadne Sync] Backend does not support handshake v2. Falling back to legacy snapshot.');
+				await this.dispatchLegacy(config, trigger, clientId);
+				return;
+			}
+
+			if (handshakeRes.statusCode < 200 || handshakeRes.statusCode >= 300) {
+				throw new Error(`Handshake HTTP ${handshakeRes.statusCode}: ${handshakeRes.body.slice(0, 200)}`);
+			}
+
+			let handshakeData: HandshakeResponse;
+			try {
+				handshakeData = JSON.parse(handshakeRes.body) as HandshakeResponse;
+			} catch {
+				throw new Error('Invalid JSON received from handshake endpoint');
+			}
+
+			// 3. Evaluate handshake result
+			if (handshakeData.status === 'up-to-date') {
+				console.log(`[Ariadne Sync] Server reports state is up-to-date (${clientStateHash.slice(0, 8)}...).`);
+				await this.recordSyncSuccess(clientStateHash, Date.now());
+				return;
+			}
+
+			// 4. Extract diff
+			const diff = extractDiff({
+				currentLifecycles,
+				currentCompletedSessions: completedSessions,
+				activeSession,
+				knownCompletedSessionIds: handshakeData.knownCompletedSessionIds,
+				lastSyncedTimestamp: handshakeData.lastSyncedTimestamp ?? this.lastSyncedTimestamp,
+				featureCounts: this.counts,
+				lastSyncedFeatureCounts: this.lastSyncedFeatureCounts,
+			});
+
+			// 5. Slice into chunk payloads
+			const chunks = sliceDiffPayload(diff, {
 				trigger,
-				sessionSnapshot: this.store.exportSessionSnapshot(),
-				featureCounts: { ...this.counts },
+				clientId,
+				workspaceId,
+				baseStateHash: handshakeData.serverStateHash ?? null,
+				targetStateHash: clientStateHash,
 				client: {
 					extensionVersion: this.context.extension.packageJSON.version ?? '0.0.0',
 					vscodeVersion: vscode.version,
 					platform: `${process.platform}-${process.arch}`,
 				},
-				githubAccountId: accountInfo.id,
-				githubUsername: hashAccountId(accountInfo.id),
-			};
-			await postSessionForward(config, payload);
-			console.log(`[Ariadne] Session data forwarded (trigger: ${trigger}).`);
+			});
+
+			console.log(`[Ariadne Sync] Transmitting differential update (${chunks.length} chunk(s))...`);
+
+			// 6. Post each chunk with Gzip compression
+			for (const chunk of chunks) {
+				const compressedBuffer = await compressGzip(chunk);
+				const diffRes = await requestPost(
+					config,
+					'/v1/session-forward/diff',
+					compressedBuffer,
+					{ 'Content-Encoding': 'gzip' },
+				);
+
+				if (diffRes.statusCode < 200 || diffRes.statusCode >= 300) {
+					throw new Error(`Diff chunk ${chunk.chunk.index}/${chunk.chunk.totalChunks} HTTP ${diffRes.statusCode}: ${diffRes.body.slice(0, 200)}`);
+				}
+
+				const diffAck = JSON.parse(diffRes.body) as DiffAckResponse;
+				if (!diffAck.success) {
+					throw new Error(`Diff rejected: ${diffAck.error ?? 'Unknown error'}`);
+				}
+			}
+
+			await this.recordSyncSuccess(clientStateHash, Date.now());
+			console.log(`[Ariadne Sync] Differential sync completed successfully (${chunks.length} chunk(s)).`);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : String(error);
-			console.warn('[Ariadne] Session data forward failed:', message);
+			console.warn('[Ariadne Sync] Session data forward failed:', message);
 		}
 	}
 
-	private async resolveAccountInfo(): Promise<{ id: string | null; username: string | null }> {
+	/**
+	 * Fallback to legacy single-shot forwarder if server is older version.
+	 */
+	private async dispatchLegacy(
+		config: MetricsIngestConfig,
+		trigger: 'save' | 'close',
+		clientId: string | null,
+	): Promise<void> {
+		const payload = {
+			format: 'ariadne-session-forward',
+			version: 1,
+			forwardedAt: new Date().toISOString(),
+			trigger,
+			sessionSnapshot: this.store.exportSessionSnapshot(),
+			featureCounts: { ...this.counts },
+			client: {
+				extensionVersion: this.context.extension.packageJSON.version ?? '0.0.0',
+				vscodeVersion: vscode.version,
+				platform: `${process.platform}-${process.arch}`,
+			},
+			githubAccountId: clientId,
+			githubUsername: clientId,
+		};
+		const res = await requestPost(
+			config,
+			'/v1/session-forward',
+			JSON.stringify(payload),
+		);
+		if (res.statusCode >= 200 && res.statusCode < 300) {
+			console.log(`[Ariadne] Session data forwarded via legacy route (trigger: ${trigger}).`);
+		} else {
+			throw new Error(`Legacy forward HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
+		}
+	}
+
+	private async recordSyncSuccess(stateHash: string, timestamp: number): Promise<void> {
+		this.lastSyncedStateHash = stateHash;
+		this.lastSyncedTimestamp = timestamp;
+		this.lastSyncedFeatureCounts = { ...this.counts };
+
+		await this.context.workspaceState.update('ariadne.lastSyncedStateHash', stateHash);
+		await this.context.workspaceState.update('ariadne.lastSyncedTimestamp', timestamp);
+		await this.context.workspaceState.update('ariadne.lastSyncedFeatureCounts', this.lastSyncedFeatureCounts);
+	}
+
+	private async resolveAccountId(): Promise<string | null> {
 		try {
 			let id: string | null = null;
-			let username: string | null = null;
 
-			// 1. Try reading directly from live VS Code GitHub sessions with fallback scope sets
-			// Scope combination A: default requested by Ariadne
 			let liveSession = await vscode.authentication.getSession(
 				'github',
 				['read:user', 'user:email'],
 				{ silent: true },
 			);
 
-			// Scope combination B: minimal read:user
 			if (!liveSession) {
-				liveSession = await vscode.authentication.getSession(
-					'github',
-					['read:user'],
-					{ silent: true },
-				);
+				liveSession = await vscode.authentication.getSession('github', ['read:user'], { silent: true });
 			}
-
-			// Scope combination C: empty scopes (matches any active GitHub login in VS Code)
 			if (!liveSession) {
-				liveSession = await vscode.authentication.getSession(
-					'github',
-					[],
-					{ silent: true },
-				);
+				liveSession = await vscode.authentication.getSession('github', [], { silent: true });
 			}
 
 			if (liveSession) {
 				id = liveSession.account.id;
-				username = liveSession.account.label;
 			}
 
-			// 2. Fall back to Ariadne SecretStorage if live session didn't return immediately
-			if (!id || !username) {
+			if (!id) {
 				const meta = await this.authStorage.loadSessionMeta();
-				id = id || (meta?.accountId?.trim() ?? null);
-				username = username || (meta?.accountLabel?.trim() ?? null);
+				id = meta?.accountId?.trim() ?? null;
 			}
 
-			// 3. Fall back to cached in-memory / persistent values from earlier runs
 			id = id || this.lastKnownAccountId;
-			username = username || this.lastKnownUsername;
 
-			// Cache valid discoveries to memory and persistent globalState so they survive reloads
-			if (username && username !== this.lastKnownUsername) {
-				this.lastKnownUsername = username;
-				void this.context.globalState.update('ariadne.lastKnownGithubUsername', username);
-			}
 			if (id && id !== this.lastKnownAccountId) {
 				this.lastKnownAccountId = id;
 				void this.context.globalState.update('ariadne.lastKnownGithubAccountId', id);
 			}
 
-			const validId = id && /^[0-9]+$/.test(id) ? id : null;
-			return { id: validId, username: username || null };
+			return id && /^[0-9]+$/.test(id) ? id : null;
 		} catch {
-			return {
-				id: this.lastKnownAccountId,
-				username: this.lastKnownUsername,
-			};
+			return this.lastKnownAccountId;
 		}
 	}
 }
